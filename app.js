@@ -3540,10 +3540,19 @@ const ITEM_ID_MOD_SESSION_KEY = "lifebuilder-2026-mod-session";
 
 function hasActiveItemIdModSession() {
   try {
-    const session = JSON.parse(sessionStorage.getItem(ITEM_ID_MOD_SESSION_KEY) || "null");
-    const permissions = Array.isArray(session?.permissions) ? session.permissions : [];
-    const mayReadIds = permissions.includes("*") || permissions.includes("ids.read");
-    return isLocalDevelopmentHost() && !!session?.authorized && mayReadIds && Number(session.expiresAt || 0) > Date.now();
+    const localSession = JSON.parse(sessionStorage.getItem(ITEM_ID_MOD_SESSION_KEY) || "null");
+    const onlineSession = JSON.parse(sessionStorage.getItem("lifebuilder-2026-online-mod-session") || "null");
+    const localPermissions = Array.isArray(localSession?.permissions) ? localSession.permissions : [];
+    const onlinePermissions = Array.isArray(onlineSession?.permissions) ? onlineSession.permissions : [];
+    const localAllowed = isLocalDevelopmentHost()
+      && !!localSession?.authorized
+      && (localPermissions.includes("*") || localPermissions.includes("ids.read"))
+      && Number(localSession.expiresAt || 0) > Date.now();
+    const onlineAllowed = !!onlineSession?.authorized
+      && !!onlineSession?.online
+      && (onlinePermissions.includes("*") || onlinePermissions.includes("ids.read"))
+      && Number(onlineSession.expiresAt || 0) > Date.now();
+    return localAllowed || onlineAllowed;
   } catch {
     return false;
   }
