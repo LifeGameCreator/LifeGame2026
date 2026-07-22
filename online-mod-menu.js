@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "2026-07-22-online-modmenu-mobile-1";
+  const VERSION = "2026-07-22-online-modmenu-actions-2";
   const DB_ID = "gamekl";
   const REGION = "europe-west3";
   const SESSION_KEY = "lifebuilder-2026-online-mod-session";
@@ -550,8 +550,19 @@
   async function runCommand(command) {
     const message = content().querySelector("[data-player-action-message]");
     try {
-      await queueCommand(command);
-      if (message) { message.textContent = "Befehl wurde an den Spieler gesendet. Er wird beim nächsten Live-Sync angewendet."; message.classList.remove("error"); }
+      const response = await queueCommand(command);
+      if (message) {
+        message.textContent = response.appliedToCloud
+          ? "Änderung wurde sofort im Cloud-Spielstand gespeichert. Ein online geöffneter Charakter übernimmt sie automatisch."
+          : "Befehl wurde in die Warteschlange gestellt und wird angewendet, sobald der Spieler online ist.";
+        message.classList.remove("error");
+      }
+      if (response.appliedToCloud && selectedPlayer?.uid) {
+        const uid = selectedPlayer.uid;
+        setTimeout(() => {
+          if (selectedPlayer?.uid === uid && activePanel === "players") selectPlayer(uid).catch(() => {});
+        }, 700);
+      }
     } catch (error) {
       if (message) { message.textContent = error.message; message.classList.add("error"); }
     }

@@ -1,5 +1,5 @@
 (() => {
-  const ONLINE_VERSION = "2026-07-22-firestore-gamekl-1";
+  const ONLINE_VERSION = "2026-07-22-mod-actions-live-1";
   const FIRESTORE_DATABASE_ID = "gamekl";
   const AUDIT_STORAGE_PREFIX = "lifebuilder-2026-online-audit:";
   const HEARTBEAT_MS = 25000;
@@ -826,6 +826,33 @@
     processingCommands.add(commandDoc.id);
     let result = "Keine Änderung";
     try {
+      if (command.kind === "reloadCloudSlot") {
+        const slotIndex = Math.max(0, Math.min(3, Math.round(Number(command.slot || 0))));
+        const remoteSnapshot = await fb.getDoc(cloudSlotRef(fb, onlineUser.uid, slotIndex));
+        if (!remoteSnapshot.exists()) throw new Error("Der aktualisierte Cloud-Spielstand wurde nicht gefunden.");
+        const remoteData = remoteSnapshot.data() || {};
+        const remoteUpdatedAtMs = Number(remoteData.updatedAtMs || 0);
+        if (Number(command.expectedUpdatedAtMs || 0) > remoteUpdatedAtMs) throw new Error("Die Cloud-Änderung ist noch nicht verfügbar.");
+        let remoteState = null;
+        try { remoteState = migrateState(JSON.parse(String(remoteData.stateJson || "null"))); }
+        catch { throw new Error("Der aktualisierte Cloud-Spielstand ist beschädigt."); }
+        if (!remoteState) throw new Error("Der aktualisierte Cloud-Spielstand ist leer.");
+        remoteState.onlineUpdatedAtMs = remoteUpdatedAtMs || Date.now();
+        remoteState.onlineLastAdminCommandAt = Date.now();
+        saveSlots[slotIndex] = remoteState;
+        localStorage.setItem(SAVE_SLOTS_KEY, JSON.stringify(saveSlots));
+        const currentSlot = Math.max(0, Number(typeof selectedSlot !== "undefined" ? selectedSlot : activeSlot || 0));
+        if (currentSlot === slotIndex) {
+          state = remoteState;
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+          if (typeof addFeed === "function") addFeed("Online-Admin: Cloud-Änderung wurde übernommen.");
+          if (typeof render === "function") render();
+        }
+        if (typeof renderSaveSlots === "function") renderSaveSlots();
+        result = `Cloud-Slot ${slotIndex + 1} neu geladen`;
+        await fb.updateDoc(commandDoc.ref, { status: "done", result, appliedAtMs: Date.now() });
+        return;
+      }
       state.onlineLastAdminCommandAt = Date.now();
       const amount = Math.max(1, Math.round(Number(command.amount || 1)));
       if (command.kind === "giveItem") {
