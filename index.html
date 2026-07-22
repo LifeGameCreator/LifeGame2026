@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#13201b">
+    <meta name="color-scheme" content="dark">
+    <meta name="application-name" content="LifeBuilder 2026">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="LifeBuilder">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="format-detection" content="telephone=no">
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>LifeBuilder 2026</title>
+    <link rel="manifest" href="manifest.webmanifest?v=20260722-firestore-gamekl-1">
+    <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/apple-touch-icon.png?v=20260722-mobile-iphone16-1">
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png?v=20260722-mobile-iphone16-1">
+    <link rel="icon" type="image/png" sizes="16x16" href="assets/icons/favicon-16.png?v=20260722-mobile-iphone16-1">
+    <link rel="stylesheet" href="styles.css?v=20260722-firestore-gamekl-1">
+  </head>
+  <body>
+    <div id="app" class="app-shell">
+      <section id="setupScreen" class="setup-screen">
+        <div id="startHero" class="hero compact-hero">
+          <img src="assets/life-city.png" alt="">
+          <div class="hero-overlay">
+            <p class="eyebrow">Mobile Life Simulation</p>
+            <h1>LifeBuilder 2026</h1>
+            <p>Starte in dein Leben, baue dir legal oder riskant etwas auf und entscheide jeden Tag, wohin dein Weg geht.</p>
+          </div>
+        </div>
+
+        <div class="start-actions">
+          <button id="openSlotsBtn" class="primary-button" type="button">Anmelden &amp; Spiel starten</button>
+          <button id="openSupportTicketBtn" class="secondary-button" type="button">Support-Ticket schreiben</button>
+        </div>
+
+        <div id="slotView" class="setup-view hidden">
+          <div class="setup-head">
+            <button class="icon-button" type="button" data-setup-back title="Zurück">&lt;</button>
+            <div>
+              <p class="eyebrow">Spielstände</p>
+              <h2>Wähle deinen Account</h2>
+            </div>
+          </div>
+          <div id="saveSlotGrid" class="save-slot-grid"></div>
+        </div>
+
+        <div id="settingsView" class="setup-view hidden">
+          <div class="setup-head">
+            <button class="icon-button" type="button" data-setup-back title="Zurück">&lt;</button>
+            <div>
+              <p class="eyebrow">Einstellungen</p>
+              <h2>Sound & Grafik</h2>
+            </div>
+          </div>
+          <div class="settings-panel">
+            <label>
+              Testbeispielmusik
+              <select id="musicVariant">
+                <option value="lifebuilder-longmix">LifeBuilder Langmix</option>
+              </select>
+            </label>
+            <div class="settings-music-actions">
+              <button id="testMusicBtn" class="primary-button" type="button">Testmusik starten</button>
+              <button id="stopMusicBtn" class="secondary-button" type="button">Musik stoppen</button>
+            </div>
+            <label>
+              Eigene YouTube-Musik
+              <input id="customMusicLink" type="url" placeholder="https://www.youtube.com/watch?v=...">
+            </label>
+            <button id="playCustomMusicBtn" class="secondary-button" type="button">YouTube-Musik starten</button>
+            <div id="customMusicPlayer" class="custom-music-player hidden"></div>
+            <label>
+              Musiklautstärke
+              <input id="musicVolume" type="range" min="0" max="100" value="45">
+            </label>
+            <label>
+              Effektlautstärke
+              <input id="effectVolume" type="range" min="0" max="100" value="65">
+            </label>
+            <label>
+              Grafik
+              <select id="graphicsQuality">
+                <option value="minimum">Minimum</option>
+                <option value="medium">Mittel</option>
+                <option value="high">Hohe Grafik</option>
+                <option value="diamond">Diamant-Grafik</option>
+                <option value="ultra">Ultra</option>
+              </select>
+            </label>
+            <button id="changeCharacterBtn" class="secondary-button" type="button">Charakter wechseln</button>
+          </div>
+        </div>
+
+        <div id="loadingView" class="setup-view loading-view hidden">
+          <div class="loading-card">
+            <p class="eyebrow">LifeBuilder lädt</p>
+            <h2>Dein Leben wird vorbereitet</h2>
+            <div class="loading-bar"><span id="loadingFill"></span></div>
+            <strong id="loadingPercent">0%</strong>
+            <p id="loadingInfo">Preise, Jobs und Tagesrhythmus werden geladen.</p>
+          </div>
+        </div>
+
+        <form id="characterForm" class="setup-form setup-view hidden">
+          <div class="setup-head">
+            <button class="icon-button" type="button" data-slots-back title="Zurück">&lt;</button>
+            <div>
+              <p class="eyebrow">Charakter</p>
+              <h2>Neues Leben erstellen</h2>
+            </div>
+          </div>
+          <div class="field-row">
+            <label>
+              Vorname
+              <input required name="firstName" autocomplete="given-name" placeholder="Mika">
+            </label>
+            <label>
+              Nachname
+              <input required name="lastName" autocomplete="family-name" placeholder="Schneider">
+            </label>
+          </div>
+          <div class="field-row">
+            <label>
+              Geburtsdatum
+              <input required name="birthDate" type="date" value="2008-07-09" max="2008-07-09">
+            </label>
+            <label>
+              Geschlecht
+              <select name="gender" required>
+                <option value="male">Mann</option>
+                <option value="female">Frau</option>
+              </select>
+            </label>
+          </div>
+          <label>
+            Startbank
+            <select name="bank">
+              <option>Sparbank</option>
+              <option>Deutsch Bank</option>
+              <option>VRR Bank</option>
+            </select>
+          </label>
+          <label>
+            Lebensstil
+            <select name="path">
+              <option value="balanced">Ausgeglichen</option>
+              <option value="career">Karrierefokus</option>
+              <option value="business">Unternehmer</option>
+              <option value="street">Riskante Straße</option>
+              <option value="craft">Handwerk & Auto</option>
+              <option value="tech">Tech & Online</option>
+              <option value="creative">Kreativ & Content</option>
+              <option value="social">Sozial & Netzwerk</option>
+              <option value="finance">Finanzen & Immobilien</option>
+              <option value="sport">Sport & Disziplin</option>
+            </select>
+          </label>
+          <label>
+            Startort
+            <select name="homeCity">
+              <option value="Essen">Essen</option>
+              <option value="Berlin">Berlin</option>
+              <option value="Hamburg">Hamburg</option>
+              <option value="München">München</option>
+              <option value="Köln">Köln</option>
+            </select>
+          </label>
+          <button class="primary-button" type="submit">Charakter erstellen</button>
+        </form>
+      </section>
+
+      <section id="gameScreen" class="game-screen hidden">
+        <header class="topbar">
+          <div>
+            <p id="dayLabel" class="eyebrow">Tag 1</p>
+            <h1 id="playerName">LifeBuilder</h1>
+          </div>
+          <div class="topbar-actions">
+            <button id="gameSettingsBtn" class="topbar-text-button" title="Einstellungen">Einstellungen</button>
+            <button id="resetBtn" class="icon-button" title="Spielstand löschen">↺</button>
+          </div>
+        </header>
+
+        <main class="dashboard">
+          <section class="status-panel">
+            <button class="portrait" type="button" aria-label="Charakter öffnen" title="Charakter öffnen">
+              <div class="portrait-job"><span>Job</span><strong id="jobValue">Keiner</strong></div>
+              <div class="portrait-meta">
+                <div class="portrait-badge level"><small>Level</small><b>0</b></div>
+                <div class="portrait-badge age"><small>Alter</small><b id="ageBadge">18</b></div>
+              </div>
+              <img src="assets/life-city.png" alt="">
+              <div class="portrait-debt"><span>Schulden</span><strong id="debtValue">0 €</strong></div>
+            </button>
+            <div class="meters">
+              <button class="meter status-action" type="button" data-open-inventory><span>Hunger</span><progress id="hungerMeter" max="100"></progress></button>
+              <button class="meter status-action" type="button" data-open-inventory><span>Energie</span><progress id="energyMeter" max="100"></progress></button>
+              <button class="meter status-action" type="button" data-open-inventory><span>Durst</span><progress id="thirstMeter" max="100"></progress></button>
+              <button class="meter status-action mood-meter" type="button" data-open-mood title="Stimmung" aria-label="Stimmung"><span><span class="desktop-label">Stimmung</span><span class="mobile-label">Stimm.</span></span><progress id="moodMeter" max="100"></progress></button>
+              <button class="mini-stat money status-action" type="button" data-open-bank><span>Bargeld</span><strong id="cashValue">0 €</strong></button>
+              <button class="mini-stat money status-action" type="button" data-open-bank><span>Konto</span><strong id="bankValue">0 €</strong></button>
+              <button class="home-shortcut" type="button" data-home-shortcut>
+                <span>Haus</span>
+                <b>⌂</b>
+              </button>
+              <button class="dashboard-shortcut casino" type="button" data-dashboard-tab="casino">
+                <span>Casino</span>
+                <b>▥</b>
+                <small class="shortcut-lock" data-level-lock="casino">Ab Level 2</small>
+              </button>
+              <button class="dashboard-shortcut realestate" type="button" data-dashboard-tab="realestate">
+                <span>Immobilien</span>
+                <b>⌂⌂</b>
+                <small class="shortcut-lock" data-level-lock="realestate">Ab Level 2</small>
+              </button>
+            </div>
+            <button class="phone-shortcut" type="button" data-phone-shortcut disabled>
+              <span>Handy</span>
+              <b>Keins</b>
+            </button>
+          </section>
+
+          <nav class="tabs" aria-label="Spielbereiche">
+            <button class="active" data-tab="overview">Heute</button>
+            <button data-tab="work">Arbeit</button>
+          </nav>
+
+          <section id="character" class="tab-panel">
+            <div id="characterPanel" class="item-list"></div>
+          </section>
+
+          <section id="barber" class="tab-panel">
+            <div id="barberPanel" class="item-list"></div>
+          </section>
+
+          <section id="tattoo" class="tab-panel">
+            <div id="tattooPanel" class="item-list"></div>
+          </section>
+
+          <section id="overview" class="tab-panel active">
+            <div class="action-list" id="dailyActions"></div>
+            <div class="feed" id="eventFeed"></div>
+          </section>
+
+          <section id="work" class="tab-panel">
+            <div id="jobList" class="item-list"></div>
+          </section>
+
+          <section id="bank" class="tab-panel">
+            <div class="bank-card">
+              <p class="eyebrow" id="bankName">Bank</p>
+              <h2 id="accountIban">DE00 0000 0000 0000</h2>
+              <p id="creditInfo">Kreditrahmen: 0 €</p>
+            </div>
+            <div class="action-list" id="bankActions"></div>
+            <div id="investmentList" class="item-list"></div>
+          </section>
+
+          <section id="shop" class="tab-panel">
+            <div id="shopList" class="item-list"></div>
+          </section>
+
+          <section id="world" class="tab-panel">
+            <div class="map-toolbar unified-map-toolbar local-only-map-toolbar">
+              <div>
+                <p class="eyebrow">Lokale Karte</p>
+                <h2 id="locationLabel">Stadtkarte</h2>
+              </div>
+              <span class="airport-map-hint">Fernreisen starten ausschließlich am Flughafen.</span>
+            </div>
+            <div id="cityMap" class="city-map"></div>
+            <div id="routeList" class="item-list"></div>
+          </section>
+
+          <section id="map" class="tab-panel hidden">
+          </section>
+
+          <section id="games" class="tab-panel">
+            <div id="gameLibrary" class="item-list"></div>
+          </section>
+
+          <section id="casino" class="tab-panel">
+            <div class="casino-wallet">
+              <div>
+                <p class="eyebrow">Spielhalle</p>
+                <h2>Casino Entertainment</h2>
+              </div>
+            </div>
+            <div id="casinoList" class="item-list"></div>
+          </section>
+
+          <section id="inventory" class="tab-panel hidden">
+            <div id="inventoryList" class="item-list"></div>
+          </section>
+
+          <section id="realestate" class="tab-panel">
+            <div id="realEstateList" class="item-list"></div>
+          </section>
+        </main>
+      </section>
+
+      <dialog id="detailDialog">
+        <button id="closeDialog" class="icon-button close" type="button" title="Schließen">×</button>
+        <button id="dialogBack" class="dialog-back-button" type="button" hidden>← Zurück</button>
+        <h2 id="dialogTitle"></h2>
+        <p id="dialogText"></p>
+      </dialog>
+    </div>
+
+  <script src="app.js?v=20260722-firestore-gamekl-1"></script>
+  <script src="online-events.js?v=20260722-firestore-gamekl-1"></script>
+  <script src="support-tickets.js?v=20260722-firestore-gamekl-1"></script>
+  <script>
+    (() => {
+      const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+      document.documentElement.classList.toggle('standalone-app', standalone);
+    })();
+  </script>
+</body>
+</html>
