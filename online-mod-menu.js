@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "2026-07-23-online-modmenu-trust-ui-fix-2";
+  const VERSION = "2026-07-23-online-player-null-save-fix-1";
   const DB_ID = "gamekl";
   const REGION = "europe-west3";
   const SESSION_KEY = "lifebuilder-2026-online-mod-session";
@@ -108,6 +108,41 @@
   };
   const safeArray = (value) => Array.isArray(value) ? value : [];
   const safeObject = (value) => value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const selectedPlayerSlot = (fallback = 0) => num(
+    selectedPlayer?.save?.slot
+      ?? selectedPlayer?.profile?.slot
+      ?? selectedPlayer?.slot,
+    fallback
+  );
+
+  function normalizePlayerAccounts(value) {
+    return safeArray(value)
+      .filter((account) => account && typeof account === "object" && !Array.isArray(account))
+      .map((account) => {
+        const rawCharacters = safeArray(account.characters)
+          .filter((character) => character && typeof character === "object" && !Array.isArray(character));
+        const fallbackUid = account.uid
+          ?? account.id
+          ?? account.accountUid
+          ?? account.userId
+          ?? rawCharacters.find((character) => character.uid)?.uid
+          ?? "";
+        const accountUid = String(fallbackUid || "").trim();
+        const characters = rawCharacters
+          .map((character, index) => ({
+            ...character,
+            uid: String(character.uid || accountUid || "").trim(),
+            slot: num(character.slot, index)
+          }))
+          .filter((character) => character.uid);
+        return {
+          ...account,
+          uid: accountUid || characters[0]?.uid || "",
+          characters
+        };
+      })
+      .filter((account) => account.uid && account.characters.length);
+  }
 
   async function runtime() {
     if (runtimePromise) return runtimePromise;
@@ -443,10 +478,10 @@
       </section>`;
     try {
       const response = await callFunction("listPlayers", {});
-      playerAccounts = Array.isArray(response.accounts) ? response.accounts : [];
-      players = playerAccounts.flatMap((account) => safeArray(account.characters).map((character) => ({ ...character, uid: account.uid, email: account.email, accountName: account.accountName, online: account.online, lastSeenAtMs: account.lastSeenAtMs, key: `${account.uid}:${character.slot}` })));
+      playerAccounts = normalizePlayerAccounts(response.accounts);
+      players = playerAccounts.flatMap((account) => account.characters.map((character) => ({ ...character, uid: character.uid || account.uid, email: account.email, accountName: account.accountName, online: account.online, lastSeenAtMs: account.lastSeenAtMs, key: `${character.uid || account.uid}:${character.slot}` })));
       renderPlayerList();
-      if (selectedPlayer?.uid && players.some((player) => player.uid === selectedPlayer.uid && num(player.slot) === num(selectedPlayer.save?.slot ?? selectedPlayer.profile?.slot))) await selectPlayer(selectedPlayer.uid, num(selectedPlayer.save?.slot ?? selectedPlayer.profile?.slot), true);
+      if (selectedPlayer?.uid && players.some((player) => player.uid === selectedPlayer.uid && num(player.slot) === selectedPlayerSlot())) await selectPlayer(selectedPlayer.uid, selectedPlayerSlot(), true);
     } catch (error) {
       const list = content().querySelector("[data-player-list]");
       if (list) list.innerHTML = `<p class="online-mod-message error">${esc(error.message)}</p>`;
@@ -482,14 +517,14 @@
       const expanded = expandedAccounts.has(account.uid) || (selectedPlayer?.uid === account.uid);
       return `<section class="online-mod-account-group ${expanded ? "expanded" : ""}">
         <button type="button" class="online-mod-account-row" data-toggle-account="${esc(account.uid)}"><span class="online-dot ${account.online ? "online" : ""}"></span><span><b>${esc(account.email || "E-Mail unbekannt")}</b><small>${chars.length} Charakter${chars.length === 1 ? "" : "e"} · ${account.online ? "LIVE" : relativeTime(account.lastSeenAtMs)}</small></span><em>${expanded ? "▾" : "▸"}</em></button>
-        <div class="online-mod-character-list">${chars.map((player) => `<button type="button" class="online-mod-player-row ${selectedPlayer?.uid === player.uid && num(selectedPlayer.save?.slot ?? selectedPlayer.profile?.slot) === num(player.slot) ? "active" : ""}" data-select-player="${esc(player.uid)}" data-select-slot="${num(player.slot)}"><span class="online-mod-avatar mini">${esc(String(player.displayName || "C").slice(0,1).toUpperCase())}</span><span class="online-mod-player-row-main"><b>${esc(player.displayName || `Charakter ${num(player.slot)+1}`)}</b><small>Charakter ${num(player.slot)+1} · Level ${num(player.level)} · ${esc(player.city || "Kein Ort")}</small><small>${esc(player.job || "Kein Job")}</small></span><span class="online-mod-player-row-meta">${player.characterStatus === "hack" ? `<i class="risk">HACK</i>` : player.characterStatus === "mod" ? `<i class="mod">MOD</i>` : ""}</span></button>`).join("")}</div>
+        <div class="online-mod-character-list">${chars.map((player) => `<button type="button" class="online-mod-player-row ${selectedPlayer && selectedPlayer.uid === player.uid && selectedPlayerSlot() === num(player.slot) ? "active" : ""}" data-select-player="${esc(player.uid)}" data-select-slot="${num(player.slot)}"><span class="online-mod-avatar mini">${esc(String(player.displayName || "C").slice(0,1).toUpperCase())}</span><span class="online-mod-player-row-main"><b>${esc(player.displayName || `Charakter ${num(player.slot)+1}`)}</b><small>Charakter ${num(player.slot)+1} · Level ${num(player.level)} · ${esc(player.city || "Kein Ort")}</small><small>${esc(player.job || "Kein Job")}</small></span><span class="online-mod-player-row-meta">${player.characterStatus === "hack" ? `<i class="risk">HACK</i>` : player.characterStatus === "mod" ? `<i class="mod">MOD</i>` : ""}</span></button>`).join("")}</div>
       </section>`;
     }).join("") : `<div class="online-mod-empty-state compact"><span>⌕</span><p>Keine passenden Accounts oder Charaktere gefunden.</p></div>`;
   }
 
   async function selectPlayer(uid, slot = 0, silent = false) {
     const detail = content().querySelector("[data-player-detail]");
-    if (selectedPlayer?.uid !== uid || num(selectedPlayer?.save?.slot ?? selectedPlayer?.profile?.slot) !== num(slot)) playerActionReason = "";
+    if (selectedPlayer?.uid !== uid || selectedPlayerSlot() !== num(slot)) playerActionReason = "";
     if (!detail) return;
     if (!silent) detail.innerHTML = `<div class="online-mod-loading"><i></i><p>Spielerdaten werden geladen …</p></div>`;
     try {
@@ -541,7 +576,7 @@
     const profile = safeObject(selectedPlayer.profile);
     const privateData = safeObject(selectedPlayer.private);
     const stats = safeObject(privateData.statistics);
-    const save = safeObject(selectedPlayer.save);
+    const save = safeObject(selectedPlayer?.save);
     const trust = trustOf();
     const status = characterStatus();
     const itemCounts = safeObject(save.itemCounts || privateData.itemCounts);
@@ -769,7 +804,7 @@
 
   async function queueCommand(command, reason) {
     if (!selectedPlayer?.uid) throw new Error("Bitte zuerst einen Spieler auswählen.");
-    return callFunction("staffAction", { action: "queueCommand", targetUid: selectedPlayer.uid, slot: num(selectedPlayer.save?.slot ?? selectedPlayer.profile?.slot), command, reason });
+    return callFunction("staffAction", { action: "queueCommand", targetUid: selectedPlayer.uid, slot: selectedPlayerSlot(), command, reason });
   }
 
   async function renderTicketsPanel() {
@@ -1047,7 +1082,7 @@
     const copyButton = event.target.closest("[data-copy-id]");
     if (copyButton && !copyButton.disabled) return copyText(copyButton.dataset.copyId, copyButton);
     const useItem = event.target.closest("[data-use-item-player]");
-    if (useItem) { selectedCatalogItemId = useItem.dataset.useItemPlayer; playerTab = "inventory"; activePanel = "players"; renderPanel(); if (selectedPlayer?.uid) setTimeout(() => selectPlayer(selectedPlayer.uid, num(selectedPlayer.save?.slot ?? selectedPlayer.profile?.slot), true), 0); return; }
+    if (useItem) { selectedCatalogItemId = useItem.dataset.useItemPlayer; playerTab = "inventory"; activePanel = "players"; renderPanel(); if (selectedPlayer?.uid) setTimeout(() => selectPlayer(selectedPlayer.uid, selectedPlayerSlot(), true), 0); return; }
     const idCategoryButton = event.target.closest("[data-id-category]");
     if (idCategoryButton) { idCategory = idCategoryButton.dataset.idCategory; renderIdsPanel(); return; }
     const toggle = event.target.closest("[data-id-overlay-toggle]");
@@ -1076,13 +1111,13 @@
       const reason = String(playerActionReason || content().querySelector("[data-player-change-reason]")?.value || "").trim();
       if (reason.length < 4) { content().querySelector("[data-player-change-reason]")?.focus(); return toast("Bitte zuerst einen Grund oder Supportfall eintragen.", "error"); }
       if (!selectedPlayer?.uid || !confirm("Diesen Spieler wirklich als Hack-Charakter markieren?")) return;
-      try { await callFunction("staffAction", { action: "markHacker", targetUid: selectedPlayer.uid, reason }); toast("Spieler wurde als Hack-Charakter markiert."); await selectPlayer(selectedPlayer.uid, num(selectedPlayer.save?.slot ?? selectedPlayer.profile?.slot), true); }
+      try { await callFunction("staffAction", { action: "markHacker", targetUid: selectedPlayer.uid, reason }); toast("Spieler wurde als Hack-Charakter markiert."); await selectPlayer(selectedPlayer.uid, selectedPlayerSlot(), true); }
       catch (error) { toast(error.message, "error"); }
       return;
     }
     if (event.target.closest("[data-clear-selected-mod]")) {
       if (!selectedPlayer?.uid || !confirm("Mod-Markierung dieses Spielers wirklich entfernen?")) return;
-      try { await callFunction("staffAction", { action: "clearModMarker", targetUid: selectedPlayer.uid }); toast("Mod-Markierung wurde entfernt."); await selectPlayer(selectedPlayer.uid, num(selectedPlayer.save?.slot ?? selectedPlayer.profile?.slot), true); }
+      try { await callFunction("staffAction", { action: "clearModMarker", targetUid: selectedPlayer.uid }); toast("Mod-Markierung wurde entfernt."); await selectPlayer(selectedPlayer.uid, selectedPlayerSlot(), true); }
       catch (error) { toast(error.message, "error"); }
       return;
     }
@@ -1165,7 +1200,7 @@
       if (selectedPlayer?.trust && response.characterStatus) selectedPlayer.trust.status = response.characterStatus;
       if (selectedPlayer?.uid) {
         const uid = selectedPlayer.uid;
-        setTimeout(() => { if (selectedPlayer?.uid === uid && activePanel === "players") selectPlayer(uid, num(selectedPlayer.save?.slot ?? selectedPlayer.profile?.slot), true).catch(() => {}); }, response.appliedToCloud ? 650 : 1200);
+        setTimeout(() => { if (selectedPlayer?.uid === uid && activePanel === "players") selectPlayer(uid, selectedPlayerSlot(), true).catch(() => {}); }, response.appliedToCloud ? 650 : 1200);
       }
     } catch (error) {
       if (message) { message.textContent = error.message; message.classList.add("error"); }
