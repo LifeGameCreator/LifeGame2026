@@ -1,5 +1,5 @@
 (() => {
-  const ONLINE_VERSION = "2026-07-22-mod-actions-live-1";
+  const ONLINE_VERSION = "2026-07-23-finder-autologin-stabil-1";
   const FIRESTORE_DATABASE_ID = "gamekl";
   const AUDIT_STORAGE_PREFIX = "lifebuilder-2026-online-audit:";
   const HEARTBEAT_MS = 25000;
@@ -48,6 +48,17 @@
       ]);
       const app = appMod.getApps().length ? appMod.getApp() : appMod.initializeApp(firebasePhoneConfig);
       const auth = authMod.getAuth(app);
+      // Die Sitzung ausdrücklich dauerhaft im Browser speichern. Das stabilisiert
+      // die automatische Anmeldung besonders in Safari, installierten Web-Apps
+      // und nach normalen Seitenaktualisierungen.
+      try {
+        await authMod.setPersistence(auth, authMod.browserLocalPersistence);
+      } catch (error) {
+        console.warn("Firebase-Login konnte die lokale Persistenz nicht ausdrücklich setzen", error);
+      }
+      // Warten, bis Firebase den bereits gespeicherten Account wiederhergestellt hat.
+      // Firestore wird erst danach separat geprüft und darf den Auth-Status nicht blockieren.
+      try { await auth.authStateReady?.(); } catch {}
       const db = dbMod.getFirestore(app, FIRESTORE_DATABASE_ID);
       return { ...authMod, ...dbMod, auth, db };
     })().catch((error) => {
@@ -406,19 +417,26 @@
           }
         }
         onlineUser = credentials.user;
-        message.textContent = `Angemeldet als ${credentials.user.displayName || credentials.user.email}. Live-Datenbank wird geprüft …`;
-        await verifyOnlineDatabase(fb, credentials.user, true);
-        message.textContent = `Live verbunden als ${credentials.user.displayName || credentials.user.email}. Spielstände werden geladen …`;
+        updateOnlineStatusBadge();
         updateAuthOverlayState();
-        await hydrateCloudSlots(credentials.user);
-        startOnlineServices();
-        setTimeout(() => {
-          overlay.classList.remove("show");
-          if (authWaitResolve) authWaitResolve(credentials.user);
-          authWaitResolve = null;
-          authWaitReject = null;
-          authWaitPromise = null;
-        }, 350);
+        // Anmeldung sofort bestätigen. Die Live-Datenbank wird danach separat geprüft.
+        if (authWaitResolve) authWaitResolve(credentials.user);
+        authWaitResolve = null;
+        authWaitReject = null;
+        authWaitPromise = null;
+        message.textContent = `Angemeldet als ${credentials.user.displayName || credentials.user.email}. Live-Daten werden im Hintergrund verbunden …`;
+        setTimeout(() => overlay.classList.remove("show"), 180);
+        void (async () => {
+          try {
+            await verifyOnlineDatabase(fb, credentials.user, true);
+            try { await hydrateCloudSlots(credentials.user); } catch (error) { console.warn("Cloud-Spielstände folgen später", error); }
+            startOnlineServices();
+          } catch (error) {
+            databaseConnectionError = databaseErrorText(error);
+            updateOnlineStatusBadge();
+            updateAuthOverlayState();
+          }
+        })();
       } catch (error) {
         if (newlyCreatedUser && fb?.auth?.currentUser?.uid === newlyCreatedUser.uid) {
           await fb.signOut(fb.auth).catch(() => {});
@@ -475,15 +493,24 @@
     const fb = await loadOnlineFirebase();
     const activeAuth = auth || fb.auth;
     if (activeAuth.currentUser) {
-      // Eine erfolgreiche Firebase-Authentifizierung darf nicht durch eine
-      // vorübergehend fehlgeschlagene Firestore-Profilmigration blockiert werden.
+      // Firebase Authentication ist die Anmeldung. Firestore-Prüfung, Profilabgleich
+      // und Cloud-Spielstände laufen danach im Hintergrund und dürfen den Start
+      // weder blockieren noch den Spieler erneut zum Login schicken.
       onlineUser = activeAuth.currentUser;
-      if (hostedOnlineMode) await verifyOnlineDatabase(fb, onlineUser);
-      try {
-        await ensureOnlineIdentity(fb, activeAuth.currentUser);
-      } catch (error) {
-        console.warn("Online-Profil konnte nach der Anmeldung noch nicht synchronisiert werden", error);
-      }
+      updateOnlineStatusBadge();
+      updateAuthOverlayState();
+      void (async () => {
+        try {
+          if (hostedOnlineMode) await verifyOnlineDatabase(fb, onlineUser);
+          try { await ensureOnlineIdentity(fb, onlineUser); } catch (error) { console.warn("Online-Profil folgt später", error); }
+          try { await hydrateCloudSlots(onlineUser); } catch (error) { console.warn("Cloud-Spielstände folgen später", error); }
+          startOnlineServices();
+        } catch (error) {
+          databaseConnectionError = databaseErrorText(error);
+          updateOnlineStatusBadge();
+          updateAuthOverlayState();
+        }
+      })();
       return onlineUser;
     }
     if (!authWaitPromise) {
@@ -1167,7 +1194,7 @@
   async function initializeAuthState() {
     try {
       const fb = await loadOnlineFirebase();
-      fb.onAuthStateChanged(fb.auth, async (user) => {
+      fb.onAuthStateChanged(fb.auth, (user) => {
         if (!user) {
           onlineUser = null;
           cloudSaveReadyUid = "";
@@ -1179,31 +1206,40 @@
           stopOnlineServices();
           return;
         }
-        if (interactiveAuthInProgress) return;
-        // Firebase Auth entscheidet, ob der Spieler angemeldet ist. Firestore-
-        // Profil- oder Regelprobleme dürfen den gültigen Login nicht rückgängig machen.
+
+        // Der Account ist ab hier gültig angemeldet. Dies wird sofort übernommen,
+        // auch wenn Firestore, Finder.KL oder ein Cloud-Spielstand kurz nicht lädt.
         onlineUser = user;
         updateOnlineStatusBadge();
         updateAuthOverlayState();
-        try {
-          await verifyOnlineDatabase(fb, user, true);
+        document.querySelector("[data-online-auth-overlay]")?.classList.remove("show");
+        if (authWaitResolve) authWaitResolve(user);
+        authWaitResolve = null;
+        authWaitReject = null;
+        authWaitPromise = null;
+
+        if (interactiveAuthInProgress) return;
+        void (async () => {
+          try {
+            await verifyOnlineDatabase(fb, user, true);
+          } catch (error) {
+            databaseConnectionError = databaseErrorText(error);
+            updateOnlineStatusBadge();
+            updateAuthOverlayState();
+            return;
+          }
           try {
             await ensureOnlineIdentity(fb, user);
           } catch (error) {
             console.warn("Online-Identität wird später erneut synchronisiert", error);
           }
-          await hydrateCloudSlots(user);
+          try {
+            await hydrateCloudSlots(user);
+          } catch (error) {
+            console.warn("Cloud-Spielstände werden später erneut geladen", error);
+          }
           startOnlineServices();
-          if (authWaitResolve) authWaitResolve(onlineUser);
-          authWaitResolve = null;
-          authWaitReject = null;
-          authWaitPromise = null;
-        } catch (error) {
-          databaseConnectionError = databaseErrorText(error);
-          updateOnlineStatusBadge();
-          updateAuthOverlayState();
-          if (hostedOnlineMode) showAuthOverlay();
-        }
+        })();
       });
     } catch (error) {
       console.warn("Firebase Auth konnte nicht geladen werden", error);
