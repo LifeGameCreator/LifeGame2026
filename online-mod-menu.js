@@ -1,10 +1,12 @@
 (() => {
   "use strict";
 
-  const VERSION = "2026-07-22-online-modmenu-actions-2";
+  const VERSION = "2026-07-23-online-modmenu-pro-1";
   const DB_ID = "gamekl";
   const REGION = "europe-west3";
   const SESSION_KEY = "lifebuilder-2026-online-mod-session";
+  const ITEM_ID_DISPLAY_KEY = "lifebuilder-2026-item-id-display";
+
   const ROLE_LABELS = {
     test_member: "Testmitglied",
     test_supporter: "Test-Supporter",
@@ -25,22 +27,83 @@
     owner: ["*"]
   };
 
+  const PANEL_DEFS = [
+    { id: "home", label: "Übersicht", short: "Start", icon: "⌂", permission: null },
+    { id: "players", label: "Online-Player", short: "Player", icon: "👥", permission: "players.read" },
+    { id: "tickets", label: "Support-Tickets", short: "Tickets", icon: "🎫", permission: "tickets.work" },
+    { id: "events", label: "Event-Zentrale", short: "Event", icon: "🏆", permission: "events.write" },
+    { id: "ids", label: "Item-IDs", short: "IDs", icon: "#", permission: "ids.read" },
+    { id: "staff", label: "Teamverwaltung", short: "Team", icon: "🛡", permission: "staff.manage" },
+    { id: "owner", label: "Owner-Codes", short: "Owner", icon: "◆", ownerOnly: true }
+  ];
+
+  const PLAYER_TABS = [
+    { id: "overview", label: "Übersicht", icon: "⌂" },
+    { id: "character", label: "Charakter", icon: "👤", permission: "player.write" },
+    { id: "needs", label: "Status", icon: "♥", permission: "player.write" },
+    { id: "money", label: "Geld", icon: "€", permission: "money.write" },
+    { id: "inventory", label: "Inventar", icon: "📦", permission: "items.write" },
+    { id: "phone", label: "Handy", icon: "📱", permission: "smartphone.write" },
+    { id: "workshop", label: "Arbeit & Shop", icon: "🧰", any: ["work.write", "shop.write"] },
+    { id: "worldgames", label: "Welt & Games", icon: "🌍", any: ["world.write", "games.write"] },
+    { id: "moderation", label: "Moderation", icon: "⚠", any: ["moderation.kick", "moderation.timeout"] }
+  ];
+
+  const CATEGORY_ORDER = [
+    "Wohnung & Immobilien", "Möbel & Haushalt", "Essen & Trinken", "Kleidung", "Technik & Handy",
+    "Fahrzeuge", "Rucksäcke", "Waffen", "Schwarzmarkt", "Dokumente & SIM", "Sonstiges"
+  ];
+  const CATEGORY_ICONS = {
+    "Wohnung & Immobilien": "⌂", "Möbel & Haushalt": "🛋", "Essen & Trinken": "🍔", "Kleidung": "👕",
+    "Technik & Handy": "📱", "Fahrzeuge": "🚗", "Rucksäcke": "🎒", "Waffen": "⚔",
+    "Schwarzmarkt": "☠", "Dokumente & SIM": "🪪", "Sonstiges": "📦"
+  };
+
   let runtimePromise = null;
   let currentUser = null;
   let roleData = null;
   let roleUnsubscribe = null;
   let overlay = null;
   let activePanel = "home";
-  let selectedPlayer = null;
+  let originalBodyOverflow = "";
+
   let players = [];
+  let selectedPlayer = null;
+  let playerTab = "overview";
+  let playerSearch = "";
+  let playerFilter = "all";
+  let playerSort = "online";
+  let selectedCatalogItemId = "";
+  let playerItemSearch = "";
+  let playerItemCategory = "all";
+
   let tickets = [];
   let selectedTicket = null;
-  let originalBodyOverflow = "";
+  let ticketArchive = false;
+  let ticketSearch = "";
+  let ticketStatus = "all";
+
+  let itemRows = [];
+  let idSearch = "";
+  let idCategory = "all";
+  let eventItemSearch = "";
 
   const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
   const num = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, num(value, min)));
   const euro = (value) => `${Math.round(num(value)).toLocaleString("de-DE")} €`;
+  const compactNumber = (value) => new Intl.NumberFormat("de-DE", { notation: "compact", maximumFractionDigits: 1 }).format(num(value));
   const dateTime = (value) => value ? new Date(num(value)).toLocaleString("de-DE") : "–";
+  const relativeTime = (value) => {
+    const ms = Date.now() - num(value);
+    if (!value) return "nie";
+    if (ms < 60000) return "gerade eben";
+    if (ms < 3600000) return `vor ${Math.max(1, Math.round(ms / 60000))} Min.`;
+    if (ms < 86400000) return `vor ${Math.max(1, Math.round(ms / 3600000))} Std.`;
+    return `vor ${Math.max(1, Math.round(ms / 86400000))} Tagen`;
+  };
+  const safeArray = (value) => Array.isArray(value) ? value : [];
+  const safeObject = (value) => value && typeof value === "object" && !Array.isArray(value) ? value : {};
 
   async function runtime() {
     if (runtimePromise) return runtimePromise;
@@ -81,18 +144,32 @@
     if (Array.isArray(roleData?.permissions)) return roleData.permissions;
     return ROLE_PERMISSIONS[roleData?.role] || [];
   }
-
   function has(permission) {
     const list = permissions();
     return list.includes("*") || list.includes(permission);
   }
-
+  function hasAny(list = []) {
+    return list.some((permission) => has(permission));
+  }
   function sessionActive() {
     return !!roleData?.active && num(roleData.activeSessionExpiresAtMs) > Date.now();
   }
-
   function roleLabel() {
     return roleData?.roleLabel || ROLE_LABELS[roleData?.role] || "Teamrolle";
+  }
+  function availablePanels() {
+    return PANEL_DEFS.filter((panel) => {
+      if (panel.ownerOnly) return roleData?.role === "owner";
+      return !panel.permission || has(panel.permission);
+    });
+  }
+  function availablePlayerTabs() {
+    return PLAYER_TABS.filter((tab) => {
+      if (tab.id === "overview") return true;
+      if (tab.permission) return has(tab.permission);
+      if (tab.any) return hasAny(tab.any);
+      return true;
+    });
   }
 
   function saveBrowserSession() {
@@ -131,12 +208,12 @@
     if (roleData?.active) {
       card.querySelector("[data-online-mod-settings-role]").textContent = `${roleLabel()} · Mod-Menü`;
       card.querySelector("[data-online-mod-settings-state]").textContent = sessionActive()
-        ? `Auf diesem Account online freigeschaltet · Sitzung bis ${dateTime(roleData.activeSessionExpiresAtMs)}`
-        : "Rolle ist auf diesem Account gespeichert. Sitzungscode zur erneuten Freigabe eingeben.";
+        ? "Online freigeschaltet · auf PC und Handy verfügbar"
+        : "Rolle gespeichert · Sitzungscode erneut eingeben";
       action.textContent = "Öffnen";
     } else {
       card.querySelector("[data-online-mod-settings-role]").textContent = "Team-/Mod-Code aktivieren";
-      card.querySelector("[data-online-mod-settings-state]").textContent = "Nur mit einem einmaligen Code vom Owner wird das Mod-Menü für diesen Account freigeschaltet.";
+      card.querySelector("[data-online-mod-settings-state]").textContent = "Einmaligen Code vom Owner eingeben.";
       action.textContent = "Code eingeben";
     }
   }
@@ -161,20 +238,47 @@
     overlay.innerHTML = `
       <section class="online-mod-shell" role="dialog" aria-modal="true" aria-label="LifeBuilder Online Mod-Menü">
         <header class="online-mod-header">
-          <div><small>LifeBuilder Online</small><h2>Mod-Menü</h2><p data-mod-role-line></p></div>
-          <button type="button" class="online-mod-close" data-mod-close aria-label="Schließen">×</button>
+          <div class="online-mod-brand"><span>KL</span><div><small>LIVE ADMINISTRATION</small><h2>Online Mod-Menü</h2></div></div>
+          <div class="online-mod-session-pill"><i></i><span data-mod-role-line></span></div>
+          <div class="online-mod-head-actions">
+            <button type="button" data-mod-refresh-role title="Rolle und Sitzung neu laden">↻</button>
+            <button type="button" class="online-mod-close" data-mod-close aria-label="Schließen">×</button>
+          </div>
         </header>
-        <nav class="online-mod-nav" data-mod-nav></nav>
-        <main class="online-mod-content" data-mod-content></main>
+        <div class="online-mod-body">
+          <aside class="online-mod-sidebar">
+            <div class="online-mod-sidebar-title"><small>WERKZEUGE</small><b>Administration</b></div>
+            <nav class="online-mod-nav" data-mod-nav></nav>
+            <div class="online-mod-sidebar-footer"><span class="online-mod-db-dot"></span><div><b>Firebase live</b><small>Datenbank ${DB_ID}</small></div></div>
+          </aside>
+          <main class="online-mod-content" data-mod-content></main>
+        </div>
+        <div class="online-mod-toast-holder" data-mod-toasts></div>
       </section>`;
     document.body.appendChild(overlay);
     overlay.querySelector("[data-mod-close]").addEventListener("click", closeModMenu);
+    overlay.addEventListener("click", handleClick);
+    overlay.addEventListener("submit", handleSubmit);
+    overlay.addEventListener("input", handleInput);
+    overlay.addEventListener("change", handleChange);
     overlay.addEventListener("click", (event) => {
       if (event.target === overlay) closeModMenu();
     });
-    overlay.addEventListener("click", handleClick);
-    overlay.addEventListener("submit", handleSubmit);
     return overlay;
+  }
+
+  function toast(message, type = "ok") {
+    const host = ensureOverlay().querySelector("[data-mod-toasts]");
+    if (!host) return;
+    const node = document.createElement("div");
+    node.className = `online-mod-toast ${type === "error" ? "danger" : ""}`;
+    node.innerHTML = `<b>${type === "error" ? "!" : "✓"}</b><span>${esc(message)}</span>`;
+    host.appendChild(node);
+    requestAnimationFrame(() => node.classList.add("show"));
+    setTimeout(() => {
+      node.classList.remove("show");
+      setTimeout(() => node.remove(), 250);
+    }, 3200);
   }
 
   function lockPage() {
@@ -182,7 +286,6 @@
     document.body.style.overflow = "hidden";
     document.documentElement.classList.add("online-mod-open");
   }
-
   function unlockPage() {
     document.body.style.overflow = originalBodyOverflow;
     document.documentElement.classList.remove("online-mod-open");
@@ -198,7 +301,7 @@
       return;
     }
     saveBrowserSession();
-    activePanel = "home";
+    if (!availablePanels().some((panel) => panel.id === activePanel)) activePanel = "home";
     renderNavigation();
     renderPanel();
   }
@@ -209,38 +312,36 @@
   }
 
   function renderSessionLogin(message = "") {
-    const content = ensureOverlay().querySelector("[data-mod-content]");
-    ensureOverlay().querySelector("[data-mod-nav]").innerHTML = "";
-    content.innerHTML = `
+    const target = content();
+    renderNavigation(true);
+    target.innerHTML = `
       <section class="online-mod-login-card">
-        <span>🔐</span><h3>Mod-Sitzung öffnen</h3>
-        <p>Deine Rolle <b>${esc(roleLabel())}</b> ist mit diesem Firebase-Account verbunden. Gib den persönlichen Sitzungscode ein.</p>
+        <span>🔐</span><small>${esc(roleLabel())}</small><h2>Mod-Sitzung öffnen</h2>
+        <p>Gib deinen persönlichen Sitzungscode ein. Die Rolle selbst bleibt mit deinem Firebase-Account verbunden.</p>
         <form data-mod-session-form>
-          <label>Sitzungscode<input name="pin" type="password" autocomplete="one-time-code" placeholder="KL-XXXXX-XXXXX-XXXXX" required></label>
-          <button class="primary-button" type="submit">Sitzung öffnen</button>
+          <label>Sitzungscode<input name="pin" required autocomplete="off" placeholder="KL-…"></label>
+          <button class="online-mod-primary" type="submit">Sitzung öffnen</button>
           <p class="online-mod-message ${message ? "error" : ""}">${esc(message)}</p>
         </form>
       </section>`;
   }
 
-  function navigationItems() {
-    const items = [{ id: "home", label: "Übersicht", icon: "⌂" }];
-    if (has("players.read")) items.push({ id: "players", label: "Online-Player", icon: "👥" });
-    if (has("tickets.work")) items.push({ id: "tickets", label: "Tickets", icon: "🎫" });
-    if (has("events.write")) items.push({ id: "events", label: "Event", icon: "🏆" });
-    if (has("ids.read")) items.push({ id: "ids", label: "Item-IDs", icon: "#" });
-    if (has("staff.manage")) items.push({ id: "staff", label: "Team", icon: "🛡" });
-    if (roleData?.role === "owner") items.push({ id: "owner", label: "Owner", icon: "◆" });
-    return items;
+  function renderNavigation(disabled = false) {
+    const nav = ensureOverlay().querySelector("[data-mod-nav]");
+    nav.innerHTML = availablePanels().map((item) => `
+      <button type="button" class="${item.id === activePanel ? "active" : ""}" data-mod-panel="${item.id}" ${disabled ? "disabled" : ""}>
+        <span class="online-mod-nav-icon">${item.icon}</span><span class="online-mod-nav-label"><b>${esc(item.label)}</b><small>${esc(item.short)}</small></span>
+      </button>`).join("");
   }
 
-  function renderNavigation() {
-    const nav = ensureOverlay().querySelector("[data-mod-nav]");
-    nav.innerHTML = navigationItems().map((item) => `<button type="button" class="${item.id === activePanel ? "active" : ""}" data-mod-panel="${item.id}"><span>${item.icon}</span>${esc(item.label)}</button>`).join("");
+  function content() {
+    return ensureOverlay().querySelector("[data-mod-content]");
   }
 
   function renderPanel() {
     renderNavigation();
+    const target = content();
+    target.scrollTop = 0;
     if (activePanel === "players") return renderPlayersPanel();
     if (activePanel === "tickets") return renderTicketsPanel();
     if (activePanel === "events") return renderEventsPanel();
@@ -250,57 +351,98 @@
     return renderHomePanel();
   }
 
-  function content() {
-    return ensureOverlay().querySelector("[data-mod-content]");
+  function pageHead(kicker, title, text, actions = "") {
+    return `<header class="online-mod-page-head"><div><small>${esc(kicker)}</small><h1>${esc(title)}</h1><p>${esc(text)}</p></div>${actions ? `<div class="online-mod-page-actions">${actions}</div>` : ""}</header>`;
   }
 
   function renderHomePanel() {
     const expires = num(roleData?.activeSessionExpiresAtMs);
+    const quick = availablePanels().filter((panel) => panel.id !== "home").map((panel) => `
+      <button type="button" class="online-mod-launch-card" data-mod-panel="${panel.id}">
+        <span>${panel.icon}</span><div><b>${esc(panel.label)}</b><small>${panel.id === "players" ? "Spieler prüfen und bearbeiten" : panel.id === "tickets" ? "Anfragen übernehmen und lösen" : panel.id === "ids" ? "Suchen, kopieren und vergeben" : "Bereich öffnen"}</small></div><em>›</em>
+      </button>`).join("");
     content().innerHTML = `
-      <section class="online-mod-grid online-mod-dashboard">
-        <article class="online-mod-card highlight"><small>AKTIVE ROLLE</small><h3>${esc(roleLabel())}</h3><p>Diese Freigabe ist mit deinem Firebase-Account verbunden und funktioniert deshalb auch auf deinem Handy.</p></article>
-        <article class="online-mod-card"><small>SITZUNG</small><h3>${expires > 4000000000000 ? "Dauerhaft" : dateTime(expires)}</h3><p>${permissions().length} Rechte geladen.</p></article>
-        <article class="online-mod-card"><small>DATENBANK</small><h3>${DB_ID}</h3><p>Online-Spieler, Tickets, Events und Rollen werden live aus Firebase geladen.</p></article>
-        <article class="online-mod-card"><small>GERÄT</small><h3>${matchMedia("(max-width:720px)").matches ? "Handyansicht" : "PC-Ansicht"}</h3><p>Das Menü passt sich automatisch an Hoch- und Querformat an.</p></article>
+      ${pageHead("ONLINE-MOD-ZENTRALE", "Übersicht", "Schneller Zugriff auf Spieler, Support, Events und Item-Katalog.")}
+      <section class="online-mod-metric-grid">
+        <article><small>AKTIVE ROLLE</small><b>${esc(roleLabel())}</b><span>${permissions().length} Rechte geladen</span></article>
+        <article><small>SITZUNG</small><b>${expires > 4000000000000 ? "Dauerhaft" : relativeTime(expires)}</b><span>${expires > 4000000000000 ? "Owner-Zugriff" : `bis ${dateTime(expires)}`}</span></article>
+        <article><small>DATENBANK</small><b>${DB_ID}</b><span>Cloud Functions online</span></article>
+        <article><small>GERÄT</small><b>${matchMedia("(max-width:760px)").matches ? "Handy" : "PC"}</b><span>Ansicht automatisch angepasst</span></article>
       </section>
-      <section class="online-mod-card">
-        <h3>Freigeschaltete Bereiche</h3>
-        <div class="online-mod-chip-list">${permissions().map((permission) => `<span>${esc(permission)}</span>`).join("")}</div>
-        <div class="online-mod-actions"><button type="button" data-mod-refresh-role>Rolle neu laden</button><button type="button" class="danger" data-mod-close-session>Sitzung schließen</button></div>
-        <p class="online-mod-message" data-mod-home-message></p>
+      <section class="online-mod-home-grid">
+        <article class="online-mod-card"><div class="online-mod-card-title"><span>⚡</span><div><small>SCHNELLSTART</small><h3>Werkzeuge öffnen</h3></div></div><div class="online-mod-launch-grid">${quick}</div></article>
+        <article class="online-mod-card"><div class="online-mod-card-title"><span>🛡</span><div><small>SITZUNG</small><h3>Sicherheit & Status</h3></div></div><p>Alle Aktionen werden serverseitig geprüft und im Firebase-Audit protokolliert.</p><div class="online-mod-chip-list">${permissions().slice(0, 18).map((permission) => `<span>${esc(permission)}</span>`).join("")}${permissions().length > 18 ? `<span>+${permissions().length - 18}</span>` : ""}</div><div class="online-mod-actions"><button type="button" data-mod-refresh-role>Rolle neu laden</button><button type="button" class="danger" data-mod-close-session>Sitzung schließen</button></div><p class="online-mod-message" data-mod-home-message></p></article>
       </section>`;
   }
 
   async function renderPlayersPanel() {
-    content().innerHTML = `<section class="online-mod-card"><div class="online-mod-card-head"><div><small>LIVE-DATEN</small><h3>Online-Player</h3></div><button type="button" data-mod-refresh-players>↻</button></div><input class="online-mod-search" data-player-search placeholder="Spielername, UID, Stadt oder Job"><div class="online-mod-player-layout"><div class="online-mod-player-list" data-player-list><p>Lade Spieler …</p></div><div class="online-mod-player-detail" data-player-detail><div class="online-mod-empty">Spieler auswählen</div></div></div></section>`;
+    buildCatalogRows();
+    content().innerHTML = `
+      ${pageHead("LIVE-SPIELER", "Online-Player", "Spieler auswählen, Werte prüfen und Änderungen direkt in den Cloud-Spielstand schreiben.", `<button type="button" data-mod-refresh-players>↻ Aktualisieren</button>`)}
+      <section class="online-mod-player-workspace">
+        <aside class="online-mod-player-browser">
+          <div class="online-mod-browser-head"><b>Spielerliste</b><span data-player-count>0</span></div>
+          <label class="online-mod-search-box"><span>⌕</span><input data-player-search value="${esc(playerSearch)}" placeholder="Name, UID, Stadt oder Job"></label>
+          <div class="online-mod-segmented" data-player-filter>
+            <button type="button" data-player-filter-value="all" class="${playerFilter === "all" ? "active" : ""}">Alle</button>
+            <button type="button" data-player-filter-value="online" class="${playerFilter === "online" ? "active" : ""}">Online</button>
+            <button type="button" data-player-filter-value="risk" class="${playerFilter === "risk" ? "active" : ""}">Auffällig</button>
+          </div>
+          <label class="online-mod-mini-select">Sortierung<select data-player-sort><option value="online" ${playerSort === "online" ? "selected" : ""}>Online zuerst</option><option value="level" ${playerSort === "level" ? "selected" : ""}>Höchstes Level</option><option value="recent" ${playerSort === "recent" ? "selected" : ""}>Zuletzt aktiv</option><option value="name" ${playerSort === "name" ? "selected" : ""}>Name A–Z</option></select></label>
+          <div class="online-mod-player-list" data-player-list><p>Lade Spieler …</p></div>
+        </aside>
+        <div class="online-mod-player-detail" data-player-detail><div class="online-mod-empty-state"><span>👥</span><h3>Spieler auswählen</h3><p>Links einen Spieler anklicken, um Charakter, Geld, Inventar und weitere Bereiche zu öffnen.</p></div></div>
+      </section>`;
     try {
       const response = await callFunction("listPlayers", {});
       players = Array.isArray(response.players) ? response.players : [];
       renderPlayerList();
+      if (selectedPlayer?.uid && players.some((player) => player.uid === selectedPlayer.uid)) await selectPlayer(selectedPlayer.uid, true);
     } catch (error) {
-      content().querySelector("[data-player-list]").innerHTML = `<p class="online-mod-message error">${esc(error.message)}</p>`;
+      const list = content().querySelector("[data-player-list]");
+      if (list) list.innerHTML = `<p class="online-mod-message error">${esc(error.message)}</p>`;
     }
   }
 
-  function renderPlayerList(query = "") {
-    const list = content().querySelector("[data-player-list]");
-    if (!list) return;
-    const filter = String(query || "").trim().toLowerCase();
-    const shown = players.filter((player) => !filter || [player.displayName, player.uid, player.city, player.job].some((value) => String(value || "").toLowerCase().includes(filter)));
-    list.innerHTML = shown.length ? shown.map((player) => `
-      <button type="button" class="online-mod-player-row ${selectedPlayer?.uid === player.uid ? "active" : ""}" data-select-player="${esc(player.uid)}">
-        <span class="online-dot ${player.online ? "online" : ""}"></span><span><b>${esc(player.displayName || "Spieler")}</b><small>Lvl ${num(player.level)} · ${esc(player.city || "–")} · ${esc(player.job || "–")}</small></span><em>${player.online ? "online" : dateTime(player.lastSeenAtMs)}</em>
-      </button>`).join("") : `<p class="online-mod-empty">Keine Spieler gefunden.</p>`;
+  function filteredPlayers() {
+    const needle = playerSearch.trim().toLowerCase();
+    let rows = players.filter((player) => {
+      if (playerFilter === "online" && !player.online) return false;
+      if (playerFilter === "risk" && !(player.suspicious || num(player.riskScore) >= 50)) return false;
+      return !needle || [player.displayName, player.uid, player.city, player.job].some((value) => String(value || "").toLowerCase().includes(needle));
+    });
+    rows = [...rows].sort((a, b) => {
+      if (playerSort === "level") return num(b.level) - num(a.level) || String(a.displayName).localeCompare(String(b.displayName), "de");
+      if (playerSort === "recent") return num(b.lastSeenAtMs) - num(a.lastSeenAtMs);
+      if (playerSort === "name") return String(a.displayName || "").localeCompare(String(b.displayName || ""), "de");
+      return Number(b.online) - Number(a.online) || Number(b.suspicious) - Number(a.suspicious) || num(b.lastSeenAtMs) - num(a.lastSeenAtMs);
+    });
+    return rows;
   }
 
-  async function selectPlayer(uid) {
+  function renderPlayerList() {
+    const list = content().querySelector("[data-player-list]");
+    const count = content().querySelector("[data-player-count]");
+    if (!list) return;
+    const shown = filteredPlayers();
+    if (count) count.textContent = `${shown.length}/${players.length}`;
+    list.innerHTML = shown.length ? shown.map((player) => `
+      <button type="button" class="online-mod-player-row ${selectedPlayer?.uid === player.uid ? "active" : ""}" data-select-player="${esc(player.uid)}">
+        <span class="online-dot ${player.online ? "online" : ""}"></span>
+        <span class="online-mod-player-row-main"><b>${esc(player.displayName || "Spieler")}</b><small>Level ${num(player.level)} · ${esc(player.city || "Kein Ort")}</small><small>${esc(player.job || "Kein Job")}</small></span>
+        <span class="online-mod-player-row-meta">${player.suspicious ? `<i class="risk">${num(player.riskScore)}%</i>` : ""}<em>${player.online ? "LIVE" : relativeTime(player.lastSeenAtMs)}</em></span>
+      </button>`).join("") : `<div class="online-mod-empty-state compact"><span>⌕</span><p>Keine passenden Spieler gefunden.</p></div>`;
+  }
+
+  async function selectPlayer(uid, silent = false) {
     const detail = content().querySelector("[data-player-detail]");
     if (!detail) return;
-    detail.innerHTML = `<p>Spielerdaten werden geladen …</p>`;
+    if (!silent) detail.innerHTML = `<div class="online-mod-loading"><i></i><p>Spielerdaten werden geladen …</p></div>`;
     try {
       const response = await callFunction("getPlayerDetails", { targetUid: uid });
       selectedPlayer = response.player || null;
-      renderPlayerList(content().querySelector("[data-player-search]")?.value || "");
+      if (!availablePlayerTabs().some((tab) => tab.id === playerTab)) playerTab = "overview";
+      renderPlayerList();
       renderPlayerDetail();
     } catch (error) {
       detail.innerHTML = `<p class="online-mod-message error">${esc(error.message)}</p>`;
@@ -313,92 +455,354 @@
     return target ?? fallback;
   }
 
+  function playerName() {
+    return selectedPlayer?.profile?.displayName || selectedPlayer?.account?.displayName || selectedPlayer?.account?.email || "Spieler";
+  }
+
   function renderPlayerDetail() {
     const detail = content().querySelector("[data-player-detail]");
     if (!detail || !selectedPlayer) return;
-    const profile = selectedPlayer.profile || {};
-    const privateData = selectedPlayer.private || {};
-    const audit = privateData.audit || {};
+    const profile = safeObject(selectedPlayer.profile);
+    const privateData = safeObject(selectedPlayer.private);
+    const audit = safeObject(privateData.audit);
+    const tabs = availablePlayerTabs();
     detail.innerHTML = `
-      <section class="online-mod-player-summary">
-        <div><small>AUSGEWÄHLT</small><h3>${esc(profile.displayName || selectedPlayer.account?.displayName || "Spieler")}</h3><p class="uid">${esc(selectedPlayer.uid)}</p></div>
-        <span class="online-mod-risk ${audit.suspicious ? "danger" : "ok"}">${audit.suspicious ? `Verdacht ${num(audit.riskScore)}%` : "Unauffällig"}</span>
+      <section class="online-mod-player-hero">
+        <div class="online-mod-avatar">${esc(playerName().slice(0, 1).toUpperCase())}</div>
+        <div class="online-mod-player-identity"><small>AUSGEWÄHLTER SPIELER</small><h2>${esc(playerName())}</h2><p>${profile.online ? "Online" : relativeTime(profile.lastSeenAtMs)} · Slot ${num(profile.slot) + 1}</p><code>${esc(selectedPlayer.uid)}</code></div>
+        <div class="online-mod-player-hero-actions"><span class="online-mod-risk ${audit.suspicious ? "danger" : "ok"}">${audit.suspicious ? `Verdacht ${num(audit.riskScore)}%` : "Unauffällig"}</span><button type="button" data-copy-id="${esc(selectedPlayer.uid)}">UID kopieren</button></div>
       </section>
-      <div class="online-mod-stat-grid">
-        <span><small>Level</small><b>${num(privateData.level ?? profile.level)}</b></span><span><small>EP</small><b>${num(privateData.xp)}</b></span><span><small>Konto</small><b>${euro(privateData.bank)}</b></span><span><small>Bargeld</small><b>${euro(privateData.cash)}</b></span><span><small>Items</small><b>${num(privateData.itemCount)}</b></span><span><small>Immobilien</small><b>${Array.isArray(privateData.properties) ? privateData.properties.length : 0}</b></span>
-      </div>
-      ${audit.reasons?.length ? `<section class="online-mod-warning"><b>Cheat-Prüfung</b>${audit.reasons.map((reason) => `<p>${esc(reason)}</p>`).join("")}</section>` : ""}
-      ${playerToolsHtml()}
-      <p class="online-mod-message" data-player-action-message></p>`;
+      <nav class="online-mod-player-tabs">${tabs.map((tab) => `<button type="button" class="${playerTab === tab.id ? "active" : ""}" data-player-tab="${tab.id}"><span>${tab.icon}</span>${esc(tab.label)}</button>`).join("")}</nav>
+      <div class="online-mod-player-tab-content" data-player-tab-content>${playerTabHtml(playerTab)}</div>
+      <div class="online-mod-command-status"><span></span><p class="online-mod-message" data-player-action-message></p></div>`;
   }
 
-  function playerToolsHtml() {
-    const blocks = [];
-    if (has("character.write") || has("player.write")) blocks.push(`
-      <details class="online-mod-tool" open><summary>Charakter & Status</summary>
-        <form data-command-form="setCharacter" class="online-mod-form-grid"><label>Level<input name="level" type="number" min="0" value="${num(valueOf("private.level", valueOf("profile.level")))}"></label><label>EP<input name="xp" type="number" min="0" value="${num(valueOf("private.xp"))}"></label><label>Job<input name="job" value="${esc(valueOf("profile.job", "Kein Job"))}"></label><button type="submit">Charakter senden</button></form>
-        <form data-command-form="setNeeds" class="online-mod-form-grid"><label>Hunger<input name="hunger" type="number" min="0" max="100" value="${num(valueOf("private.hunger"))}"></label><label>Durst<input name="thirst" type="number" min="0" max="100" value="${num(valueOf("private.thirst"))}"></label><label>Energie<input name="energy" type="number" min="0" max="100" value="${num(valueOf("private.energy"))}"></label><label>Stimmung<input name="mood" type="number" min="0" max="100" value="${num(valueOf("private.mood"))}"></label><label>Leben<input name="health" type="number" min="0" max="100" value="${num(valueOf("private.health"))}"></label><button type="submit">Status senden</button></form>
-      </details>`);
-    if (has("items.write")) blocks.push(`
-      <details class="online-mod-tool"><summary>Items geben / nehmen</summary><form data-item-command class="online-mod-form-grid"><label>Item-ID<input name="itemId" required placeholder="itm-..."></label><label>Anzahl<input name="amount" type="number" min="1" max="999" value="1"></label><button type="submit" name="kind" value="giveItem">Geben</button><button type="submit" name="kind" value="removeItem">Nehmen</button></form></details>`);
-    if (has("money.write")) blocks.push(`
-      <details class="online-mod-tool"><summary>Geld</summary><form data-money-command class="online-mod-form-grid"><label>Ziel<select name="target"><option value="bank">Konto</option><option value="cash">Bargeld</option><option value="phoneCredit">Handyguthaben</option><option value="dirtyMoney">Schwarzgeld</option></select></label><label>Betrag<input name="value" type="number" min="0" value="1000"></label><button type="submit" name="kind" value="addMoney">Geben</button><button type="submit" name="kind" value="removeMoney">Nehmen</button><button type="submit" name="kind" value="setMoney">Setzen</button></form></details>`);
-    if (has("smartphone.write")) blocks.push(`
-      <details class="online-mod-tool"><summary>Smartphone & Apps</summary><form data-command-form="setPhone" class="online-mod-form-grid"><label>Guthaben<input name="phoneCredit" type="number" min="0" value="${num(valueOf("private.phoneCredit"))}"></label><label>Akku<input name="battery" type="number" min="0" max="100" value="100"></label><label>SIM-Tarif<input name="simPlan" value="Unlimited SIM"></label><label class="check"><input name="installApps" type="checkbox" value="finder" checked> Finder.KL</label><label class="check"><input name="installApps" type="checkbox" value="finster" checked> finster.kl</label><label class="check"><input name="installApps" type="checkbox" value="event" checked> Event</label><button type="submit">Smartphone senden</button></form></details>`);
-    if (has("work.write")) blocks.push(`
-      <details class="online-mod-tool"><summary>Arbeit & Logistik</summary><form data-command-form="setWork" class="online-mod-form-grid"><label>Arbeits-Skillpunkte<input name="workSkillPoints" type="number" min="0" value="20"></label><label>Mitarbeiter<input name="logisticsEmployees" type="number" min="0" max="20" value="20"></label><label>Logistik-Skillpunkte<input name="logisticsSkillPoints" type="number" min="0" value="100"></label><label class="check"><input name="resetWorkedDay" type="checkbox"> Arbeit heute freigeben</label><button type="submit">Arbeit senden</button></form></details>`);
-    if (has("shop.write")) blocks.push(`
-      <details class="online-mod-tool"><summary>Eigener Shop</summary><form data-command-form="setShop" class="online-mod-form-grid"><label>Gefahr<input name="danger" type="number" min="0" max="100" value="${num(valueOf("private.shop.danger"))}"></label><label>Ruf<input name="reputation" type="number" min="0" max="100" value="${num(valueOf("private.shop.reputation", 50))}"></label><label>Lagerstufe<select name="storageLevel"><option value="0">Kein Lager</option><option value="1">500 Items</option><option value="2">1.000 Items</option><option value="3">5.000 Items</option></select></label><label class="check"><input name="owned" type="checkbox" ${valueOf("private.shop.created") ? "checked" : ""}> Shop freigeschaltet</label><button type="submit">Shop senden</button></form></details>`);
-    if (has("games.write")) blocks.push(`
-      <details class="online-mod-tool"><summary>Games</summary><form data-command-form="setGame" class="online-mod-form-grid"><label>Kingdom-Münzen<input name="kingdomCoins" type="number" min="0" value="10000"></label><label>Strong-Rohstoffe<input name="strongResources" type="number" min="0" value="10000"></label><label class="check"><input name="resetLimits" type="checkbox" checked> Limits zurücksetzen</label><button type="submit">Games senden</button></form></details>`);
-    if (has("world.write")) blocks.push(`
-      <details class="online-mod-tool"><summary>Stadtkarte & Flughafen</summary><form data-command-form="setWorld" class="online-mod-form-grid"><label>Weltort<input name="worldLocation" value="${esc(valueOf("profile.city", "Berlin"))}"></label><label>Lokaler Ort<input name="location" value="home"></label><label class="check"><input name="finishLocalTravel" type="checkbox"> Lokale Fahrt beenden</label><label class="check"><input name="finishWorldTravel" type="checkbox"> Fernreise beenden</label><label class="check"><input name="clearStationBan" type="checkbox"> Sperre entfernen</label><button type="submit">Ort senden</button></form></details>`);
-    if (has("moderation.kick") || has("moderation.timeout")) blocks.push(`
-      <details class="online-mod-tool"><summary>Moderation</summary><form data-moderation-form class="online-mod-form-grid"><label>Grund<input name="reason" value="Moderationsmaßnahme"></label><label>Dauer in Minuten<input name="minutes" type="number" min="1" value="60"></label>${has("moderation.kick") ? `<button type="submit" name="mode" value="kick">Kicken</button>` : ""}${has("moderation.timeout") ? `<button type="submit" name="mode" value="timeout">Timeout</button>` : ""}${has("moderation.ban.week") || has("moderation.ban.year") || has("*") ? `<button type="submit" name="mode" value="ban" class="danger">Bannen</button>` : ""}${ROLE_ORDER.indexOf(roleData.role) >= ROLE_ORDER.indexOf("moderator") ? `<button type="submit" name="mode" value="unban">Entbannen</button>` : ""}${has("player.reset") ? `<button type="button" class="danger" data-reset-selected-player>Bei Cheat zurücksetzen</button>` : ""}</form></details>`);
-    return blocks.length ? blocks.join("") : `<p class="online-mod-empty">Für diese Rolle stehen nur Leserechte zur Verfügung.</p>`;
+  function statCard(label, value, sub = "") {
+    return `<article class="online-mod-stat-card"><small>${esc(label)}</small><b>${esc(value)}</b>${sub ? `<span>${esc(sub)}</span>` : ""}</article>`;
+  }
+
+  function playerTabHtml(tab) {
+    const profile = safeObject(selectedPlayer.profile);
+    const privateData = safeObject(selectedPlayer.private);
+    const stats = safeObject(privateData.statistics);
+    const save = safeObject(selectedPlayer.save);
+    const audit = safeObject(privateData.audit);
+    const itemCounts = safeObject(save.itemCounts || privateData.itemCounts);
+
+    if (tab === "character") {
+      return `
+        <section class="online-mod-section-grid two">
+          <article class="online-mod-card"><div class="online-mod-card-title"><span>👤</span><div><small>CHARAKTER</small><h3>Grunddaten bearbeiten</h3></div></div>
+            <form data-command-form="setCharacter" class="online-mod-form-grid">
+              <label>Level<input name="level" type="number" min="0" value="${num(privateData.level ?? profile.level)}"></label>
+              <label>EP<input name="xp" type="number" min="0" value="${num(privateData.xp)}"></label>
+              <label>Alter<input name="age" type="number" min="16" max="120" value="${num(stats.age || save.age || 18)}"></label>
+              <label>Job<input name="job" value="${esc(profile.job || stats.job || save.job || "Kein Job")}"></label>
+              <button class="online-mod-primary wide" type="submit">Charakter speichern</button>
+            </form>
+          </article>
+          <article class="online-mod-card"><div class="online-mod-card-title"><span>📋</span><div><small>AKTUELL</small><h3>Spielerinformationen</h3></div></div>
+            <div class="online-mod-data-list"><span><small>Tag</small><b>${num(stats.day || save.day || 1)}</b></span><span><small>Stadt</small><b>${esc(profile.city || stats.worldLocation || save.worldLocation || "–")}</b></span><span><small>Lokaler Ort</small><b>${esc(stats.location || save.location || "–")}</b></span><span><small>Bonität</small><b>${num(stats.creditScore || save.creditScore)} Punkte</b></span></div>
+          </article>
+        </section>`;
+    }
+
+    if (tab === "needs") {
+      return `
+        <section class="online-mod-section-grid two">
+          <article class="online-mod-card"><div class="online-mod-card-title"><span>♥</span><div><small>STATUSWERTE</small><h3>Bedürfnisse einstellen</h3></div></div>
+            <form data-command-form="setNeeds" class="online-mod-form-grid" data-needs-form>
+              ${needInput("Hunger", "hunger", privateData.hunger)}${needInput("Durst", "thirst", privateData.thirst)}${needInput("Energie", "energy", privateData.energy)}${needInput("Stimmung", "mood", privateData.mood)}${needInput("Leben", "health", privateData.health)}
+              <div class="online-mod-actions wide"><button type="button" data-fill-needs="100">Alles 100</button><button type="button" data-fill-needs="50">Alles 50</button><button class="online-mod-primary" type="submit">Status speichern</button></div>
+            </form>
+          </article>
+          <article class="online-mod-card"><div class="online-mod-card-title"><span>▥</span><div><small>LIVE-ANZEIGE</small><h3>Aktueller Zustand</h3></div></div><div class="online-mod-bars">${needBar("Hunger", privateData.hunger)}${needBar("Durst", privateData.thirst)}${needBar("Energie", privateData.energy)}${needBar("Stimmung", privateData.mood)}${needBar("Leben", privateData.health)}</div></article>
+        </section>`;
+    }
+
+    if (tab === "money") {
+      return `
+        <section class="online-mod-metric-grid compact">
+          ${statCard("BANKKONTO", euro(privateData.bank), compactNumber(privateData.bank))}
+          ${statCard("BARGELD", euro(privateData.cash), compactNumber(privateData.cash))}
+          ${statCard("HANDYGUTHABEN", euro(privateData.phoneCredit), compactNumber(privateData.phoneCredit))}
+          ${statCard("SCHWARZGELD", euro(privateData.dirtyMoney), compactNumber(privateData.dirtyMoney))}
+        </section>
+        <article class="online-mod-card"><div class="online-mod-card-title"><span>€</span><div><small>GELDWERKZEUG</small><h3>Geld geben, nehmen oder setzen</h3></div></div>
+          <form data-money-command class="online-mod-form-grid">
+            <label>Ziel<select name="target"><option value="bank">Bankkonto</option><option value="cash">Bargeld</option><option value="phoneCredit">Handyguthaben</option><option value="dirtyMoney">Schwarzgeld</option></select></label>
+            <label>Betrag<input name="value" type="number" min="0" value="1000"></label>
+            <div class="online-mod-quick-values wide"><button type="button" data-set-money-value="1000">1.000</button><button type="button" data-set-money-value="10000">10.000</button><button type="button" data-set-money-value="100000">100.000</button><button type="button" data-set-money-value="1000000">1 Mio.</button></div>
+            <button type="submit" name="kind" value="addMoney">Geben</button><button type="submit" name="kind" value="removeMoney">Nehmen</button><button class="online-mod-primary" type="submit" name="kind" value="setMoney">Genau setzen</button>
+          </form>
+        </article>`;
+    }
+
+    if (tab === "inventory") return inventoryTabHtml(itemCounts);
+
+    if (tab === "phone") {
+      const apps = safeArray(save.installedPhoneApps || privateData.installedPhoneApps);
+      return `
+        <section class="online-mod-section-grid two">
+          <article class="online-mod-card"><div class="online-mod-card-title"><span>📱</span><div><small>SMARTPHONE</small><h3>Gerät & Apps</h3></div></div>
+            <form data-command-form="setPhone" class="online-mod-form-grid">
+              <label>Guthaben<input name="phoneCredit" type="number" min="0" value="${num(privateData.phoneCredit)}"></label><label>Akku<input name="battery" type="number" min="0" max="100" value="${num(save.phoneBattery || 100)}"></label><label class="wide">SIM-Tarif<input name="simPlan" value="${esc(save.phonePlan || "Unlimited SIM")}"></label>
+              <label class="check"><input name="installApps" type="checkbox" value="finder" ${apps.includes("finder") ? "checked" : ""}> Finder.KL installieren</label><label class="check"><input name="installApps" type="checkbox" value="finster" ${apps.includes("finster") ? "checked" : ""}> finster.kl installieren</label><label class="check"><input name="installApps" type="checkbox" value="event" ${apps.includes("event") ? "checked" : ""}> Event-App installieren</label>
+              <button class="online-mod-primary wide" type="submit">Smartphone speichern</button>
+            </form>
+          </article>
+          <article class="online-mod-card"><div class="online-mod-card-title"><span>▦</span><div><small>INSTALLIERT</small><h3>Apps auf dem Gerät</h3></div></div><div class="online-mod-chip-list">${apps.length ? apps.map((app) => `<span>${esc(app)}</span>`).join("") : "<span>Keine App-Daten</span>"}</div></article>
+        </section>`;
+    }
+
+    if (tab === "workshop") {
+      return `
+        <section class="online-mod-section-grid two">
+          ${has("work.write") ? `<article class="online-mod-card"><div class="online-mod-card-title"><span>🧰</span><div><small>ARBEIT</small><h3>Arbeit & Logistik</h3></div></div><form data-command-form="setWork" class="online-mod-form-grid"><label>Arbeits-Skillpunkte<input name="workSkillPoints" type="number" min="0" value="${num(stats.workSkillPoints || save.workSkillPoints || 20)}"></label><label>Mitarbeiter<input name="logisticsEmployees" type="number" min="0" max="20" value="${num(stats.logisticsEmployees || save.logisticsEmployees || 0)}"></label><label>Logistik-Skillpunkte<input name="logisticsSkillPoints" type="number" min="0" value="${num(stats.logisticsSkillPoints || save.logisticsSkillPoints || 0)}"></label><label class="check"><input name="resetWorkedDay" type="checkbox"> Arbeit heute wieder freigeben</label><button class="online-mod-primary wide" type="submit">Arbeit speichern</button></form></article>` : ""}
+          ${has("shop.write") ? `<article class="online-mod-card"><div class="online-mod-card-title"><span>🏪</span><div><small>EIGENER SHOP</small><h3>Shop bearbeiten</h3></div></div><form data-command-form="setShop" class="online-mod-form-grid"><label>Gefahr<input name="danger" type="number" min="0" max="100" value="${num(privateData.shop?.danger || save.shop?.danger)}"></label><label>Ruf<input name="reputation" type="number" min="0" max="100" value="${num(privateData.shop?.reputation || save.shop?.reputation || 50)}"></label><label>Lagerstufe<select name="storageLevel"><option value="0">Kein Lager</option><option value="1" ${num(privateData.shop?.storageLevel || save.shop?.storageLevel) === 1 ? "selected" : ""}>500 Items</option><option value="2" ${num(privateData.shop?.storageLevel || save.shop?.storageLevel) === 2 ? "selected" : ""}>1.000 Items</option><option value="3" ${num(privateData.shop?.storageLevel || save.shop?.storageLevel) === 3 ? "selected" : ""}>5.000 Items</option></select></label><label class="check"><input name="owned" type="checkbox" ${privateData.shop?.created || save.shop?.created ? "checked" : ""}> Shop freigeschaltet</label><button class="online-mod-primary wide" type="submit">Shop speichern</button></form></article>` : ""}
+        </section>`;
+    }
+
+    if (tab === "worldgames") {
+      return `
+        <section class="online-mod-section-grid two">
+          ${has("world.write") ? `<article class="online-mod-card"><div class="online-mod-card-title"><span>🌍</span><div><small>STADTKARTE</small><h3>Ort & Reisen</h3></div></div><form data-command-form="setWorld" class="online-mod-form-grid"><label>Weltort<input name="worldLocation" value="${esc(profile.city || stats.worldLocation || save.worldLocation || "Berlin")}"></label><label>Lokaler Ort<input name="location" value="${esc(stats.location || save.location || "home")}"></label><label class="check"><input name="finishLocalTravel" type="checkbox"> Lokale Fahrt beenden</label><label class="check"><input name="finishWorldTravel" type="checkbox"> Fernreise beenden</label><label class="check"><input name="clearStationBan" type="checkbox"> Bahnhofssperre entfernen</label><button class="online-mod-primary wide" type="submit">Ort speichern</button></form></article>` : ""}
+          ${has("games.write") ? `<article class="online-mod-card"><div class="online-mod-card-title"><span>🎮</span><div><small>GAMES</small><h3>Spielwerte & Limits</h3></div></div><form data-command-form="setGame" class="online-mod-form-grid"><label>Kingdom-Münzen<input name="kingdomCoins" type="number" min="0" value="${num(save.kingdomCoins || 10000)}"></label><label>Strong-Rohstoffe<input name="strongResources" type="number" min="0" value="${num(save.strongResources || 10000)}"></label><label class="check wide"><input name="resetLimits" type="checkbox" checked> Game-Limits und Cooldowns zurücksetzen</label><button class="online-mod-primary wide" type="submit">Games speichern</button></form></article>` : ""}
+        </section>`;
+    }
+
+    if (tab === "moderation") {
+      return `
+        <section class="online-mod-section-grid two">
+          <article class="online-mod-card"><div class="online-mod-card-title"><span>⚠</span><div><small>MODERATION</small><h3>Maßnahme durchführen</h3></div></div><form data-moderation-form class="online-mod-form-grid"><label class="wide">Grund<input name="reason" value="Moderationsmaßnahme"></label><label>Dauer in Minuten<input name="minutes" type="number" min="1" value="60"></label><div></div>${has("moderation.kick") ? `<button type="submit" name="mode" value="kick">Kicken</button>` : ""}${has("moderation.timeout") ? `<button type="submit" name="mode" value="timeout">Timeout</button>` : ""}${has("moderation.ban.week") || has("moderation.ban.year") || has("*") ? `<button type="submit" name="mode" value="ban" class="danger">Bannen</button>` : ""}${ROLE_ORDER.indexOf(roleData.role) >= ROLE_ORDER.indexOf("moderator") ? `<button type="submit" name="mode" value="unban">Entbannen</button>` : ""}</form></article>
+          <article class="online-mod-card"><div class="online-mod-card-title"><span>🔎</span><div><small>CHEAT-PRÜFUNG</small><h3>${audit.suspicious ? "Auffällig" : "Unauffällig"}</h3></div></div>${safeArray(audit.reasons).length ? `<div class="online-mod-warning">${audit.reasons.map((reason) => `<p>${esc(reason)}</p>`).join("")}</div>` : `<p>Die automatische Plausibilitätsprüfung hat aktuell keinen deutlichen Verdacht gemeldet.</p>`}${has("player.reset") ? `<button type="button" class="danger full" data-reset-selected-player ${audit.suspicious ? "" : "disabled"}>Spielstand wegen Cheat zurücksetzen</button>` : ""}</article>
+        </section>`;
+    }
+
+    const topItems = Object.entries(itemCounts).sort((a, b) => num(b[1]) - num(a[1])).slice(0, 12);
+    return `
+      <section class="online-mod-metric-grid compact">
+        ${statCard("LEVEL", String(num(privateData.level ?? profile.level)), `${num(privateData.xp)} EP`)}
+        ${statCard("BANKKONTO", euro(privateData.bank), compactNumber(privateData.bank))}
+        ${statCard("BARGELD", euro(privateData.cash), compactNumber(privateData.cash))}
+        ${statCard("INVENTAR", String(num(privateData.itemCount || Object.values(itemCounts).reduce((sum, value) => sum + num(value), 0))), `${Object.keys(itemCounts).length} Arten`)}
+      </section>
+      <section class="online-mod-section-grid two">
+        <article class="online-mod-card"><div class="online-mod-card-title"><span>♥</span><div><small>STATUS</small><h3>Bedürfnisse</h3></div></div><div class="online-mod-bars">${needBar("Hunger", privateData.hunger)}${needBar("Durst", privateData.thirst)}${needBar("Energie", privateData.energy)}${needBar("Stimmung", privateData.mood)}${needBar("Leben", privateData.health)}</div></article>
+        <article class="online-mod-card"><div class="online-mod-card-title"><span>📍</span><div><small>SPIELWELT</small><h3>Aktueller Stand</h3></div></div><div class="online-mod-data-list"><span><small>Stadt</small><b>${esc(profile.city || stats.worldLocation || save.worldLocation || "–")}</b></span><span><small>Ort</small><b>${esc(stats.location || save.location || "–")}</b></span><span><small>Job</small><b>${esc(profile.job || stats.job || save.job || "Kein Job")}</b></span><span><small>Tag / Alter</small><b>Tag ${num(stats.day || save.day || 1)} · ${num(stats.age || save.age || 18)} Jahre</b></span></div></article>
+        <article class="online-mod-card"><div class="online-mod-card-title"><span>📦</span><div><small>INVENTAR</small><h3>Häufigste Items</h3></div></div><div class="online-mod-item-summary">${topItems.length ? topItems.map(([name, amount]) => `<span><b>${esc(name)}</b><em>${num(amount)}×</em></span>`).join("") : `<p>Keine Inventardaten vorhanden.</p>`}</div></article>
+        <article class="online-mod-card"><div class="online-mod-card-title"><span>📊</span><div><small>STATISTIK</small><h3>Weitere Werte</h3></div></div><div class="online-mod-data-list"><span><small>Immobilien</small><b>${safeArray(save.properties || privateData.properties).length}</b></span><span><small>Kleidung</small><b>${num(stats.wardrobeCount || safeArray(save.wardrobe).length)}</b></span><span><small>Logistik-Mitarbeiter</small><b>${num(stats.logisticsEmployees || save.logisticsEmployees)}</b></span><span><small>Shop-Verkäufe</small><b>${num(stats.shopSales || save.shop?.sales)}</b></span></div></article>
+      </section>
+      ${safeArray(audit.reasons).length ? `<section class="online-mod-warning"><b>Cheat-Prüfung · ${num(audit.riskScore)}%</b>${audit.reasons.map((reason) => `<p>${esc(reason)}</p>`).join("")}</section>` : ""}`;
+  }
+
+  function needInput(label, name, value) {
+    return `<label>${esc(label)}<div class="online-mod-number-unit"><input name="${name}" type="number" min="0" max="100" value="${clamp(value, 0, 100)}"><span>%</span></div></label>`;
+  }
+  function needBar(label, value) {
+    const amount = clamp(value, 0, 100);
+    return `<div><span><b>${esc(label)}</b><em>${Math.round(amount)}%</em></span><i><u style="width:${amount}%"></u></i></div>`;
+  }
+
+  function inventoryTabHtml(itemCounts) {
+    buildCatalogRows();
+    const selected = itemRows.find((row) => row.id === selectedCatalogItemId) || null;
+    const currentRows = Object.entries(itemCounts).sort((a, b) => String(a[0]).localeCompare(String(b[0]), "de"));
+    return `
+      <section class="online-mod-inventory-layout">
+        <article class="online-mod-card online-mod-current-inventory"><div class="online-mod-card-title"><span>🎒</span><div><small>SPIELER-INVENTAR</small><h3>Aktueller Inhalt</h3></div><em>${currentRows.reduce((sum, entry) => sum + num(entry[1]), 0)} Items</em></div><label class="online-mod-search-box small"><span>⌕</span><input data-current-inventory-search placeholder="Inventar durchsuchen"></label><div class="online-mod-current-item-list" data-current-item-list>${renderCurrentInventoryRows(currentRows)}</div></article>
+        <article class="online-mod-card online-mod-item-giver"><div class="online-mod-card-title"><span>#</span><div><small>ITEM GEBEN / NEHMEN</small><h3>Katalog durchsuchen</h3></div></div>
+          <div class="online-mod-item-toolbar"><label class="online-mod-search-box"><span>⌕</span><input data-player-item-search value="${esc(playerItemSearch)}" placeholder="z. B. Wohnung, Wasser, Smartphone"></label><select data-player-item-category>${categoryOptions(playerItemCategory)}</select></div>
+          <div class="online-mod-picker-list" data-player-item-list>${renderPlayerItemRows()}</div>
+          <form data-item-command class="online-mod-picked-item ${selected ? "has-item" : ""}">
+            <div data-picked-item-info>${selected ? pickedItemHtml(selected) : `<div class="online-mod-empty-state compact"><span>#</span><p>Item aus dem Katalog auswählen.</p></div>`}</div>
+            <input type="hidden" name="itemId" value="${esc(selected?.id || "")}"><label>Anzahl<input name="amount" type="number" min="1" max="99" value="1"></label>
+            <div class="online-mod-actions"><button type="submit" name="kind" value="giveItem" ${selected ? "" : "disabled"}>Item geben</button><button type="submit" name="kind" value="removeItem" class="danger" ${selected ? "" : "disabled"}>Item nehmen</button><button type="button" data-copy-id="${esc(selected?.id || "")}" ${selected ? "" : "disabled"}>ID kopieren</button></div>
+          </form>
+        </article>
+      </section>`;
+  }
+
+  function renderCurrentInventoryRows(rows) {
+    return rows.length ? rows.map(([name, amount]) => `<button type="button" data-find-catalog-name="${esc(name)}"><span><b>${esc(name)}</b><small>Im Katalog suchen</small></span><em>${num(amount)}×</em></button>`).join("") : `<div class="online-mod-empty-state compact"><span>📦</span><p>Inventar ist leer oder noch nicht synchronisiert.</p></div>`;
+  }
+
+  function buildCatalogRows() {
+    if (itemRows.length) return itemRows;
+    let rows = [];
+    try {
+      const registry = typeof buildItemRegistry === "function" ? buildItemRegistry(true) : null;
+      if (registry?.values) {
+        rows = [...registry.values()].map((record) => {
+          const entry = safeObject(record.entry);
+          const source = String(record.source || "inventory");
+          return {
+            id: String(record.id || ""),
+            name: String(record.name || entry.item || entry.name || "Unbekannt"),
+            source,
+            category: categorizeItem(source, record.name, entry),
+            meta: {
+              itemName: String(entry.item || entry.name || record.name || ""),
+              propertyId: String(entry.property?.id || entry.id || ""),
+              weaponId: source === "weapon" ? String(entry.id || "") : "",
+              wear: !!entry.wear,
+              backpackSlots: num(entry.backpackSlots),
+              effect: safeObject(entry.effect),
+              vehicle: !!entry.vehicle,
+              repeatable: !!entry.repeatable
+            }
+          };
+        });
+      }
+    } catch (error) {
+      console.warn("Item-Katalog", error);
+    }
+    const seen = new Set();
+    itemRows = rows.filter((row) => row.id && !seen.has(row.id.toLowerCase()) && seen.add(row.id.toLowerCase())).sort((a, b) => {
+      const ca = CATEGORY_ORDER.indexOf(a.category); const cb = CATEGORY_ORDER.indexOf(b.category);
+      return (ca < 0 ? 999 : ca) - (cb < 0 ? 999 : cb) || a.name.localeCompare(b.name, "de");
+    });
+    return itemRows;
+  }
+
+  function categorizeItem(source, name, entry = {}) {
+    const text = `${source} ${name} ${entry.item || ""}`.toLowerCase();
+    if (source === "property" || entry.property) return "Wohnung & Immobilien";
+    if (source === "furniture") return "Möbel & Haushalt";
+    if (source === "weapon") return "Waffen";
+    if (source === "blackmarket") return "Schwarzmarkt";
+    if (/shop:(beverages|snacks|groceries|pharmacy)/.test(source) || entry.effect) return "Essen & Trinken";
+    if (/shop:clothing/.test(source) || entry.wear) return "Kleidung";
+    if (/shop:(smartphone|phonecredit|computer)/.test(source) || /smartphone|handy|laptop|computer|gaming-pc|powerbank|guthaben/.test(text)) return "Technik & Handy";
+    if (/shop:(usedcars|newcars)/.test(source) || entry.vehicle || /auto|wagen|suv|limousine|fahrzeug|boot|yacht/.test(text)) return "Fahrzeuge";
+    if (/shop:backpacks/.test(source) || entry.backpackSlots || /rucksack/.test(text)) return "Rucksäcke";
+    if (/führerschein|reisepass|sim|bauplanung|bauteam|dokument/.test(text)) return "Dokumente & SIM";
+    if (/wohnung|haus|apartment|villa|immobil/.test(text)) return "Wohnung & Immobilien";
+    if (/tisch|stuhl|bett|sofa|schrank|lampe|küche|möbel/.test(text)) return "Möbel & Haushalt";
+    return "Sonstiges";
+  }
+
+  function categoryOptions(selected = "all") {
+    const counts = categoryCounts();
+    return `<option value="all">Alle Kategorien (${itemRows.length})</option>${CATEGORY_ORDER.filter((category) => counts[category]).map((category) => `<option value="${esc(category)}" ${selected === category ? "selected" : ""}>${CATEGORY_ICONS[category]} ${esc(category)} (${counts[category]})</option>`).join("")}`;
+  }
+  function categoryCounts() {
+    return itemRows.reduce((result, row) => { result[row.category] = (result[row.category] || 0) + 1; return result; }, {});
+  }
+  function filteredCatalog(query = "", category = "all") {
+    const needle = String(query || "").trim().toLowerCase();
+    return itemRows.filter((row) => (category === "all" || row.category === category) && (!needle || `${row.name} ${row.id} ${row.source} ${row.category}`.toLowerCase().includes(needle)));
+  }
+  function renderPlayerItemRows() {
+    const rows = filteredCatalog(playerItemSearch, playerItemCategory).slice(0, 160);
+    return rows.length ? rows.map((row) => `<button type="button" class="${selectedCatalogItemId === row.id ? "active" : ""}" data-pick-item="${esc(row.id)}"><span>${CATEGORY_ICONS[row.category] || "📦"}</span><div><b>${esc(row.name)}</b><small>${esc(row.category)}</small></div><code>${esc(row.id)}</code></button>`).join("") : `<div class="online-mod-empty-state compact"><span>⌕</span><p>Kein Item gefunden.</p></div>`;
+  }
+  function pickedItemHtml(row) {
+    return `<span>${CATEGORY_ICONS[row.category] || "📦"}</span><div><small>${esc(row.category)}</small><b>${esc(row.name)}</b><code>${esc(row.id)}</code></div>`;
   }
 
   async function queueCommand(command) {
     if (!selectedPlayer?.uid) throw new Error("Bitte zuerst einen Spieler auswählen.");
-    const result = await callFunction("staffAction", { action: "queueCommand", targetUid: selectedPlayer.uid, command });
-    return result;
+    return callFunction("staffAction", { action: "queueCommand", targetUid: selectedPlayer.uid, command });
   }
 
   async function renderTicketsPanel() {
-    content().innerHTML = `<section class="online-mod-card"><div class="online-mod-card-head"><div><small>SUPPORT</small><h3>Tickets bearbeiten</h3></div><div class="online-mod-actions"><button type="button" data-load-tickets>Aktiv</button>${has("tickets.all") ? `<button type="button" data-load-ticket-archive>Speicher</button>` : ""}</div></div><div class="online-mod-ticket-layout"><div class="online-mod-ticket-list" data-ticket-list><p>Lade Tickets …</p></div><div class="online-mod-ticket-detail" data-ticket-detail><div class="online-mod-empty">Ticket auswählen</div></div></div></section>`;
-    await loadTickets(false);
+    content().innerHTML = `
+      ${pageHead("SUPPORT-ZENTRALE", "Tickets bearbeiten", "Offene Anfragen übernehmen, beantworten, lösen oder im Support-Speicher nachsehen.", `<button type="button" data-load-tickets>↻ Aktualisieren</button>`)}
+      <section class="online-mod-ticket-workspace">
+        <aside class="online-mod-ticket-browser">
+          <div class="online-mod-ticket-mode"><button type="button" data-ticket-mode="active" class="${!ticketArchive ? "active" : ""}">Aktive Tickets</button>${has("tickets.all") ? `<button type="button" data-ticket-mode="archive" class="${ticketArchive ? "active" : ""}">Support-Speicher</button>` : ""}</div>
+          <label class="online-mod-search-box"><span>⌕</span><input data-ticket-search value="${esc(ticketSearch)}" placeholder="Betreff, Spieler oder Kategorie"></label>
+          <select class="online-mod-full-select" data-ticket-status><option value="all">Alle Status</option><option value="open" ${ticketStatus === "open" ? "selected" : ""}>Offen</option><option value="assigned" ${ticketStatus === "assigned" ? "selected" : ""}>Übernommen</option><option value="waiting_player" ${ticketStatus === "waiting_player" ? "selected" : ""}>Wartet auf Spieler</option><option value="resolved" ${ticketStatus === "resolved" ? "selected" : ""}>Gelöst</option><option value="closed" ${ticketStatus === "closed" ? "selected" : ""}>Geschlossen</option></select>
+          <div class="online-mod-ticket-stats" data-ticket-stats></div>
+          <div class="online-mod-ticket-list" data-ticket-list><p>Lade Tickets …</p></div>
+        </aside>
+        <div class="online-mod-ticket-detail" data-ticket-detail><div class="online-mod-empty-state"><span>🎫</span><h3>Ticket auswählen</h3><p>Links eine Anfrage anklicken, um den Verlauf und die Bearbeitung zu öffnen.</p></div></div>
+      </section>`;
+    await loadTickets(ticketArchive);
   }
 
-  async function loadTickets(archive) {
+  async function loadTickets(archive = ticketArchive) {
+    ticketArchive = !!archive;
     const list = content().querySelector("[data-ticket-list]");
     if (!list) return;
-    list.innerHTML = `<p>Lade Tickets …</p>`;
+    list.innerHTML = `<div class="online-mod-loading"><i></i><p>Lade Tickets …</p></div>`;
     try {
-      const response = await callFunction("listSupportTickets", { archive: !!archive });
+      const response = await callFunction("listSupportTickets", { archive: ticketArchive });
       tickets = Array.isArray(response.tickets) ? response.tickets : [];
-      list.innerHTML = tickets.length ? tickets.map((ticket) => `<button type="button" class="online-mod-ticket-row" data-select-ticket="${esc(ticket.id)}"><b>${esc(ticket.subject || "Ticket")}</b><small>${esc(ticket.ownerName || ticket.ownerEmail || "Spieler")} · ${esc(ticket.status || "open")}</small></button>`).join("") : `<p class="online-mod-empty">Keine Tickets vorhanden.</p>`;
+      selectedTicket = selectedTicket && tickets.find((ticket) => ticket.id === selectedTicket.id) || null;
+      renderTicketList();
+      if (selectedTicket) renderTicketDetail(selectedTicket);
     } catch (error) {
       list.innerHTML = `<p class="online-mod-message error">${esc(error.message)}</p>`;
     }
   }
 
+  function filteredTickets() {
+    const needle = ticketSearch.trim().toLowerCase();
+    return tickets.filter((ticket) => {
+      if (ticketStatus !== "all" && String(ticket.status || "open") !== ticketStatus) return false;
+      return !needle || [ticket.subject, ticket.ownerName, ticket.ownerEmail, ticket.category, ticket.id].some((value) => String(value || "").toLowerCase().includes(needle));
+    });
+  }
+
+  function ticketStatusLabel(status) {
+    return ({ open: "Offen", assigned: "Übernommen", waiting_player: "Wartet auf Spieler", waiting_staff: "Wartet auf Team", resolved: "Gelöst", closed: "Geschlossen" })[status] || status || "Offen";
+  }
+
+  function renderTicketList() {
+    const list = content().querySelector("[data-ticket-list]");
+    const stats = content().querySelector("[data-ticket-stats]");
+    if (!list) return;
+    const shown = filteredTickets();
+    const open = tickets.filter((ticket) => ticket.status === "open").length;
+    const assigned = tickets.filter((ticket) => ticket.status === "assigned" || ticket.status === "waiting_player").length;
+    if (stats) stats.innerHTML = `<span><b>${tickets.length}</b><small>Gesamt</small></span><span><b>${open}</b><small>Offen</small></span><span><b>${assigned}</b><small>In Arbeit</small></span>`;
+    list.innerHTML = shown.length ? shown.map((ticket) => {
+      const messages = safeArray(ticket.messages);
+      return `<button type="button" class="online-mod-ticket-row ${selectedTicket?.id === ticket.id ? "active" : ""}" data-select-ticket="${esc(ticket.id)}"><span class="online-mod-ticket-priority ${ticket.priority || "normal"}"></span><div><b>${esc(ticket.subject || "Support-Ticket")}</b><small>${esc(ticket.ownerName || ticket.ownerEmail || "Spieler")} · ${esc(ticket.category || "Allgemein")}</small><em>${messages.length} Nachrichten · ${relativeTime(ticket.updatedAtMs)}</em></div><i class="status-${esc(ticket.status || "open")}">${esc(ticketStatusLabel(ticket.status))}</i></button>`;
+    }).join("") : `<div class="online-mod-empty-state compact"><span>🎫</span><p>Keine passenden Tickets vorhanden.</p></div>`;
+  }
+
   function renderTicketDetail(ticket) {
     selectedTicket = ticket;
+    renderTicketList();
     const detail = content().querySelector("[data-ticket-detail]");
     if (!detail) return;
-    const messages = Array.isArray(ticket.messages) ? ticket.messages : [];
-    detail.innerHTML = `<section class="online-mod-ticket-head"><small>${esc(ticket.category || "Allgemein")}</small><h3>${esc(ticket.subject || "Support-Ticket")}</h3><p>${esc(ticket.ownerName || ticket.ownerEmail || ticket.ownerUid || "")}</p></section><div class="online-mod-ticket-thread">${messages.map((entry) => `<article class="${entry.senderRole === "player" ? "player" : "staff"}"><b>${esc(entry.senderName || entry.senderRole || "")}</b><p>${esc(entry.text || "")}</p><small>${dateTime(entry.createdAtMs)}</small></article>`).join("")}</div><form data-ticket-reply-form><textarea name="text" maxlength="2000" placeholder="Antwort schreiben …"></textarea><div class="online-mod-actions"><button type="button" data-ticket-action="claim">Übernehmen</button><button type="submit">Antwort senden</button><button type="button" data-ticket-action="resolve">Lösen</button>${has("tickets.delete") ? `<button type="button" class="danger" data-ticket-action="delete">Löschen</button>` : ""}</div><p class="online-mod-message" data-ticket-message></p></form>`;
+    const messages = safeArray(ticket.messages);
+    const archived = !!ticket.deleted || ["resolved", "closed"].includes(ticket.status);
+    detail.innerHTML = `
+      <section class="online-mod-ticket-hero"><div><small>${esc(ticket.category || "Allgemein")}</small><h2>${esc(ticket.subject || "Support-Ticket")}</h2><p>${esc(ticket.ownerName || ticket.ownerEmail || ticket.ownerUid || "Spieler")}</p></div><span class="online-mod-ticket-status status-${esc(ticket.status || "open")}">${esc(ticketStatusLabel(ticket.status))}</span></section>
+      <div class="online-mod-ticket-meta"><span><small>Ticket-ID</small><code>${esc(ticket.id)}</code></span><span><small>Erstellt</small><b>${dateTime(ticket.createdAtMs)}</b></span><span><small>Bearbeiter</small><b>${esc(ticket.assignedToName || "Noch niemand")}</b></span></div>
+      <div class="online-mod-ticket-thread">${messages.length ? messages.map((entry) => `<article class="${entry.senderRole === "player" ? "player" : "staff"}"><header><b>${esc(entry.senderName || entry.senderRole || "Unbekannt")}</b><small>${dateTime(entry.createdAtMs)}</small></header><p>${esc(entry.text || "")}</p></article>`).join("") : `<div class="online-mod-empty-state compact"><p>Noch keine Nachrichten.</p></div>`}</div>
+      <form data-ticket-reply-form class="online-mod-ticket-reply"><label>Antwort<textarea name="text" maxlength="2000" placeholder="Antwort an den Spieler schreiben …"></textarea></label><div class="online-mod-actions">${!archived ? `<button type="button" data-ticket-action="claim">Übernehmen</button><button class="online-mod-primary" type="submit">Antwort senden</button><button type="button" data-ticket-action="resolve">Als gelöst markieren</button>` : `<button type="button" data-ticket-action="reopen">Ticket wieder öffnen</button>`}${has("tickets.delete") ? `<button type="button" class="danger" data-ticket-action="${archived ? "purge" : "delete"}">${archived ? "Dauerhaft löschen" : "In Speicher verschieben"}</button>` : ""}</div><p class="online-mod-message" data-ticket-message></p></form>`;
   }
 
   async function renderEventsPanel() {
-    content().innerHTML = `<section class="online-mod-card"><small>LIVE-EVENT</small><h3>Event planen und starten</h3><form data-event-form class="online-mod-form-grid"><label>Titel<input name="title" maxlength="80" required></label><label class="wide">Beschreibung<textarea name="description" maxlength="600"></textarea></label><label class="wide">Aufgabe<textarea name="task" maxlength="600"></textarea></label><label class="wide">Nachweis-Hinweis<input name="proofHint" maxlength="240"></label><label>Start<input name="startsAt" type="datetime-local"></label><label>Ende<input name="endsAt" type="datetime-local"></label><label>Geldpreis<input name="rewardMoney" type="number" min="0" value="0"></label><label>Gewinnerplätze<input name="maxWinners" type="number" min="1" max="100" value="1"></label><label class="wide">Items<textarea name="rewardItems" placeholder="ITEM-ID | Anzahl | Name – eine Zeile pro Item"></textarea></label><div class="online-mod-actions wide"><button type="submit" name="eventAction" value="save">Entwurf speichern</button><button type="submit" name="eventAction" value="start">Event starten</button><button type="submit" name="eventAction" value="end">Beenden</button><button type="submit" class="danger" name="eventAction" value="clear">Löschen</button></div><p class="online-mod-message wide" data-event-message></p></form></section>`;
+    buildCatalogRows();
+    content().innerHTML = `
+      ${pageHead("EVENT-VERWALTUNG", "Event-Zentrale", "Event entwerfen, live starten, Preise festlegen und anschließend beenden.")}
+      <section class="online-mod-event-layout">
+        <form data-event-form class="online-mod-card online-mod-event-form">
+          <div class="online-mod-card-title"><span>🏆</span><div><small>EVENT-DATEN</small><h3>Planung</h3></div></div>
+          <div class="online-mod-form-grid"><label>Titel<input name="title" maxlength="80" required></label><label>Gewinnerplätze<input name="maxWinners" type="number" min="1" max="100" value="1"></label><label class="wide">Beschreibung<textarea name="description" maxlength="600"></textarea></label><label class="wide">Aufgabe<textarea name="task" maxlength="600"></textarea></label><label class="wide">Nachweis-Hinweis<input name="proofHint" maxlength="240"></label><label>Start<input name="startsAt" type="datetime-local"></label><label>Ende<input name="endsAt" type="datetime-local"></label><label>Geldpreis<input name="rewardMoney" type="number" min="0" value="0"></label><div></div><label class="wide">Item-Preise<textarea name="rewardItems" placeholder="ITEM-ID | Anzahl | Name – eine Zeile pro Item"></textarea></label></div>
+          <div class="online-mod-actions"><button type="submit" name="eventAction" value="save">Entwurf speichern</button><button class="online-mod-primary" type="submit" name="eventAction" value="start">Event starten</button><button type="submit" name="eventAction" value="end">Beenden</button><button type="submit" class="danger" name="eventAction" value="clear">Löschen</button></div><p class="online-mod-message" data-event-message></p>
+        </form>
+        <aside class="online-mod-card online-mod-event-items"><div class="online-mod-card-title"><span>#</span><div><small>PREIS-KATALOG</small><h3>Item hinzufügen</h3></div></div><label class="online-mod-search-box"><span>⌕</span><input data-event-item-search value="${esc(eventItemSearch)}" placeholder="Preis-Item suchen"></label><div class="online-mod-event-item-list" data-event-item-list>${renderEventItemRows()}</div></aside>
+      </section>`;
     try {
       const fb = await runtime();
       const snap = await fb.getDoc(fb.doc(fb.db, "events", "current"));
       if (snap.exists()) fillEventForm(snap.data());
     } catch (error) {
-      content().querySelector("[data-event-message]").textContent = error.message;
+      const message = content().querySelector("[data-event-message]");
+      if (message) message.textContent = error.message;
     }
+  }
+
+  function renderEventItemRows() {
+    const rows = filteredCatalog(eventItemSearch, "all").slice(0, 100);
+    return rows.map((row) => `<button type="button" data-add-event-item="${esc(row.id)}"><span>${CATEGORY_ICONS[row.category] || "📦"}</span><div><b>${esc(row.name)}</b><small>${esc(row.id)}</small></div><em>+</em></button>`).join("") || `<div class="online-mod-empty-state compact"><p>Kein Item gefunden.</p></div>`;
   }
 
   function fillEventForm(event) {
@@ -408,7 +812,7 @@
     const localDateTime = (ms) => ms ? new Date(ms - new Date(ms).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "";
     form.elements.startsAt.value = localDateTime(event.startsAtMs);
     form.elements.endsAt.value = localDateTime(event.endsAtMs);
-    form.elements.rewardItems.value = (event.rewardItems || []).map((item) => `${item.itemId || ""} | ${item.amount || 1} | ${item.label || ""}`).join("\n");
+    form.elements.rewardItems.value = safeArray(event.rewardItems).map((item) => `${item.itemId || ""} | ${item.amount || 1} | ${item.label || ""}`).join("\n");
   }
 
   function parseRewardItems(text) {
@@ -419,40 +823,43 @@
   }
 
   function renderIdsPanel() {
-    let rows = [];
-    try {
-      const registry = typeof buildItemRegistry === "function" ? buildItemRegistry(true) : null;
-      if (registry?.values) rows = [...registry.values()].map((entry) => ({ id: entry.id, name: entry.name, source: entry.source }));
-    } catch (error) {
-      console.warn("Item-Katalog", error);
-    }
-    rows.sort((a, b) => a.name.localeCompare(b.name, "de"));
-    content().innerHTML = `<section class="online-mod-card"><div class="online-mod-card-head"><div><small>ITEM-KATALOG</small><h3>IDs anzeigen und kopieren</h3></div><label class="online-mod-switch"><input type="checkbox" data-id-overlay-toggle ${document.body.classList.contains("mod-item-ids-visible") ? "checked" : ""}> IDs im Spiel</label></div><input class="online-mod-search" data-id-search placeholder="Name oder ID suchen"><div class="online-mod-id-list" data-id-list>${rows.slice(0, 500).map((row) => `<button type="button" data-copy-id="${esc(row.id)}"><b>${esc(row.name)}</b><code>${esc(row.id)}</code><small>${esc(row.source)}</small></button>`).join("")}</div></section>`;
-    content().dataset.idRows = JSON.stringify(rows);
+    buildCatalogRows();
+    const counts = categoryCounts();
+    content().innerHTML = `
+      ${pageHead("ITEM-KATALOG", "Item-IDs", "Nach Kategorien sortiert suchen, IDs kopieren und die gewünschte Ware schnell finden.")}
+      <section class="online-mod-id-overview">${CATEGORY_ORDER.filter((category) => counts[category]).map((category) => `<button type="button" class="${idCategory === category ? "active" : ""}" data-id-category="${esc(category)}"><span>${CATEGORY_ICONS[category]}</span><div><b>${esc(category)}</b><small>${counts[category]} Einträge</small></div></button>`).join("")}</section>
+      <section class="online-mod-card online-mod-id-card">
+        <div class="online-mod-id-toolbar"><label class="online-mod-search-box"><span>⌕</span><input data-id-search value="${esc(idSearch)}" placeholder="Name oder ID suchen – z. B. Wohnung"></label><select data-id-category-select>${categoryOptions(idCategory)}</select><label class="online-mod-switch"><input type="checkbox" data-id-overlay-toggle ${document.body.classList.contains("mod-item-ids-visible") ? "checked" : ""}><span>IDs im Spiel anzeigen</span></label></div>
+        <div class="online-mod-id-result-head"><b data-id-result-count></b><button type="button" data-id-category="all">Alle anzeigen</button></div>
+        <div class="online-mod-id-list" data-id-list></div>
+      </section>`;
+    renderIdRows();
   }
 
-  function filterIds(query) {
-    let rows = [];
-    try { rows = JSON.parse(content().dataset.idRows || "[]"); } catch {}
-    const needle = String(query || "").toLowerCase().trim();
+  function renderIdRows() {
     const list = content().querySelector("[data-id-list]");
+    const count = content().querySelector("[data-id-result-count]");
     if (!list) return;
-    list.innerHTML = rows.filter((row) => !needle || row.name.toLowerCase().includes(needle) || row.id.toLowerCase().includes(needle)).slice(0, 500).map((row) => `<button type="button" data-copy-id="${esc(row.id)}"><b>${esc(row.name)}</b><code>${esc(row.id)}</code><small>${esc(row.source)}</small></button>`).join("");
+    const rows = filteredCatalog(idSearch, idCategory).slice(0, 600);
+    if (count) count.textContent = `${rows.length} von ${itemRows.length} Item-IDs`;
+    list.innerHTML = rows.length ? rows.map((row) => `<article class="online-mod-id-row"><span>${CATEGORY_ICONS[row.category] || "📦"}</span><div><small>${esc(row.category)}</small><b>${esc(row.name)}</b><code>${esc(row.id)}</code></div><div class="online-mod-id-actions"><button type="button" data-copy-id="${esc(row.id)}">ID kopieren</button>${selectedPlayer && has("items.write") ? `<button type="button" data-use-item-player="${esc(row.id)}">Beim Spieler</button>` : ""}</div></article>`).join("") : `<div class="online-mod-empty-state"><span>⌕</span><h3>Nichts gefunden</h3><p>Suchbegriff oder Kategorie ändern.</p></div>`;
   }
 
   async function renderStaffPanel() {
-    content().innerHTML = `<section class="online-mod-card"><div class="online-mod-card-head"><div><small>TEAM</small><h3>Mitglieder verwalten</h3></div><button type="button" data-refresh-staff>↻</button></div><div data-staff-list><p>Lade Team …</p></div></section>`;
+    content().innerHTML = `${pageHead("TEAM", "Teamverwaltung", "Rollen ansehen, verändern oder deaktivieren.", `<button type="button" data-refresh-staff>↻ Aktualisieren</button>`)}<section class="online-mod-card"><div data-staff-list><div class="online-mod-loading"><i></i><p>Lade Team …</p></div></div></section>`;
     try {
       const response = await callFunction("listStaffMembers", {});
       const members = response.members || [];
-      content().querySelector("[data-staff-list]").innerHTML = members.length ? members.map((member) => `<form data-staff-member="${esc(member.uid)}" class="online-mod-staff-row"><div><b>${esc(member.roleLabel || member.role)}</b><small>${esc(member.uid)}</small></div><select name="role">${ROLE_ORDER.filter((role) => role !== "owner").map((role) => `<option value="${role}" ${member.role === role ? "selected" : ""}>${ROLE_LABELS[role]}</option>`).join("")}</select><label class="check"><input type="checkbox" name="active" ${member.active ? "checked" : ""}> Aktiv</label><button type="submit" ${member.isOwner ? "disabled" : ""}>Speichern</button></form>`).join("") : `<p class="online-mod-empty">Noch keine Teammitglieder.</p>`;
+      content().querySelector("[data-staff-list]").innerHTML = members.length ? members.map((member) => `<form data-staff-member="${esc(member.uid)}" class="online-mod-staff-row"><div class="online-mod-avatar small">${esc((member.roleLabel || member.role || "T").slice(0, 1))}</div><div><b>${esc(member.roleLabel || member.role)}</b><small>${esc(member.uid)}</small></div><select name="role">${ROLE_ORDER.filter((role) => role !== "owner").map((role) => `<option value="${role}" ${member.role === role ? "selected" : ""}>${ROLE_LABELS[role]}</option>`).join("")}</select><label class="check"><input type="checkbox" name="active" ${member.active ? "checked" : ""}> Aktiv</label><button type="submit" ${member.isOwner ? "disabled" : ""}>Speichern</button></form>`).join("") : `<div class="online-mod-empty-state"><p>Noch keine Teammitglieder.</p></div>`;
     } catch (error) {
       content().querySelector("[data-staff-list]").innerHTML = `<p class="online-mod-message error">${esc(error.message)}</p>`;
     }
   }
 
   async function renderOwnerPanel() {
-    content().innerHTML = `<section class="online-mod-grid"><article class="online-mod-card"><small>OWNER-CODES</small><h3>Einmaligen Rollencode erstellen</h3><form data-create-invite><label>Rolle<select name="role">${ROLE_ORDER.filter((role) => !["owner"].includes(role)).map((role) => `<option value="${role}">${ROLE_LABELS[role]}</option>`).join("")}</select></label><label>Gültig in Stunden<input name="validHours" type="number" min="1" max="720" value="168"></label><label>Notiz<input name="note" maxlength="160"></label><button type="submit">Code erstellen</button><p class="online-mod-message" data-invite-message></p><div class="online-mod-secret" data-created-code hidden></div></form></article><article class="online-mod-card"><small>BESTEHENDE CODES</small><h3>Letzte Einladungen</h3><div data-invite-list><p>Lade Codes …</p></div></article></section>`;
+    content().innerHTML = `
+      ${pageHead("OWNER", "Rollencodes", "Einmalige Codes erstellen und letzte Einladungen kontrollieren.")}
+      <section class="online-mod-section-grid two"><article class="online-mod-card"><div class="online-mod-card-title"><span>🔑</span><div><small>NEUER CODE</small><h3>Rolle freischalten</h3></div></div><form data-create-invite class="online-mod-form-grid"><label>Rolle<select name="role">${ROLE_ORDER.filter((role) => role !== "owner").map((role) => `<option value="${role}">${ROLE_LABELS[role]}</option>`).join("")}</select></label><label>Gültig in Stunden<input name="validHours" type="number" min="1" max="720" value="168"></label><label class="wide">Notiz<input name="note" maxlength="160"></label><button class="online-mod-primary wide" type="submit">Code erstellen</button><p class="online-mod-message wide" data-invite-message></p><div class="online-mod-secret wide" data-created-code hidden></div></form></article><article class="online-mod-card"><div class="online-mod-card-title"><span>☷</span><div><small>VERLAUF</small><h3>Letzte Codes</h3></div></div><div data-invite-list><div class="online-mod-loading"><i></i><p>Lade Codes …</p></div></div></article></section>`;
     await loadInvites();
   }
 
@@ -461,51 +868,86 @@
     if (!target) return;
     try {
       const response = await callFunction("listStaffInvites", {});
-      target.innerHTML = (response.invites || []).map((invite) => `<div class="online-mod-invite-row"><b>${esc(invite.roleLabel || invite.role)}</b><small>${esc(invite.maskedCode || "Code verborgen")} · ${invite.used ? "benutzt" : `gültig bis ${dateTime(invite.expiresAtMs)}`}</small></div>`).join("") || `<p class="online-mod-empty">Noch keine Codes erstellt.</p>`;
+      target.innerHTML = (response.invites || []).map((invite) => `<div class="online-mod-invite-row"><span>${invite.used ? "✓" : "🔑"}</span><div><b>${esc(invite.roleLabel || invite.role)}</b><small>${esc(invite.maskedCode || "Code verborgen")}</small><em>${invite.used ? "Bereits benutzt" : `Gültig bis ${dateTime(invite.expiresAtMs)}`}</em></div></div>`).join("") || `<div class="online-mod-empty-state compact"><p>Noch keine Codes erstellt.</p></div>`;
     } catch (error) {
       target.innerHTML = `<p class="online-mod-message error">${esc(error.message)}</p>`;
     }
   }
 
   function clickedSubmitter(event) {
-    return event.submitter || document.activeElement;
+    return event.submitter || document.activeElement?.closest?.('button[type="submit"]') || null;
+  }
+
+  async function copyText(value, button = null) {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      const area = document.createElement("textarea"); area.value = value; area.style.position = "fixed"; area.style.opacity = "0"; document.body.appendChild(area); area.select(); document.execCommand("copy"); area.remove();
+    }
+    button?.classList.add("copied");
+    setTimeout(() => button?.classList.remove("copied"), 900);
+    toast("In die Zwischenablage kopiert.");
   }
 
   async function handleClick(event) {
     const panelButton = event.target.closest("[data-mod-panel]");
-    if (panelButton) {
+    if (panelButton && !panelButton.disabled) {
       activePanel = panelButton.dataset.modPanel;
       renderPanel();
       return;
     }
+    if (event.target.closest("[data-mod-close]")) return closeModMenu();
     if (event.target.closest("[data-mod-refresh-role]")) return refreshRoleContext(true);
     if (event.target.closest("[data-mod-close-session]")) {
       try { await callFunction("closeStaffSession", {}); } catch {}
-      roleData.activeSessionExpiresAtMs = 0;
-      saveBrowserSession();
-      renderSessionLogin("Sitzung wurde beendet.");
-      return;
+      if (roleData) roleData.activeSessionExpiresAtMs = 0;
+      saveBrowserSession(); renderSessionLogin("Sitzung wurde beendet."); return;
     }
     if (event.target.closest("[data-mod-refresh-players]")) return renderPlayersPanel();
+
+    const filterButton = event.target.closest("[data-player-filter-value]");
+    if (filterButton) { playerFilter = filterButton.dataset.playerFilterValue; content().querySelectorAll("[data-player-filter-value]").forEach((button) => button.classList.toggle("active", button === filterButton)); renderPlayerList(); return; }
     const playerButton = event.target.closest("[data-select-player]");
     if (playerButton) return selectPlayer(playerButton.dataset.selectPlayer);
+    const tabButton = event.target.closest("[data-player-tab]");
+    if (tabButton) { playerTab = tabButton.dataset.playerTab; renderPlayerDetail(); return; }
+    const needsButton = event.target.closest("[data-fill-needs]");
+    if (needsButton) { const form = content().querySelector("[data-needs-form]"); form?.querySelectorAll('input[type="number"]').forEach((input) => { input.value = needsButton.dataset.fillNeeds; }); return; }
+    const moneyValue = event.target.closest("[data-set-money-value]");
+    if (moneyValue) { const input = content().querySelector('[data-money-command] input[name="value"]'); if (input) input.value = moneyValue.dataset.setMoneyValue; return; }
+    const pickItem = event.target.closest("[data-pick-item]");
+    if (pickItem) { selectedCatalogItemId = pickItem.dataset.pickItem; renderPlayerDetail(); return; }
+    const findName = event.target.closest("[data-find-catalog-name]");
+    if (findName) { playerItemSearch = findName.dataset.findCatalogName; playerItemCategory = "all"; const found = filteredCatalog(playerItemSearch, "all")[0]; if (found) selectedCatalogItemId = found.id; renderPlayerDetail(); return; }
+    const currentSearch = event.target.closest("[data-current-inventory-search]");
+    if (currentSearch) return;
+
+    const copyButton = event.target.closest("[data-copy-id]");
+    if (copyButton && !copyButton.disabled) return copyText(copyButton.dataset.copyId, copyButton);
+    const useItem = event.target.closest("[data-use-item-player]");
+    if (useItem) { selectedCatalogItemId = useItem.dataset.useItemPlayer; playerTab = "inventory"; activePanel = "players"; renderPanel(); if (selectedPlayer?.uid) setTimeout(() => selectPlayer(selectedPlayer.uid, true), 0); return; }
+    const idCategoryButton = event.target.closest("[data-id-category]");
+    if (idCategoryButton) { idCategory = idCategoryButton.dataset.idCategory; renderIdsPanel(); return; }
+    const toggle = event.target.closest("[data-id-overlay-toggle]");
+    if (toggle) { document.body.classList.toggle("mod-item-ids-visible", toggle.checked); sessionStorage.setItem(ITEM_ID_DISPLAY_KEY, toggle.checked ? "on" : "off"); return; }
+
+    const ticketMode = event.target.closest("[data-ticket-mode]");
+    if (ticketMode) { ticketArchive = ticketMode.dataset.ticketMode === "archive"; selectedTicket = null; return renderTicketsPanel(); }
+    if (event.target.closest("[data-load-tickets]")) return loadTickets(ticketArchive);
     const ticketButton = event.target.closest("[data-select-ticket]");
     if (ticketButton) return renderTicketDetail(tickets.find((ticket) => ticket.id === ticketButton.dataset.selectTicket));
-    if (event.target.closest("[data-load-tickets]")) return loadTickets(false);
-    if (event.target.closest("[data-load-ticket-archive]")) return loadTickets(true);
     const ticketAction = event.target.closest("[data-ticket-action]");
-    if (ticketAction && selectedTicket) return runTicketAction(ticketAction.dataset.ticketAction);
-    const copyButton = event.target.closest("[data-copy-id]");
-    if (copyButton) {
-      await navigator.clipboard?.writeText(copyButton.dataset.copyId).catch(() => {});
-      copyButton.classList.add("copied");
-      setTimeout(() => copyButton.classList.remove("copied"), 800);
-      return;
+    if (ticketAction && selectedTicket) {
+      if (ticketAction.dataset.ticketAction === "purge" && !confirm("Ticket wirklich dauerhaft löschen?")) return;
+      return runTicketAction(ticketAction.dataset.ticketAction);
     }
-    const toggle = event.target.closest("[data-id-overlay-toggle]");
-    if (toggle) {
-      document.body.classList.toggle("mod-item-ids-visible", toggle.checked);
-      sessionStorage.setItem("lifebuilder-2026-item-id-display", toggle.checked ? "on" : "off");
+
+    const eventItem = event.target.closest("[data-add-event-item]");
+    if (eventItem) {
+      const row = itemRows.find((item) => item.id === eventItem.dataset.addEventItem);
+      const area = content().querySelector('[data-event-form] textarea[name="rewardItems"]');
+      if (row && area) { const line = `${row.id} | 1 | ${row.name}`; area.value = area.value.trim() ? `${area.value.trim()}\n${line}` : line; toast(`${row.name} als Preis hinzugefügt.`); }
       return;
     }
     if (event.target.closest("[data-refresh-staff]")) return renderStaffPanel();
@@ -515,14 +957,36 @@
     }
   }
 
+  function handleInput(event) {
+    if (event.target.matches("[data-player-search]")) { playerSearch = event.target.value; renderPlayerList(); }
+    if (event.target.matches("[data-player-item-search]")) { playerItemSearch = event.target.value; const list = content().querySelector("[data-player-item-list]"); if (list) list.innerHTML = renderPlayerItemRows(); }
+    if (event.target.matches("[data-id-search]")) { idSearch = event.target.value; renderIdRows(); }
+    if (event.target.matches("[data-ticket-search]")) { ticketSearch = event.target.value; renderTicketList(); }
+    if (event.target.matches("[data-event-item-search]")) { eventItemSearch = event.target.value; const list = content().querySelector("[data-event-item-list]"); if (list) list.innerHTML = renderEventItemRows(); }
+    if (event.target.matches("[data-current-inventory-search]")) {
+      const needle = event.target.value.toLowerCase().trim();
+      content().querySelectorAll("[data-current-item-list] > button").forEach((row) => row.hidden = !!needle && !row.textContent.toLowerCase().includes(needle));
+    }
+  }
+
+  function handleChange(event) {
+    if (event.target.matches("[data-player-sort]")) { playerSort = event.target.value; renderPlayerList(); }
+    if (event.target.matches("[data-player-item-category]")) { playerItemCategory = event.target.value; const list = content().querySelector("[data-player-item-list]"); if (list) list.innerHTML = renderPlayerItemRows(); }
+    if (event.target.matches("[data-id-category-select]")) { idCategory = event.target.value; renderIdRows(); }
+    if (event.target.matches("[data-ticket-status]")) { ticketStatus = event.target.value; renderTicketList(); }
+  }
+
   async function runTicketAction(action, extra = {}) {
     const message = content().querySelector("[data-ticket-message]");
     try {
       await callFunction("ticketAction", { ticketId: selectedTicket.id, action, ...extra });
-      if (message) message.textContent = "Ticket aktualisiert.";
-      await loadTickets(false);
+      if (message) { message.textContent = "Ticket aktualisiert."; message.classList.remove("error"); }
+      toast("Ticket wurde aktualisiert.");
+      selectedTicket = null;
+      await loadTickets(ticketArchive);
     } catch (error) {
       if (message) { message.textContent = error.message; message.classList.add("error"); }
+      toast(error.message, "error");
     }
   }
 
@@ -551,20 +1015,18 @@
     const message = content().querySelector("[data-player-action-message]");
     try {
       const response = await queueCommand(command);
-      if (message) {
-        message.textContent = response.appliedToCloud
-          ? "Änderung wurde sofort im Cloud-Spielstand gespeichert. Ein online geöffneter Charakter übernimmt sie automatisch."
-          : "Befehl wurde in die Warteschlange gestellt und wird angewendet, sobald der Spieler online ist.";
-        message.classList.remove("error");
-      }
-      if (response.appliedToCloud && selectedPlayer?.uid) {
+      const text = response.appliedToCloud
+        ? "Änderung wurde direkt im Cloud-Spielstand gespeichert."
+        : "Befehl wurde gespeichert und wird beim nächsten Online-Kontakt angewendet.";
+      if (message) { message.textContent = text; message.classList.remove("error"); }
+      toast(text);
+      if (selectedPlayer?.uid) {
         const uid = selectedPlayer.uid;
-        setTimeout(() => {
-          if (selectedPlayer?.uid === uid && activePanel === "players") selectPlayer(uid).catch(() => {});
-        }, 700);
+        setTimeout(() => { if (selectedPlayer?.uid === uid && activePanel === "players") selectPlayer(uid, true).catch(() => {}); }, response.appliedToCloud ? 650 : 1200);
       }
     } catch (error) {
       if (message) { message.textContent = error.message; message.classList.add("error"); }
+      toast(error.message, "error");
     }
   }
 
@@ -572,15 +1034,14 @@
     const form = event.target;
     if (!(form instanceof HTMLFormElement)) return;
     event.preventDefault();
+    const submitter = clickedSubmitter(event);
+
     if (form.matches("[data-mod-session-form]")) {
       const pin = new FormData(form).get("pin");
       try {
         const response = await callFunction("openStaffSession", { pin });
         roleData = { ...roleData, ...response, active: true };
-        saveBrowserSession();
-        updateSettingsEntry();
-        activePanel = "home";
-        renderPanel();
+        saveBrowserSession(); updateSettingsEntry(); activePanel = "home"; renderPanel(); toast("Mod-Sitzung geöffnet.");
       } catch (error) { renderSessionLogin(error.message); }
       return;
     }
@@ -589,22 +1050,30 @@
       return runCommand(command);
     }
     if (form.matches("[data-item-command]")) {
-      const submitter = clickedSubmitter(event);
       const data = formDataObject(form);
-      return runCommand({ kind: submitter?.value || "giveItem", itemId: data.itemId, amount: num(data.amount, 1) });
+      const row = itemRows.find((item) => item.id === data.itemId);
+      if (!row) return toast("Bitte zuerst ein Item auswählen.", "error");
+      return runCommand({
+        kind: submitter?.value || "giveItem",
+        itemId: row.id,
+        itemName: row.name,
+        itemSource: row.source,
+        itemCategory: row.category,
+        itemMeta: row.meta,
+        amount: Math.max(1, Math.min(99, Math.round(num(data.amount, 1))))
+      });
     }
     if (form.matches("[data-money-command]")) {
-      const submitter = clickedSubmitter(event);
       const data = formDataObject(form);
-      return runCommand({ kind: submitter?.value || "addMoney", target: data.target, value: num(data.value) });
+      return runCommand({ kind: submitter?.value || "addMoney", target: data.target, value: Math.max(0, Math.round(num(data.value))) });
     }
     if (form.matches("[data-moderation-form]")) {
-      const submitter = clickedSubmitter(event);
       const message = content().querySelector("[data-player-action-message]");
       try {
         await callFunction("staffAction", { action: "moderate", targetUid: selectedPlayer.uid, mode: submitter?.value, reason: form.elements.reason.value, minutes: num(form.elements.minutes.value, 60) });
-        if (message) message.textContent = "Moderationsaktion durchgeführt.";
-      } catch (error) { if (message) { message.textContent = error.message; message.classList.add("error"); } }
+        if (message) { message.textContent = "Moderationsaktion durchgeführt."; message.classList.remove("error"); }
+        toast("Moderationsaktion durchgeführt.");
+      } catch (error) { if (message) { message.textContent = error.message; message.classList.add("error"); } toast(error.message, "error"); }
       return;
     }
     if (form.matches("[data-ticket-reply-form]")) {
@@ -613,33 +1082,20 @@
       return;
     }
     if (form.matches("[data-event-form]")) {
-      const submitter = clickedSubmitter(event);
       const action = submitter?.value || "save";
       const data = formDataObject(form);
       const message = form.querySelector("[data-event-message]");
       try {
-        const payload = {
-          title: data.title,
-          description: data.description,
-          task: data.task,
-          proofHint: data.proofHint,
-          startsAtMs: data.startsAt ? new Date(data.startsAt).getTime() : 0,
-          endsAtMs: data.endsAt ? new Date(data.endsAt).getTime() : 0,
-          rewardMoney: num(data.rewardMoney),
-          maxWinners: num(data.maxWinners, 1),
-          rewardItems: parseRewardItems(data.rewardItems)
-        };
+        const payload = { title: data.title, description: data.description, task: data.task, proofHint: data.proofHint, startsAtMs: data.startsAt ? new Date(data.startsAt).getTime() : 0, endsAtMs: data.endsAt ? new Date(data.endsAt).getTime() : 0, rewardMoney: num(data.rewardMoney), maxWinners: num(data.maxWinners, 1), rewardItems: parseRewardItems(data.rewardItems) };
         await callFunction("eventAction", { action, event: payload });
-        message.textContent = "Event aktualisiert.";
-      } catch (error) { message.textContent = error.message; message.classList.add("error"); }
+        message.textContent = "Event aktualisiert."; message.classList.remove("error"); toast("Event aktualisiert.");
+      } catch (error) { message.textContent = error.message; message.classList.add("error"); toast(error.message, "error"); }
       return;
     }
     if (form.matches("[data-staff-member]")) {
       const data = formDataObject(form);
-      try {
-        await callFunction("manageStaffMember", { targetUid: form.dataset.staffMember, role: data.role, active: data.active === true || data.active === "on" });
-        await renderStaffPanel();
-      } catch (error) { alert(error.message); }
+      try { await callFunction("manageStaffMember", { targetUid: form.dataset.staffMember, role: data.role, active: data.active === true || data.active === "on" }); toast("Teammitglied aktualisiert."); await renderStaffPanel(); }
+      catch (error) { toast(error.message, "error"); }
       return;
     }
     if (form.matches("[data-create-invite]")) {
@@ -648,11 +1104,9 @@
       const box = form.querySelector("[data-created-code]");
       try {
         const response = await callFunction("createStaffInvite", { role: data.role, validHours: num(data.validHours, 168), note: data.note });
-        box.hidden = false;
-        box.innerHTML = `<small>Einmaliger Code</small><code>${esc(response.code)}</code><button type="button" data-copy-id="${esc(response.code)}">Kopieren</button>`;
-        message.textContent = "Code wurde erstellt. Er ist nur einmal verwendbar.";
-        await loadInvites();
-      } catch (error) { message.textContent = error.message; message.classList.add("error"); }
+        box.hidden = false; box.innerHTML = `<small>Einmaliger Code</small><code>${esc(response.code)}</code><button type="button" data-copy-id="${esc(response.code)}">Code kopieren</button>`;
+        message.textContent = "Code erstellt. Er ist nur einmal verwendbar."; message.classList.remove("error"); toast("Rollencode erstellt."); await loadInvites();
+      } catch (error) { message.textContent = error.message; message.classList.add("error"); toast(error.message, "error"); }
     }
   }
 
@@ -661,65 +1115,35 @@
     try {
       const response = await callFunction("getStaffContext", { force });
       roleData = response.role || roleData;
-      saveBrowserSession();
-      updateSettingsEntry();
+      saveBrowserSession(); updateSettingsEntry();
       if (overlay?.classList.contains("show")) {
         overlay.querySelector("[data-mod-role-line]").textContent = `${roleLabel()} · ${currentUser.email || currentUser.uid}`;
         sessionActive() ? renderPanel() : renderSessionLogin();
       }
-    } catch (error) {
-      console.warn("Staff-Kontext", error);
-    }
+      toast("Rolle und Sitzung neu geladen.");
+    } catch (error) { console.warn("Staff-Kontext", error); toast(error.message, "error"); }
   }
 
   async function listenRole(user) {
-    roleUnsubscribe?.();
-    roleUnsubscribe = null;
-    roleData = null;
-    selectedPlayer = null;
-    sessionStorage.removeItem(SESSION_KEY);
-    updateSettingsEntry();
+    roleUnsubscribe?.(); roleUnsubscribe = null; roleData = null; selectedPlayer = null; sessionStorage.removeItem(SESSION_KEY); updateSettingsEntry();
     if (!user) return;
     const fb = await runtime();
     roleUnsubscribe = fb.onSnapshot(fb.doc(fb.db, "staffRoles", user.uid), (snapshot) => {
       roleData = snapshot.exists() ? { uid: user.uid, ...snapshot.data() } : null;
-      if (roleData?.active) {
-        roleData.permissions ||= ROLE_PERMISSIONS[roleData.role] || [];
-        roleData.roleLabel ||= ROLE_LABELS[roleData.role] || roleData.role;
-      }
-      saveBrowserSession();
-      updateSettingsEntry();
+      if (roleData?.active) { roleData.permissions ||= ROLE_PERMISSIONS[roleData.role] || []; roleData.roleLabel ||= ROLE_LABELS[roleData.role] || roleData.role; }
+      saveBrowserSession(); updateSettingsEntry();
       if (!roleData?.active && overlay?.classList.contains("show")) closeModMenu();
     }, (error) => console.warn("Mod-Rolle konnte nicht geladen werden", error));
   }
 
-  function bindSearchInputs() {
-    document.addEventListener("input", (event) => {
-      if (event.target.matches("[data-player-search]")) renderPlayerList(event.target.value);
-      if (event.target.matches("[data-id-search]")) filterIds(event.target.value);
-    });
-  }
-
   async function initialize() {
-    bindSearchInputs();
     try {
+      if (sessionStorage.getItem(ITEM_ID_DISPLAY_KEY) === "on") document.body.classList.add("mod-item-ids-visible");
       const fb = await runtime();
-      fb.onAuthStateChanged(fb.auth, (user) => {
-        currentUser = user;
-        listenRole(user).catch((error) => console.warn(error));
-      });
-    } catch (error) {
-      console.warn("Online-Mod-Menü konnte Firebase nicht laden", error);
-    }
+      fb.onAuthStateChanged(fb.auth, (user) => { currentUser = user; listenRole(user).catch((error) => console.warn(error)); });
+    } catch (error) { console.warn("Online-Mod-Menü konnte Firebase nicht laden", error); }
   }
 
-  window.LifeBuilderOnlineMod = {
-    open: openModMenu,
-    close: closeModMenu,
-    getRole: () => roleData,
-    hasPermission: has,
-    refresh: refreshRoleContext
-  };
-
+  window.LifeBuilderOnlineMod = { open: openModMenu, close: closeModMenu, getRole: () => roleData, hasPermission: has, refresh: refreshRoleContext, version: VERSION };
   initialize();
 })();
