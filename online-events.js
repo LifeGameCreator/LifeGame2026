@@ -1,8 +1,9 @@
 (() => {
-  const ONLINE_VERSION = "2026-07-23-database-check-fix-1";
+  const ONLINE_VERSION = "2026-07-23-auth-overlay-cloud-fix-2";
   const FIRESTORE_DATABASE_ID = "gamekl";
   const DATABASE_VERIFY_TIMEOUT_MS = 12000;
   const DATABASE_RETRY_MS = 15000;
+  const CLOUD_UPLOAD_TIMEOUT_MS = 8000;
   const AUDIT_STORAGE_PREFIX = "lifebuilder-2026-online-audit:";
   const HEARTBEAT_MS = 25000;
   const ONLINE_WINDOW_MS = 70000;
@@ -141,10 +142,18 @@
   }
 
   function resolvePendingAuth(user = onlineUser) {
+    const hadPendingAuth = !!authWaitResolve;
     if (authWaitResolve && user) authWaitResolve(user);
     authWaitResolve = null;
     authWaitReject = null;
     authWaitPromise = null;
+
+    // Bei einer wiederhergestellten Firebase-Sitzung konnte das Login-Fenster
+    // sichtbar bleiben, obwohl die Anmeldung bereits erfolgreich war. Sobald
+    // eine wartende Spielstart-Anfrage erfüllt ist, wird es daher sicher geschlossen.
+    if (hadPendingAuth && user) {
+      document.querySelector("[data-online-auth-overlay]")?.classList.remove("show");
+    }
   }
 
   function scheduleDatabaseRetry(user = onlineUser, delay = DATABASE_RETRY_MS) {
@@ -162,8 +171,10 @@
         } catch (error) {
           console.warn("Online-Identität wird nach erfolgreicher Datenbankverbindung später synchronisiert", error);
         }
-        await hydrateCloudSlots(onlineUser).catch((error) => console.warn("Cloud-Spielstände konnten noch nicht geladen werden", error));
         startOnlineServices();
+        // Cloud-Spielstände werden im Hintergrund geladen. Eine langsame oder
+        // blockierte Schreiboperation darf den sichtbaren Spielstart nicht festhalten.
+        hydrateCloudSlots(onlineUser).catch((error) => console.warn("Cloud-Spielstände konnten noch nicht geladen werden", error));
       } catch (error) {
         databaseConnectionError = databaseErrorText(error);
         updateOnlineStatusBadge();
@@ -477,9 +488,13 @@
         try {
           await verifyOnlineDatabase(fb, credentials.user, true);
           databaseConnected = true;
-          message.textContent = `Live verbunden als ${credentials.user.displayName || credentials.user.email}. Spielstände werden geladen …`;
-          await hydrateCloudSlots(credentials.user);
+          message.textContent = `Live verbunden als ${credentials.user.displayName || credentials.user.email}. Spiel wird geöffnet …`;
           startOnlineServices();
+          // Nicht mehr auf den kompletten Cloud-Abgleich warten. Der Slot-Bildschirm
+          // öffnet sofort und wird nach dem Laden automatisch neu gerendert.
+          hydrateCloudSlots(credentials.user).catch((error) => {
+            console.warn("Cloud-Spielstände konnten noch nicht geladen werden", error);
+          });
         } catch (databaseError) {
           databaseConnectionError = databaseErrorText(databaseError);
           console.warn("Firebase-Login erfolgreich; Firestore verbindet sich im Hintergrund", databaseError);
@@ -608,13 +623,13 @@
     slotState.onlineUpdatedAtMs = updatedAtMs;
     const stateJson = JSON.stringify(slotState);
     if (stateJson.length > 900000) throw new Error("Der Spielstand ist zu groß für den Online-Speicher.");
-    await fb.setDoc(cloudSlotRef(fb, onlineUser.uid, slotIndex), {
+    await withDatabaseTimeout(fb.setDoc(cloudSlotRef(fb, onlineUser.uid, slotIndex), {
       uid: onlineUser.uid,
       slot: Number(slotIndex),
       stateJson,
       updatedAtMs,
       version: ONLINE_VERSION
-    });
+    }), CLOUD_UPLOAD_TIMEOUT_MS);
   }
 
   async function deleteCloudSlot(slotIndex) {
@@ -672,7 +687,9 @@
           }
         });
         persistLocalSlotsAfterCloudLoad();
-        await Promise.allSettled(uploads);
+        // Auch lokale Uploads erhalten ein Zeitlimit. Vorher konnte bereits eine
+        // einzige hängende setDoc-Anfrage das Login-Fenster dauerhaft offen halten.
+        await Promise.allSettled(uploads.map((upload) => withDatabaseTimeout(upload, CLOUD_UPLOAD_TIMEOUT_MS)));
         cloudSaveReadyUid = user.uid;
       } finally {
         window.__lifeBuilderCloudHydrating = false;
@@ -1341,15 +1358,18 @@
     if (!onlineRequired()) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    requireUser().then(async (user) => {
+    requireUser().then((user) => {
       if (!user) return;
+
+      // Der Slot-Bildschirm öffnet direkt nach erfolgreicher Firebase-Anmeldung.
+      // Firestore-Abgleich und Online-Synchronisierung laufen danach im Hintergrund.
+      setSetupView("slots");
       if (databaseReadyUid === user.uid) {
-        await hydrateCloudSlots(user).catch((error) => console.warn("Cloud-Spielstände konnten noch nicht geladen werden", error));
+        hydrateCloudSlots(user).catch((error) => console.warn("Cloud-Spielstände konnten noch nicht geladen werden", error));
         syncPlayerOnline(true).catch(() => {});
       } else {
         scheduleDatabaseRetry(user, 0);
       }
-      setSetupView("slots");
     }).catch(() => {});
   }, true);
 
