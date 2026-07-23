@@ -2963,6 +2963,9 @@ function communicationToastLayer() {
     layer = document.createElement("div");
     layer.className = "communication-toast-layer";
     layer.dataset.communicationToastLayer = "1";
+    layer.setAttribute("popover", "manual");
+    layer.setAttribute("aria-live", "assertive");
+    layer.setAttribute("aria-atomic", "false");
     layer.innerHTML = `<div data-communication-call-host></div><div data-communication-message-host></div>`;
     layer.addEventListener("click", (event) => {
       const answer = event.target.closest("[data-global-answer-call]");
@@ -2999,11 +3002,27 @@ function communicationToastLayer() {
   return layer;
 }
 
+function communicationLayerHasContent(layer) {
+  return !!layer?.querySelector(".communication-toast");
+}
+
 function bringCommunicationToastToFront(layer) {
   if (!layer) return;
-  const openDialogs = Array.from(document.querySelectorAll("dialog[open]"));
-  const target = openDialogs.at(-1) || document.body;
-  if (layer.parentElement !== target) target.appendChild(layer);
+  // Ein Popover liegt in der Browser-Top-Layer und bleibt dadurch auch über
+  // geöffneten Spiel-/Handy-Dialogen sichtbar. Das frühere Verschieben in
+  // Dialoge konnte den Banner durch deren Overflow/Transform abschneiden.
+  if (layer.parentElement !== document.body) document.body.appendChild(layer);
+  const shouldShow = communicationLayerHasContent(layer);
+  if (typeof layer.showPopover === "function") {
+    try {
+      if (shouldShow && !layer.matches(":popover-open")) layer.showPopover();
+      if (!shouldShow && layer.matches(":popover-open")) layer.hidePopover();
+    } catch (error) {
+      console.warn("Kommunikations-Popover konnte nicht umgeschaltet werden", error);
+    }
+  } else {
+    layer.classList.toggle("is-visible", shouldShow);
+  }
 }
 
 function syncIncomingCallNotifications(calls = []) {
@@ -11383,6 +11402,10 @@ let phoneIceServersPromise = null;
 let phoneToneAudioContext = null;
 let phoneRingtoneTimer = null;
 let phoneRingtonePlaying = false;
+let activePhoneCallDocUnsubscribe = null;
+let activePhoneCandidateUnsubscribe = null;
+let activePhoneCallTimeout = null;
+let phoneSmsRetryTimer = null;
 
 const PHONE_RINGTONE_DEFINITIONS = Object.freeze({
   classic: { label: "Classic Ring", pattern: [[659, .17], [523, .17], [784, .26], [0, .34]] },
@@ -11497,14 +11520,36 @@ function phoneToneSettingsHtml() {
 
 async function resolvePhoneIceServers() {
   if (phoneIceServersPromise) return phoneIceServersPromise;
-  phoneIceServersPromise = Promise.resolve().then(() => {
-    const configured = window.LifeBuilderRtcConfig?.iceServers;
+  phoneIceServersPromise = (async () => {
+    const configured = Array.isArray(window.LifeBuilderRtcConfig?.iceServers)
+      ? window.LifeBuilderRtcConfig.iceServers.filter(Boolean)
+      : [];
     const fallback = [
-      { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }
+      { urls: [
+        "stun:stun.l.google.com:19302",
+        "stun:stun1.l.google.com:19302",
+        "stun:stun2.l.google.com:19302"
+      ] }
     ];
-    return Array.isArray(configured) && configured.length ? configured : fallback;
-  }).catch(() => [
-    { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }
+    const credentialsUrl = String(window.LifeBuilderRtcConfig?.turnCredentialsUrl || "").trim();
+    if (!credentialsUrl) return configured.length ? configured : fallback;
+    try {
+      const response = await fetch(credentialsUrl, { cache: "no-store", credentials: "omit" });
+      if (!response.ok) throw new Error(`TURN-Zugangsdaten: HTTP ${response.status}`);
+      const payload = await response.json();
+      const remoteServers = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.iceServers)
+          ? payload.iceServers
+          : [];
+      if (!remoteServers.length) throw new Error("TURN-Zugangsdaten enthielten keine ICE-Server.");
+      return [...configured, ...remoteServers];
+    } catch (error) {
+      console.warn("TURN-Zugangsdaten konnten nicht geladen werden; STUN-Fallback wird verwendet", error);
+      return configured.length ? configured : fallback;
+    }
+  })().catch(() => [
+    { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302", "stun:stun2.l.google.com:19302"] }
   ]);
   return phoneIceServersPromise;
 }
@@ -11756,8 +11801,6 @@ async function sendFirebaseSms(rawNumber, text) {
     const sender = await registerPhoneOnline();
     const recipient = await lookupPhoneRegistration(fb, to);
     if (!sender || !recipient) throw new Error("Diese Telefonnummer ist aktuell nicht bei Sim.KL registriert.");
-    if (sender.ownerUid === recipient.ownerUid) throw new Error("Du kannst keine SMS an deine eigene Nummer senden.");
-
     if (!chargePhoneCommunication("sms")) {
       save();
       return openDeviceInterface(ownedPhoneItem(), "sms", false);
@@ -11766,7 +11809,10 @@ async function sendFirebaseSms(rawNumber, text) {
     const onlineFrom = sender.number;
     const { conversationId } = await ensurePhoneConversation(fb, onlineFrom, to, sender.ownerUid, recipient.ownerUid);
     const createdAtMs = Date.now();
-    const messageRef = await fb.addDoc(fb.collection(fb.db, "phoneConversations", conversationId, "messages"), {
+    const messageRef = fb.doc(fb.collection(fb.db, "phoneConversations", conversationId, "messages"));
+    const inboxRef = fb.doc(fb.db, "phoneInboxes", recipient.number, "messages", messageRef.id);
+    const payload = {
+      conversationId,
       from: onlineFrom,
       to,
       senderUid: sender.ownerUid,
@@ -11774,7 +11820,11 @@ async function sendFirebaseSms(rawNumber, text) {
       text: message,
       createdAt: fb.serverTimestamp(),
       createdAtMs
-    });
+    };
+    const batch = fb.writeBatch(fb.db);
+    batch.set(messageRef, payload);
+    batch.set(inboxRef, payload);
+    await batch.commit();
     state.phoneMessages ||= {};
     state.phoneMessages[conversationId] ||= [];
     if (!state.phoneMessages[conversationId].some((entry) => entry.id === messageRef.id)) {
@@ -11823,12 +11873,14 @@ async function startSmsListener(number) {
 
 async function startGlobalSmsListener() {
   if (phoneGlobalSmsUnsubscribe) return;
+  clearTimeout(phoneSmsRetryTimer);
+  phoneSmsRetryTimer = null;
   const fb = await loadFirebasePhoneRuntime();
   const registration = await registerPhoneOnline();
   if (!registration?.ownerUid) return;
   const queryRef = fb.query(
-    fb.collectionGroup(fb.db, "messages"),
-    fb.where("recipientUid", "==", registration.ownerUid),
+    fb.collection(fb.db, "phoneInboxes", registration.number, "messages"),
+    fb.orderBy("createdAtMs", "desc"),
     fb.limit(50)
   );
   phoneGlobalSmsPrimed = false;
@@ -11840,7 +11892,13 @@ async function startGlobalSmsListener() {
     const newest = added.reduce((max, message) => Math.max(max, Number(message.createdAtMs || 0)), Number(state.phoneLastNotifiedSmsAtMs || 0));
     if (!phoneGlobalSmsPrimed) {
       phoneGlobalSmsPrimed = true;
-      state.phoneLastNotifiedSmsAtMs = Math.max(Number(state.phoneLastNotifiedSmsAtMs || 0), newest);
+      const previousNotice = Number(state.phoneLastNotifiedSmsAtMs || 0);
+      const recentUnseen = added.filter((message) => {
+        const timestamp = Number(message.createdAtMs || 0);
+        return timestamp > previousNotice && Date.now() - timestamp < 10 * 60 * 1000;
+      }).slice(-3);
+      recentUnseen.forEach(showIncomingSmsNotification);
+      state.phoneLastNotifiedSmsAtMs = Math.max(previousNotice, newest);
       save();
       return;
     }
@@ -11854,6 +11912,9 @@ async function startGlobalSmsListener() {
   }, (error) => {
     console.warn("Global SMS listener failed", error);
     phoneGlobalSmsUnsubscribe = null;
+    addFeed(`SMS-Benachrichtigungen werden neu verbunden: ${error.message || error}`);
+    clearTimeout(phoneSmsRetryTimer);
+    phoneSmsRetryTimer = window.setTimeout(() => startGlobalSmsListener().catch(console.warn), 5000);
   });
 }
 
@@ -11862,6 +11923,8 @@ function resetPhoneBackgroundRealtime() {
   phoneIncomingUnsubscribe = null;
   phoneGlobalSmsUnsubscribe?.();
   phoneGlobalSmsUnsubscribe = null;
+  clearTimeout(phoneSmsRetryTimer);
+  phoneSmsRetryTimer = null;
   phoneGlobalSmsPrimed = false;
   phoneBackgroundOwnerKey = "";
   stopPhoneRingtone();
@@ -11891,22 +11954,45 @@ async function startIncomingCallListener() {
   const fb = await loadFirebasePhoneRuntime();
   const registration = await registerPhoneOnline();
   if (!registration) return;
-  const q = fb.query(fb.collection(fb.db, "phoneCalls"), fb.where("calleeUid", "==", registration.ownerUid), fb.orderBy("createdAtMs", "desc"), fb.limit(20));
-  phoneIncomingUnsubscribe = fb.onSnapshot(q, (snapshot) => {
-    const calls = snapshot.docs
-      .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
-      .filter((call) => call.status === "ringing");
-    const recentCalls = calls.filter((call) => Date.now() - Number(call.createdAtMs || Date.now()) < 5 * 60 * 1000);
-    state.phoneIncomingCalls = recentCalls.map((call) => ({ id: call.id, caller: call.caller, createdAtMs: call.createdAtMs || Date.now() }));
-    if (recentCalls.length) state.phoneCallStatus = `Eingehender Anruf von ${contactNameFor(recentCalls[0].caller)}.`;
-    else if (/Eingehender Anruf/.test(state.phoneCallStatus || "")) state.phoneCallStatus = "";
-    save();
-    syncIncomingCallNotifications(state.phoneIncomingCalls);
-    if (els.dialog?.open && els.dialog.querySelector(".device-shell")) refreshDeviceApp("phone");
-  }, (error) => {
-    console.warn("Incoming call listener failed", error);
-    stopPhoneRingtone();
-  });
+
+  const attachListener = (queryRef, allowFallback = true) => {
+    phoneIncomingUnsubscribe = fb.onSnapshot(queryRef, (snapshot) => {
+      const calls = snapshot.docs
+        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+        .filter((call) => call.status === "ringing")
+        .sort((a, b) => Number(b.createdAtMs || 0) - Number(a.createdAtMs || 0));
+      const recentCalls = calls.filter((call) => Date.now() - Number(call.createdAtMs || Date.now()) < 5 * 60 * 1000);
+      state.phoneIncomingCalls = recentCalls.map((call) => ({ id: call.id, caller: call.caller, createdAtMs: call.createdAtMs || Date.now() }));
+      if (recentCalls.length) state.phoneCallStatus = `Eingehender Anruf von ${contactNameFor(recentCalls[0].caller)}.`;
+      else if (/Eingehender Anruf/.test(state.phoneCallStatus || "")) state.phoneCallStatus = "";
+      save();
+      syncIncomingCallNotifications(state.phoneIncomingCalls);
+      if (els.dialog?.open && els.dialog.querySelector(".device-shell")) refreshDeviceApp("phone");
+    }, (error) => {
+      console.warn("Incoming call listener failed", error);
+      phoneIncomingUnsubscribe = null;
+      stopPhoneRingtone();
+      if (allowFallback && String(error?.code || "").includes("failed-precondition")) {
+        const fallbackQuery = fb.query(
+          fb.collection(fb.db, "phoneCalls"),
+          fb.where("callee", "==", registration.number),
+          fb.limit(20)
+        );
+        attachListener(fallbackQuery, false);
+        return;
+      }
+      addFeed(`Anruf-Benachrichtigung getrennt: ${error.message || error}`);
+      window.setTimeout(() => startIncomingCallListener().catch(console.warn), 5000);
+    });
+  };
+
+  const orderedQuery = fb.query(
+    fb.collection(fb.db, "phoneCalls"),
+    fb.where("callee", "==", registration.number),
+    fb.orderBy("createdAtMs", "desc"),
+    fb.limit(20)
+  );
+  attachListener(orderedQuery, true);
 }
 
 function phoneRealtimeStatus() {
@@ -11945,17 +12031,75 @@ async function attachRemotePhoneAudio(stream) {
 function createPhonePeer(iceServers = []) {
   const peer = new RTCPeerConnection({
     iceServers,
-    iceCandidatePoolSize: 8,
-    bundlePolicy: "max-bundle"
+    iceCandidatePoolSize: 10,
+    bundlePolicy: "max-bundle",
+    rtcpMuxPolicy: "require",
+    iceTransportPolicy: "all"
   });
   peer.ontrack = (event) => attachRemotePhoneAudio(event.streams?.[0]).catch(console.warn);
+  peer.onicecandidateerror = (event) => console.warn("ICE candidate error", event?.errorCode, event?.errorText, event?.url);
   peer.onconnectionstatechange = () => {
-    if (["failed", "disconnected"].includes(peer.connectionState)) {
-      state.phoneCallStatus = "Telefonverbindung unterbrochen.";
+    const status = peer.connectionState;
+    if (status === "connected") {
+      clearTimeout(activePhoneCallTimeout);
+      activePhoneCallTimeout = null;
+      if (!/aktiv/i.test(state.phoneCallStatus || "")) state.phoneCallStatus = "Anruf aktiv.";
       save();
+      return;
+    }
+    if (["failed", "disconnected"].includes(status)) {
+      state.phoneCallStatus = window.LifeBuilderRtcConfig?.turnCredentialsUrl
+        ? "Telefonverbindung unterbrochen. Verbindung wird erneut versucht."
+        : "Telefonverbindung fehlgeschlagen. Für verschiedene Mobilfunk-/WLAN-Netze wird zusätzlich ein TURN-Server benötigt.";
+      save();
+      addFeed(state.phoneCallStatus);
     }
   };
   return peer;
+}
+
+function clearActivePhoneSubscriptions() {
+  activePhoneCallDocUnsubscribe?.();
+  activePhoneCallDocUnsubscribe = null;
+  activePhoneCandidateUnsubscribe?.();
+  activePhoneCandidateUnsubscribe = null;
+  clearTimeout(activePhoneCallTimeout);
+  activePhoneCallTimeout = null;
+}
+
+function closeActivePhoneMedia() {
+  activePhonePeer?.close();
+  activePhonePeer = null;
+  activeLocalPhoneStream?.getTracks().forEach((track) => track.stop());
+  activeLocalPhoneStream = null;
+  const remoteAudio = document.querySelector("[data-phone-remote-audio]");
+  if (remoteAudio) {
+    remoteAudio.pause?.();
+    remoteAudio.srcObject = null;
+  }
+}
+
+function prepareNewPhoneCall() {
+  clearActivePhoneSubscriptions();
+  closeActivePhoneMedia();
+  activePhoneCallId = "";
+}
+
+function waitForIceGatheringComplete(peer, timeoutMs = 2600) {
+  if (!peer || peer.iceGatheringState === "complete") return Promise.resolve();
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      peer.removeEventListener("icegatheringstatechange", check);
+      clearTimeout(timer);
+      resolve();
+    };
+    const check = () => { if (peer.iceGatheringState === "complete") finish(); };
+    const timer = window.setTimeout(finish, timeoutMs);
+    peer.addEventListener("icegatheringstatechange", check);
+  });
 }
 
 async function addIceCandidateWhenReady(peer, candidate, pending) {
@@ -12003,6 +12147,8 @@ async function startFirebaseCall(rawNumber) {
   if (!navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection) {
     return addFeed("Dieser Browser unterstützt WebRTC/Mikrofon hier nicht.");
   }
+
+  prepareNewPhoneCall();
   activeLocalPhoneStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
   activePhonePeer = createPhonePeer(await resolvePhoneIceServers());
   activeLocalPhoneStream.getTracks().forEach((track) => activePhonePeer.addTrack(track, activeLocalPhoneStream));
@@ -12019,8 +12165,10 @@ async function startFirebaseCall(rawNumber) {
     }
     fb.addDoc(callerCandidates, candidate).catch((error) => console.warn("ICE candidate failed", error));
   };
-  const offer = await activePhonePeer.createOffer();
+  const offer = await activePhonePeer.createOffer({ offerToReceiveAudio: true });
   await activePhonePeer.setLocalDescription(offer);
+  await waitForIceGatheringComplete(activePhonePeer);
+  const localOffer = activePhonePeer.localDescription || offer;
   await fb.setDoc(callRef, {
     caller: onlineCaller,
     callee,
@@ -12028,25 +12176,52 @@ async function startFirebaseCall(rawNumber) {
     calleeUid: calleeRegistration.ownerUid,
     participantUids: [...new Set([callerRegistration.ownerUid, calleeRegistration.ownerUid])],
     status: "ringing",
-    offer: { type: offer.type, sdp: offer.sdp },
+    offer: { type: localOffer.type, sdp: localOffer.sdp },
     createdAtMs: Date.now(),
     createdAt: fb.serverTimestamp()
   });
   callDocumentCreated = true;
   activePhoneCallId = callRef.id;
-  await Promise.all(queuedCallerCandidates.splice(0).map((candidate) => fb.addDoc(callerCandidates, candidate)));
+  await Promise.allSettled(queuedCallerCandidates.splice(0).map((candidate) => fb.addDoc(callerCandidates, candidate)));
   const pendingCalleeCandidates = [];
-  fb.onSnapshot(callRef, async (snapshot) => {
+  activePhoneCallDocUnsubscribe = fb.onSnapshot(callRef, async (snapshot) => {
     const data = snapshot.data();
-    if (!activePhonePeer || !data?.answer || activePhonePeer.currentRemoteDescription) return;
+    if (!data) return;
+    if (data.status === "rejected") {
+      state.phoneCallStatus = `${contactNameFor(callee)} hat den Anruf abgelehnt.`;
+      addFeed(state.phoneCallStatus);
+      clearActivePhoneSubscriptions();
+      closeActivePhoneMedia();
+      save();
+      return;
+    }
+    if (["ended", "missed"].includes(data.status)) {
+      state.phoneCallStatus = data.status === "missed" ? "Keine Antwort." : "Anruf beendet.";
+      clearActivePhoneSubscriptions();
+      closeActivePhoneMedia();
+      save();
+      return;
+    }
+    if (!activePhonePeer || !data.answer || activePhonePeer.currentRemoteDescription) return;
     await activePhonePeer.setRemoteDescription(new RTCSessionDescription(data.answer));
     await flushPendingIce(activePhonePeer, pendingCalleeCandidates);
+    state.phoneCallStatus = `Anruf mit ${contactNameFor(callee)} wird verbunden …`;
+    save();
   });
-  fb.onSnapshot(fb.collection(callRef, "calleeCandidates"), (snapshot) => {
+  activePhoneCandidateUnsubscribe = fb.onSnapshot(fb.collection(callRef, "calleeCandidates"), (snapshot) => {
     snapshot.docChanges().forEach((change) => {
       if (change.type === "added" && activePhonePeer) addIceCandidateWhenReady(activePhonePeer, change.doc.data(), pendingCalleeCandidates);
     });
   });
+  activePhoneCallTimeout = window.setTimeout(async () => {
+    if (activePhoneCallId !== callRef.id || activePhonePeer?.connectionState === "connected") return;
+    await fb.updateDoc(callRef, { status: "missed", endedAtMs: Date.now() }).catch(() => {});
+    state.phoneCallStatus = "Keine Antwort oder Verbindung nicht möglich.";
+    addFeed(state.phoneCallStatus);
+    clearActivePhoneSubscriptions();
+    closeActivePhoneMedia();
+    save();
+  }, 45000);
   state.phoneCallStatus = `Rufe ${contactNameFor(callee)} an. Warte auf Annahme.`;
   save();
   addFeed(state.phoneCallStatus);
@@ -12060,34 +12235,46 @@ async function answerFirebaseCall(callId) {
     return addFeed("Dieser Browser unterstützt WebRTC/Mikrofon hier nicht.");
   }
   const callRef = fb.doc(fb.db, "phoneCalls", callId);
-  activePhoneCallId = callId;
   const callSnapshot = await fb.getDoc(callRef);
   const callData = callSnapshot.data();
-  if (!callData?.offer) return addFeed("Anruf ist nicht mehr verfügbar.");
+  if (!callData?.offer || callData.status !== "ringing") return addFeed("Anruf ist nicht mehr verfügbar.");
   if (callData.calleeUid !== fb.auth.currentUser?.uid) return addFeed("Dieser Anruf gehört nicht zu deiner Telefonnummer.");
+
+  prepareNewPhoneCall();
+  activePhoneCallId = callId;
   activeLocalPhoneStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
   activePhonePeer = createPhonePeer(await resolvePhoneIceServers());
   activeLocalPhoneStream.getTracks().forEach((track) => activePhonePeer.addTrack(track, activeLocalPhoneStream));
   const calleeCandidates = fb.collection(callRef, "calleeCandidates");
   activePhonePeer.onicecandidate = (event) => {
-    if (event.candidate) fb.addDoc(calleeCandidates, event.candidate.toJSON());
+    if (event.candidate) fb.addDoc(calleeCandidates, event.candidate.toJSON()).catch(console.warn);
   };
   const pendingCallerCandidates = [];
   await activePhonePeer.setRemoteDescription(new RTCSessionDescription(callData.offer));
   const answer = await activePhonePeer.createAnswer();
   await activePhonePeer.setLocalDescription(answer);
+  await waitForIceGatheringComplete(activePhonePeer);
+  const localAnswer = activePhonePeer.localDescription || answer;
   await fb.updateDoc(callRef, {
     status: "active",
-    answer: { type: answer.type, sdp: answer.sdp },
+    answer: { type: localAnswer.type, sdp: localAnswer.sdp },
     answeredAtMs: Date.now()
   });
-  fb.onSnapshot(fb.collection(callRef, "callerCandidates"), (snapshot) => {
+  activePhoneCandidateUnsubscribe = fb.onSnapshot(fb.collection(callRef, "callerCandidates"), (snapshot) => {
     snapshot.docChanges().forEach((change) => {
       if (change.type === "added" && activePhonePeer) addIceCandidateWhenReady(activePhonePeer, change.doc.data(), pendingCallerCandidates);
     });
     flushPendingIce(activePhonePeer, pendingCallerCandidates);
   });
-  state.phoneCallStatus = `Anruf mit ${contactNameFor(callData.caller)} aktiv.`;
+  activePhoneCallDocUnsubscribe = fb.onSnapshot(callRef, (snapshot) => {
+    const data = snapshot.data();
+    if (!data || !["ended", "rejected", "missed"].includes(data.status)) return;
+    state.phoneCallStatus = data.status === "missed" ? "Anruf verpasst." : "Anruf beendet.";
+    clearActivePhoneSubscriptions();
+    closeActivePhoneMedia();
+    save();
+  });
+  state.phoneCallStatus = `Anruf mit ${contactNameFor(callData.caller)} wird verbunden …`;
   state.phoneIncomingCalls = [];
   stopPhoneRingtone();
   syncIncomingCallNotifications([]);
@@ -12115,10 +12302,8 @@ async function rejectFirebaseCall(callId) {
 async function endFirebaseCall() {
   const callId = activePhoneCallId;
   activePhoneCallId = "";
-  activePhonePeer?.close();
-  activePhonePeer = null;
-  activeLocalPhoneStream?.getTracks().forEach((track) => track.stop());
-  activeLocalPhoneStream = null;
+  clearActivePhoneSubscriptions();
+  closeActivePhoneMedia();
   stopPhoneRingtone();
   if (callId) {
     try {
