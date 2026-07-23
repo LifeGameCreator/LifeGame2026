@@ -11445,13 +11445,14 @@ async function ensurePhoneConversation(fb, from, to, senderUid, recipientUid) {
   const conversationId = conversationIdFor(from, to);
   const conversationRef = fb.doc(fb.db, "phoneConversations", conversationId);
   const existing = await fb.getDoc(conversationRef);
+  const baseData = {
+    phoneNumbers: [normalizePhoneNumber(from), normalizePhoneNumber(to)],
+    participantUids: [...new Set([senderUid, recipientUid])]
+  };
   if (!existing.exists()) {
-    await fb.setDoc(conversationRef, {
-      phoneNumbers: [normalizePhoneNumber(from), normalizePhoneNumber(to)],
-      participantUids: [...new Set([senderUid, recipientUid])],
-      createdAt: fb.serverTimestamp(),
-      createdAtMs: Date.now()
-    });
+    await fb.setDoc(conversationRef, { ...baseData, createdAt: fb.serverTimestamp(), createdAtMs: Date.now(), updatedAtMs: Date.now() });
+  } else {
+    await fb.setDoc(conversationRef, { ...baseData, updatedAtMs: Date.now() }, { merge: true });
   }
   return { conversationId, conversationRef };
 }
@@ -11486,32 +11487,46 @@ async function sendFirebaseSms(rawNumber, text) {
   if (!to) return addFeed("Bitte gültige Telefonnummer eingeben.");
   if (!message) return addFeed("SMS ist leer.");
   if (message.length > 2000) return addFeed("Die SMS ist zu lang.");
+  const compose = els.dialog?.querySelector?.("[data-sms-input]");
 
-  const fb = await loadFirebasePhoneRuntime();
-  const sender = await registerPhoneOnline();
-  const recipient = await lookupPhoneRegistration(fb, to);
-  if (!sender || !recipient) return addFeed("Diese Telefonnummer ist aktuell nicht bei Sim.KL registriert.");
+  try {
+    const fb = await loadFirebasePhoneRuntime();
+    const sender = await registerPhoneOnline();
+    const recipient = await lookupPhoneRegistration(fb, to);
+    if (!sender || !recipient) throw new Error("Diese Telefonnummer ist aktuell nicht bei Sim.KL registriert.");
+    if (sender.ownerUid === recipient.ownerUid) throw new Error("Du kannst keine SMS an deine eigene Nummer senden.");
 
-  if (!chargePhoneCommunication("sms")) {
+    if (!chargePhoneCommunication("sms")) {
+      save();
+      return openDeviceInterface(ownedPhoneItem(), "sms", false);
+    }
     save();
-    return openDeviceInterface(ownedPhoneItem(), "sms", false);
+    const onlineFrom = sender.number;
+    const { conversationId } = await ensurePhoneConversation(fb, onlineFrom, to, sender.ownerUid, recipient.ownerUid);
+    const createdAtMs = Date.now();
+    const messageRef = await fb.addDoc(fb.collection(fb.db, "phoneConversations", conversationId, "messages"), {
+      from: onlineFrom,
+      to,
+      senderUid: sender.ownerUid,
+      recipientUid: recipient.ownerUid,
+      text: message,
+      createdAt: fb.serverTimestamp(),
+      createdAtMs
+    });
+    state.phoneMessages ||= {};
+    state.phoneMessages[conversationId] ||= [];
+    if (!state.phoneMessages[conversationId].some((entry) => entry.id === messageRef.id)) {
+      state.phoneMessages[conversationId].push({ id: messageRef.id, from: onlineFrom, to, senderUid: sender.ownerUid, recipientUid: recipient.ownerUid, text: message, createdAtMs });
+    }
+    state.phoneActiveContact = to;
+    if (compose) compose.value = "";
+    save();
+    addFeed(`SMS an ${contactNameFor(to)} gesendet.`);
+    openDeviceInterface(ownedPhoneItem(), "sms", false);
+  } catch (error) {
+    if (compose) compose.value = message;
+    addFeed(`SMS konnte nicht gesendet werden: ${error.message || error}`);
   }
-  save();
-  const onlineFrom = sender.number;
-  const { conversationId } = await ensurePhoneConversation(fb, onlineFrom, to, sender.ownerUid, recipient.ownerUid);
-  await fb.addDoc(fb.collection(fb.db, "phoneConversations", conversationId, "messages"), {
-    from: onlineFrom,
-    to,
-    senderUid: sender.ownerUid,
-    recipientUid: recipient.ownerUid,
-    text: message,
-    createdAt: fb.serverTimestamp(),
-    createdAtMs: Date.now()
-  });
-  state.phoneActiveContact = to;
-  save();
-  addFeed(`SMS an ${contactNameFor(to)} gesendet.`);
-  openDeviceInterface(ownedPhoneItem(), "sms", false);
 }
 
 function cachedMessagesFor(number) {
@@ -11570,6 +11585,68 @@ function phoneRealtimeStatus() {
   return `Deine Nummer: ${prettyPhoneNumber(state.phoneNumber)}.`;
 }
 
+async function attachRemotePhoneAudio(stream) {
+  if (!stream) return;
+  let audio = document.querySelector("[data-phone-remote-audio]");
+  if (!audio) {
+    audio = document.createElement("audio");
+    audio.dataset.phoneRemoteAudio = "1";
+    audio.autoplay = true;
+    audio.playsInline = true;
+    audio.controls = false;
+    audio.style.display = "none";
+    document.body.appendChild(audio);
+  }
+  audio.muted = false;
+  audio.volume = 1;
+  audio.srcObject = stream;
+  try {
+    await audio.play();
+  } catch (error) {
+    console.warn("Remote audio autoplay blocked", error);
+    state.phoneCallStatus = "Anruf aktiv – tippe einmal auf die Seite, falls der Ton blockiert ist.";
+    save();
+    const resume = () => audio.play().catch(() => {});
+    document.addEventListener("pointerdown", resume, { once: true, capture: true });
+    document.addEventListener("keydown", resume, { once: true, capture: true });
+  }
+}
+
+function createPhonePeer() {
+  const peer = new RTCPeerConnection({
+    iceServers: [
+      { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }
+    ],
+    iceCandidatePoolSize: 6
+  });
+  peer.ontrack = (event) => attachRemotePhoneAudio(event.streams?.[0]).catch(console.warn);
+  peer.onconnectionstatechange = () => {
+    if (["failed", "disconnected"].includes(peer.connectionState)) {
+      state.phoneCallStatus = "Telefonverbindung unterbrochen.";
+      save();
+    }
+  };
+  return peer;
+}
+
+async function addIceCandidateWhenReady(peer, candidate, pending) {
+  if (!peer || !candidate) return;
+  if (!peer.remoteDescription) {
+    pending.push(candidate);
+    return;
+  }
+  try { await peer.addIceCandidate(new RTCIceCandidate(candidate)); }
+  catch (error) { console.warn("ICE candidate rejected", error); }
+}
+
+async function flushPendingIce(peer, pending) {
+  while (peer?.remoteDescription && pending.length) {
+    const candidate = pending.shift();
+    try { await peer.addIceCandidate(new RTCIceCandidate(candidate)); }
+    catch (error) { console.warn("Pending ICE candidate rejected", error); }
+  }
+}
+
 async function startFirebaseCall(rawNumber) {
   const caller = ensurePhoneIdentity();
   const callee = normalizePhoneNumber(rawNumber);
@@ -11598,18 +11675,8 @@ async function startFirebaseCall(rawNumber) {
     return addFeed("Dieser Browser unterstützt WebRTC/Mikrofon hier nicht.");
   }
   activeLocalPhoneStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-  activePhonePeer = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+  activePhonePeer = createPhonePeer();
   activeLocalPhoneStream.getTracks().forEach((track) => activePhonePeer.addTrack(track, activeLocalPhoneStream));
-  activePhonePeer.ontrack = (event) => {
-    let audio = document.querySelector("[data-phone-remote-audio]");
-    if (!audio) {
-      audio = document.createElement("audio");
-      audio.dataset.phoneRemoteAudio = "1";
-      audio.autoplay = true;
-      document.body.appendChild(audio);
-    }
-    audio.srcObject = event.streams[0];
-  };
   const callRef = fb.doc(fb.collection(fb.db, "phoneCalls"));
   const callerCandidates = fb.collection(callRef, "callerCandidates");
   const queuedCallerCandidates = [];
@@ -11638,14 +11705,16 @@ async function startFirebaseCall(rawNumber) {
   });
   callDocumentCreated = true;
   await Promise.all(queuedCallerCandidates.splice(0).map((candidate) => fb.addDoc(callerCandidates, candidate)));
+  const pendingCalleeCandidates = [];
   fb.onSnapshot(callRef, async (snapshot) => {
     const data = snapshot.data();
     if (!activePhonePeer || !data?.answer || activePhonePeer.currentRemoteDescription) return;
     await activePhonePeer.setRemoteDescription(new RTCSessionDescription(data.answer));
+    await flushPendingIce(activePhonePeer, pendingCalleeCandidates);
   });
   fb.onSnapshot(fb.collection(callRef, "calleeCandidates"), (snapshot) => {
     snapshot.docChanges().forEach((change) => {
-      if (change.type === "added" && activePhonePeer) activePhonePeer.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+      if (change.type === "added" && activePhonePeer) addIceCandidateWhenReady(activePhonePeer, change.doc.data(), pendingCalleeCandidates);
     });
   });
   state.phoneCallStatus = `Rufe ${contactNameFor(callee)} an. Warte auf Annahme.`;
@@ -11666,22 +11735,13 @@ async function answerFirebaseCall(callId) {
   if (!callData?.offer) return addFeed("Anruf ist nicht mehr verfügbar.");
   if (callData.calleeUid !== fb.auth.currentUser?.uid) return addFeed("Dieser Anruf gehört nicht zu deiner Telefonnummer.");
   activeLocalPhoneStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-  activePhonePeer = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+  activePhonePeer = createPhonePeer();
   activeLocalPhoneStream.getTracks().forEach((track) => activePhonePeer.addTrack(track, activeLocalPhoneStream));
-  activePhonePeer.ontrack = (event) => {
-    let audio = document.querySelector("[data-phone-remote-audio]");
-    if (!audio) {
-      audio = document.createElement("audio");
-      audio.dataset.phoneRemoteAudio = "1";
-      audio.autoplay = true;
-      document.body.appendChild(audio);
-    }
-    audio.srcObject = event.streams[0];
-  };
   const calleeCandidates = fb.collection(callRef, "calleeCandidates");
   activePhonePeer.onicecandidate = (event) => {
     if (event.candidate) fb.addDoc(calleeCandidates, event.candidate.toJSON());
   };
+  const pendingCallerCandidates = [];
   await activePhonePeer.setRemoteDescription(new RTCSessionDescription(callData.offer));
   const answer = await activePhonePeer.createAnswer();
   await activePhonePeer.setLocalDescription(answer);
@@ -11692,8 +11752,9 @@ async function answerFirebaseCall(callId) {
   });
   fb.onSnapshot(fb.collection(callRef, "callerCandidates"), (snapshot) => {
     snapshot.docChanges().forEach((change) => {
-      if (change.type === "added" && activePhonePeer) activePhonePeer.addIceCandidate(new RTCIceCandidate(change.doc.data()));
+      if (change.type === "added" && activePhonePeer) addIceCandidateWhenReady(activePhonePeer, change.doc.data(), pendingCallerCandidates);
     });
+    flushPendingIce(activePhonePeer, pendingCallerCandidates);
   });
   state.phoneCallStatus = `Anruf mit ${contactNameFor(callData.caller)} aktiv.`;
   state.phoneIncomingCalls = [];
@@ -12268,6 +12329,7 @@ function finderDiscoverHtml() {
   const canRewind = plan.rewind && finder.lastPassedId && finder.rewindUsedDay !== Number(state.day || 1);
   return `
     ${finderSummaryHtml()}
+    <button class="finder-own-profile-shortcut" data-finder-own-profile><span>${finderOnlineOwnProfile ? finderProfileAvatarHtml(finderOnlineOwnProfile, "mini") : "👤"}</span><div><small>MEIN ACCOUNT</small><b>${escapeHtml(finderOnlineOwnProfile?.name || "Finder.KL-Profil")}</b><em>${finder.plan === "free" ? "Bearbeiten ab Plus" : "Profil ansehen & bearbeiten"}</em></div><i>›</i></button>
     <div class="finder-preference">
       <span>Zeige mir</span>
       <button class="${finder.preference === "female" ? "active" : ""}" data-finder-preference="female">Frauen</button>
@@ -12336,6 +12398,7 @@ function finderOnlineSettingsHtml() {
     interests: ["Freizeit", "Musik", "Reisen"],
     online: finder.onlineVisible !== false
   };
+  if (profile && finder.plan === "free") return `<div class="finder-settings-card finder-online-card"><header><div><small>MEIN ACCOUNT</small><h4>${escapeHtml(profile.name || "Finder.KL-Profil")}</h4></div><span class="finder-online-state ${profile.online ? "online" : "offline"}">${profile.online ? "ONLINE" : "OFFLINE"}</span></header><p>Dein Account bleibt kostenlos bestehen und ist weiterhin im Entdecken-Feed sichtbar. Zum Anschauen oder Bearbeiten deines eigenen Profils brauchst du mindestens Finder.KL Plus.</p><button class="mini-button gold" data-finder-tab="settings">Finder.KL Plus auswählen</button></div>`;
   return `<div class="finder-settings-card finder-online-card">
     <header><div><small>ECHTE SPIELER</small><h4>${profile ? "Dein Finder.KL-Profil" : "Finder.KL-Konto erstellen"}</h4></div><span class="finder-online-state ${current.online ? "online" : "offline"}">${current.online ? "ONLINE" : "OFFLINE"}</span></header>
     <p>Du verwendest automatisch deinen angemeldeten LifeBuilder-Firebase-Account. Es ist keine zweite E-Mail-Anmeldung nötig.</p>
@@ -12848,6 +12911,7 @@ function completeFinderDate(profileId, optionId) {
 function bindFinderDeviceActions(shell, item) {
   const finder = ensureFinderState();
   loadFinderOnlineProfiles(false, item);
+  shell.querySelector("[data-finder-own-profile]")?.addEventListener("click", () => { finder.view = "settings"; if (finder.plan === "free") addFeed("Dein Finder.KL-Profil kannst du ab Finder.KL Plus ansehen und bearbeiten."); save(); refreshDeviceApp("finder", item); });
   shell.querySelectorAll("[data-finder-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       finder.view = button.dataset.finderTab || "discover";
@@ -13378,7 +13442,34 @@ async function publishFinsterPost(shell, item) {
   }
 }
 
+function finsterRememberScroll() {
+  const content = els.dialog?.querySelector?.(".finster-content");
+  if (!content) return null;
+  return {
+    top: content.scrollTop,
+    postId: [...content.querySelectorAll("[data-finster-post-card]")]
+      .find((card) => card.getBoundingClientRect().bottom > content.getBoundingClientRect().top + 4)?.dataset.finsterPostCard || ""
+  };
+}
+
+function finsterRestoreScroll(snapshot) {
+  if (!snapshot) return;
+  requestAnimationFrame(() => {
+    const content = els.dialog?.querySelector?.(".finster-content");
+    if (!content) return;
+    const card = snapshot.postId ? content.querySelector(`[data-finster-post-card="${CSS.escape(snapshot.postId)}"]`) : null;
+    if (card) {
+      const contentTop = content.getBoundingClientRect().top;
+      const cardTop = card.getBoundingClientRect().top;
+      content.scrollTop += cardTop - contentTop;
+    } else {
+      content.scrollTop = snapshot.top;
+    }
+  });
+}
+
 async function toggleFinsterLike(postId, item) {
+  const scrollSnapshot = finsterRememberScroll();
   const finster = ensureFinsterState();
   const post = finsterAllPosts().find((entry) => entry.id === postId);
   if (!post) return;
@@ -13410,6 +13501,7 @@ async function toggleFinsterLike(postId, item) {
   finster.likedPostIds = liked ? finster.likedPostIds.filter((id) => id !== postId) : [...finster.likedPostIds, postId];
   save();
   refreshDeviceApp("finster", item);
+  finsterRestoreScroll(scrollSnapshot);
 }
 
 async function loadFinsterComments(postId, item) {
@@ -13483,31 +13575,54 @@ function finsterAiReply(profile, text) {
 
 async function sendFinsterMessage(uid, textValue, item) {
   const clean = censorFinsterText(textValue, 800);
-  const profile = finsterProfileByUid(uid);
-  if (!clean || !profile) return;
+  if (!clean || !uid) return;
+  const profile = finsterProfileByUid(uid) || { uid, displayName: "Spieler", handle: "spieler", city: "LifeBuilder" };
   const finster = ensureFinsterState();
+  const input = els.dialog?.querySelector?.("[data-finster-message-input]");
+  if (input) input.value = "";
+
   if (uid.startsWith("ai-finster-")) {
     finster.aiMessages[uid] ||= [];
     finster.aiMessages[uid].push({ from: "me", senderUid: finsterCurrentUid(), text: clean, createdAtMs: Date.now() });
+    save();
+    refreshDeviceApp("finster", item);
     const reply = finsterAiReply(profile, clean);
     setTimeout(() => {
       if (!state) return;
+      ensureFinsterState().aiMessages[uid] ||= [];
       ensureFinsterState().aiMessages[uid].push({ from: "them", senderUid: uid, text: reply, createdAtMs: Date.now() });
       save();
       refreshFinsterIfVisible();
     }, 700);
-  } else {
-    try {
-      const fb = await ensureFinsterRealtime();
-      const own = fb.auth.currentUser.uid;
-      const participantUids = [own, uid].sort();
-      await fb.addDoc(fb.collection(fb.db, "finsterMessages"), { senderUid: own, recipientUid: uid, participantUids, text: clean, createdAtMs: Date.now() });
-    } catch (error) {
-      return addFeed(`Nachricht fehlgeschlagen: ${error.message || error}`);
-    }
+    return;
   }
-  save();
-  refreshDeviceApp("finster", item);
+
+  try {
+    const fb = await ensureFinsterRealtime();
+    const own = fb.auth.currentUser?.uid;
+    if (!own) throw new Error("Firebase-Anmeldung fehlt.");
+    if (uid === own) throw new Error("Du kannst dir nicht selbst schreiben.");
+    const participantUids = [own, uid].sort();
+    const createdAtMs = Date.now();
+    const messageRef = await fb.addDoc(fb.collection(fb.db, "finsterMessages"), {
+      senderUid: own,
+      recipientUid: uid,
+      participantUids,
+      text: clean,
+      createdAtMs,
+      createdAt: fb.serverTimestamp()
+    });
+    // Sofort lokal anzeigen; der Realtime-Listener ersetzt/vereinheitlicht den Eintrag danach.
+    if (!finsterMessagesCache.some((message) => message.id === messageRef.id)) {
+      finsterMessagesCache.push({ id: messageRef.id, senderUid: own, recipientUid: uid, participantUids, text: clean, createdAtMs });
+      finsterMessagesCache.sort((a, b) => Number(a.createdAtMs || 0) - Number(b.createdAtMs || 0));
+    }
+    save();
+    refreshDeviceApp("finster", item);
+  } catch (error) {
+    if (input) input.value = clean;
+    addFeed(`Nachricht fehlgeschlagen: ${error.message || error}`);
+  }
 }
 
 async function updateFinsterProfile(shell, item) {

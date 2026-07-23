@@ -68,6 +68,8 @@
   let originalBodyOverflow = "";
 
   let players = [];
+  let playerAccounts = [];
+  const expandedAccounts = new Set();
   let selectedPlayer = null;
   let playerTab = "overview";
   let playerSearch = "";
@@ -441,9 +443,10 @@
       </section>`;
     try {
       const response = await callFunction("listPlayers", {});
-      players = Array.isArray(response.players) ? response.players : [];
+      playerAccounts = Array.isArray(response.accounts) ? response.accounts : [];
+      players = playerAccounts.flatMap((account) => safeArray(account.characters).map((character) => ({ ...character, uid: account.uid, email: account.email, accountName: account.accountName, online: account.online, lastSeenAtMs: account.lastSeenAtMs, key: `${account.uid}:${character.slot}` })));
       renderPlayerList();
-      if (selectedPlayer?.uid && players.some((player) => player.uid === selectedPlayer.uid)) await selectPlayer(selectedPlayer.uid, true);
+      if (selectedPlayer?.uid && players.some((player) => player.uid === selectedPlayer.uid && num(player.slot) === num(selectedPlayer.save?.slot ?? selectedPlayer.profile?.slot))) await selectPlayer(selectedPlayer.uid, num(selectedPlayer.save?.slot ?? selectedPlayer.profile?.slot), true);
     } catch (error) {
       const list = content().querySelector("[data-player-list]");
       if (list) list.innerHTML = `<p class="online-mod-message error">${esc(error.message)}</p>`;
@@ -455,7 +458,7 @@
     let rows = players.filter((player) => {
       if (playerFilter === "online" && !player.online) return false;
       if (playerFilter === "risk" && !(player.suspicious || num(player.riskScore) >= 50)) return false;
-      return !needle || [player.displayName, player.uid, player.city, player.job].some((value) => String(value || "").toLowerCase().includes(needle));
+      return !needle || [player.email, player.displayName, player.uid, player.city, player.job].some((value) => String(value || "").toLowerCase().includes(needle));
     });
     rows = [...rows].sort((a, b) => {
       if (playerSort === "level") return num(b.level) - num(a.level) || String(a.displayName).localeCompare(String(b.displayName), "de");
@@ -471,22 +474,26 @@
     const count = content().querySelector("[data-player-count]");
     if (!list) return;
     const shown = filteredPlayers();
-    if (count) count.textContent = `${shown.length}/${players.length}`;
-    list.innerHTML = shown.length ? shown.map((player) => `
-      <button type="button" class="online-mod-player-row ${selectedPlayer?.uid === player.uid ? "active" : ""}" data-select-player="${esc(player.uid)}">
-        <span class="online-dot ${player.online ? "online" : ""}"></span>
-        <span class="online-mod-player-row-main"><b>${esc(player.displayName || "Spieler")}</b><small>Level ${num(player.level)} · ${esc(player.city || "Kein Ort")}</small><small>${esc(player.job || "Kein Job")}</small></span>
-        <span class="online-mod-player-row-meta">${player.characterStatus === "hack" ? `<i class="risk">HACK</i>` : player.characterStatus === "mod" ? `<i class="mod">MOD</i>` : ""}<em>${player.online ? "LIVE" : relativeTime(player.lastSeenAtMs)}</em></span>
-      </button>`).join("") : `<div class="online-mod-empty-state compact"><span>⌕</span><p>Keine passenden Spieler gefunden.</p></div>`;
+    const shownKeys = new Set(shown.map((row) => `${row.uid}:${row.slot}`));
+    const accounts = playerAccounts.filter((account) => safeArray(account.characters).some((character) => shownKeys.has(`${account.uid}:${character.slot}`)));
+    if (count) count.textContent = `${shown.length} Charaktere / ${accounts.length} Accounts`;
+    list.innerHTML = accounts.length ? accounts.map((account) => {
+      const chars = safeArray(account.characters).filter((character) => shownKeys.has(`${account.uid}:${character.slot}`));
+      const expanded = expandedAccounts.has(account.uid) || (selectedPlayer?.uid === account.uid);
+      return `<section class="online-mod-account-group ${expanded ? "expanded" : ""}">
+        <button type="button" class="online-mod-account-row" data-toggle-account="${esc(account.uid)}"><span class="online-dot ${account.online ? "online" : ""}"></span><span><b>${esc(account.email || "E-Mail unbekannt")}</b><small>${chars.length} Charakter${chars.length === 1 ? "" : "e"} · ${account.online ? "LIVE" : relativeTime(account.lastSeenAtMs)}</small></span><em>${expanded ? "▾" : "▸"}</em></button>
+        <div class="online-mod-character-list">${chars.map((player) => `<button type="button" class="online-mod-player-row ${selectedPlayer?.uid === player.uid && num(selectedPlayer.save?.slot ?? selectedPlayer.profile?.slot) === num(player.slot) ? "active" : ""}" data-select-player="${esc(player.uid)}" data-select-slot="${num(player.slot)}"><span class="online-mod-avatar mini">${esc(String(player.displayName || "C").slice(0,1).toUpperCase())}</span><span class="online-mod-player-row-main"><b>${esc(player.displayName || `Charakter ${num(player.slot)+1}`)}</b><small>Charakter ${num(player.slot)+1} · Level ${num(player.level)} · ${esc(player.city || "Kein Ort")}</small><small>${esc(player.job || "Kein Job")}</small></span><span class="online-mod-player-row-meta">${player.characterStatus === "hack" ? `<i class="risk">HACK</i>` : player.characterStatus === "mod" ? `<i class="mod">MOD</i>` : ""}</span></button>`).join("")}</div>
+      </section>`;
+    }).join("") : `<div class="online-mod-empty-state compact"><span>⌕</span><p>Keine passenden Accounts oder Charaktere gefunden.</p></div>`;
   }
 
-  async function selectPlayer(uid, silent = false) {
+  async function selectPlayer(uid, slot = 0, silent = false) {
     const detail = content().querySelector("[data-player-detail]");
-    if (selectedPlayer?.uid !== uid) playerActionReason = "";
+    if (selectedPlayer?.uid !== uid || num(selectedPlayer?.save?.slot ?? selectedPlayer?.profile?.slot) !== num(slot)) playerActionReason = "";
     if (!detail) return;
     if (!silent) detail.innerHTML = `<div class="online-mod-loading"><i></i><p>Spielerdaten werden geladen …</p></div>`;
     try {
-      const response = await callFunction("getPlayerDetails", { targetUid: uid });
+      const response = await callFunction("getPlayerDetails", { targetUid: uid, slot });
       selectedPlayer = response.player || null;
       if (!availablePlayerTabs().some((tab) => tab.id === playerTab)) playerTab = "overview";
       renderPlayerList();
@@ -626,7 +633,8 @@
     if (tab === "moderation") {
       const inspect = canInspectTrust();
       const events = inspect ? safeArray(trust.events) : [];
-      const eventDetails = inspect && events.length ? `<div class="online-mod-trust-events">${events.slice(0, 12).map((entry) => `<article><b>${entry.type === "hack" ? "Hack-Prüfung" : entry.type === "mod" ? "Mod-Änderung" : "Statusänderung"}</b><span>${esc(entry.reason || "Ohne Grund")}</span><small>${dateTime(entry.createdAtMs)}${entry.actorRole ? ` · ${esc(ROLE_LABELS[entry.actorRole] || entry.actorRole)}` : ""}</small></article>`).join("")}</div>` : "";
+      const actionLabel = (kind) => ({ giveItem: "Item gegeben", removeItem: "Item entfernt", addMoney: "Geld hinzugefügt", removeMoney: "Geld entfernt", setMoney: "Geldstand gesetzt", setCharacter: "Charakterwerte geändert", setNeeds: "Bedürfnisse geändert", setPhone: "Handy geändert", setWork: "Arbeit geändert", setGame: "Spielwerte geändert", setWorld: "Ort/Reise geändert", setShop: "Shop geändert", setProperty: "Immobilie geändert", resetPlayer: "Spielstand zurückgesetzt" })[kind] || kind || "Statusänderung";
+      const eventDetails = inspect && events.length ? `<div class="online-mod-trust-events">${events.slice(0, 20).map((entry) => { const meta = safeObject(entry.meta); const kind = meta.kind || meta.commandKind || entry.kind || entry.action; const detail = [meta.itemName || meta.itemId, meta.amount ? `Anzahl ${meta.amount}` : "", meta.value !== undefined ? `Wert ${meta.value}` : "", meta.target ? `Ziel ${meta.target}` : ""].filter(Boolean).join(" · "); return `<article><b>${entry.type === "hack" ? "Hack-Prüfung" : actionLabel(kind)}</b>${detail ? `<strong>${esc(detail)}</strong>` : ""}<span>${esc(entry.reason || "Ohne Grund")}</span><small>${dateTime(entry.createdAtMs)}${entry.actorRole ? ` · ${esc(ROLE_LABELS[entry.actorRole] || entry.actorRole)}` : ""}</small></article>`; }).join("")}</div>` : "";
       const markHacker = roleRank() >= roleRank("test_moderator") && status !== "hack" ? `<button type="button" class="danger full" data-mark-selected-hacker>Als Hacker markieren</button>` : "";
       const clearMod = isOwnerRole() && status === "mod" ? `<button type="button" class="full" data-clear-selected-mod>Mod-Markierung entfernen</button>` : "";
       const resetHack = has("player.reset") ? `<button type="button" class="danger full" data-reset-selected-player ${status === "hack" ? "" : "disabled"}>Spielstand wegen Hack zurücksetzen</button>` : "";
@@ -761,7 +769,7 @@
 
   async function queueCommand(command, reason) {
     if (!selectedPlayer?.uid) throw new Error("Bitte zuerst einen Spieler auswählen.");
-    return callFunction("staffAction", { action: "queueCommand", targetUid: selectedPlayer.uid, command, reason });
+    return callFunction("staffAction", { action: "queueCommand", targetUid: selectedPlayer.uid, slot: num(selectedPlayer.save?.slot ?? selectedPlayer.profile?.slot), command, reason });
   }
 
   async function renderTicketsPanel() {
@@ -843,7 +851,7 @@
       <section class="online-mod-event-layout">
         <form data-event-form class="online-mod-card online-mod-event-form">
           <div class="online-mod-card-title"><span>🏆</span><div><small>EVENT-DATEN</small><h3>Planung</h3></div></div>
-          <div class="online-mod-form-grid"><label>Titel<input name="title" maxlength="80" required></label><label>Gewinnerplätze<input name="maxWinners" type="number" min="1" max="100" value="1"></label><label class="wide">Beschreibung<textarea name="description" maxlength="600"></textarea></label><label class="wide">Aufgabe<textarea name="task" maxlength="600"></textarea></label><label class="wide">Nachweis-Hinweis<input name="proofHint" maxlength="240"></label><label>Start<input name="startsAt" type="datetime-local"></label><label>Ende<input name="endsAt" type="datetime-local"></label><label>Geldpreis<input name="rewardMoney" type="number" min="0" value="0"></label><div></div><label class="wide">Item-Preise<textarea name="rewardItems" placeholder="ITEM-ID | Anzahl | Name – eine Zeile pro Item"></textarea></label></div>
+          <div class="online-mod-form-grid"><label>Titel<input name="title" maxlength="80" required></label><label>Gewinnerplätze<input name="maxWinners" type="number" min="1" max="100" value="1"></label><label class="wide">Beschreibung<textarea name="description" maxlength="600"></textarea></label><label class="wide">Aufgabe<textarea name="task" maxlength="600" placeholder="Was sollen die Spieler machen?"></textarea></label><label>Event-Ziel<select name="criterionType"><option value="item">Item zuerst erhalten/kaufen</option><option value="achievement">Erfolg freischalten</option><option value="level">Level erreichen</option><option value="money">Geldwert erreichen</option><option value="manual">Manuell prüfen</option></select></label><label>Zielwert / Anzahl<input name="criterionValue" type="number" min="1" value="1"></label><label class="wide">Ziel-Item oder Erfolg<input name="criterionTarget" list="event-target-catalog" placeholder="Item-ID oder Erfolgs-ID auswählen/eingeben"><datalist id="event-target-catalog">${catalogRows.slice(0,600).map((row) => `<option value="${esc(row.id)}">${esc(row.name)}</option>`).join("")}</datalist></label><label class="wide">Nachweis-Hinweis<input name="proofHint" maxlength="240"></label><label>Start<input name="startsAt" type="datetime-local"></label><label>Ende<input name="endsAt" type="datetime-local"></label><label>Geldpreis<input name="rewardMoney" type="number" min="0" value="0"></label><div></div><label class="wide">Item-Preise<textarea name="rewardItems" placeholder="ITEM-ID | Anzahl | Name – eine Zeile pro Item"></textarea></label></div>
           <div class="online-mod-actions"><button type="submit" name="eventAction" value="save">Entwurf speichern</button><button class="online-mod-primary" type="submit" name="eventAction" value="start">Event starten</button><button type="submit" name="eventAction" value="end">Beenden</button><button type="submit" class="danger" name="eventAction" value="clear">Löschen</button></div><p class="online-mod-message" data-event-message></p>
         </form>
         <aside class="online-mod-card online-mod-event-items"><div class="online-mod-card-title"><span>#</span><div><small>PREIS-KATALOG</small><h3>Item hinzufügen</h3></div></div><label class="online-mod-search-box"><span>⌕</span><input data-event-item-search value="${esc(eventItemSearch)}" placeholder="Preis-Item suchen"></label><div class="online-mod-event-item-list" data-event-item-list>${renderEventItemRows()}</div></aside>
@@ -870,6 +878,9 @@
     const localDateTime = (ms) => ms ? new Date(ms - new Date(ms).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : "";
     form.elements.startsAt.value = localDateTime(event.startsAtMs);
     form.elements.endsAt.value = localDateTime(event.endsAtMs);
+    if (form.elements.criterionType) form.elements.criterionType.value = event.criterion?.type || "item";
+    if (form.elements.criterionTarget) form.elements.criterionTarget.value = event.criterion?.itemId || event.criterion?.achievementId || event.criterion?.label || "";
+    if (form.elements.criterionValue) form.elements.criterionValue.value = event.criterion?.type === "item" ? (event.criterion?.amount || 1) : (event.criterion?.value || 1);
     form.elements.rewardItems.value = safeArray(event.rewardItems).map((item) => `${item.itemId || ""} | ${item.amount || 1} | ${item.label || ""}`).join("\n");
   }
 
@@ -1016,8 +1027,10 @@
 
     const filterButton = event.target.closest("[data-player-filter-value]");
     if (filterButton) { playerFilter = filterButton.dataset.playerFilterValue; content().querySelectorAll("[data-player-filter-value]").forEach((button) => button.classList.toggle("active", button === filterButton)); renderPlayerList(); return; }
+    const accountButton = event.target.closest("[data-toggle-account]");
+    if (accountButton) { const uid = accountButton.dataset.toggleAccount; expandedAccounts.has(uid) ? expandedAccounts.delete(uid) : expandedAccounts.add(uid); renderPlayerList(); return; }
     const playerButton = event.target.closest("[data-select-player]");
-    if (playerButton) return selectPlayer(playerButton.dataset.selectPlayer);
+    if (playerButton) return selectPlayer(playerButton.dataset.selectPlayer, num(playerButton.dataset.selectSlot));
     const tabButton = event.target.closest("[data-player-tab]");
     if (tabButton) { playerTab = tabButton.dataset.playerTab; renderPlayerDetail(); return; }
     const needsButton = event.target.closest("[data-fill-needs]");
@@ -1034,7 +1047,7 @@
     const copyButton = event.target.closest("[data-copy-id]");
     if (copyButton && !copyButton.disabled) return copyText(copyButton.dataset.copyId, copyButton);
     const useItem = event.target.closest("[data-use-item-player]");
-    if (useItem) { selectedCatalogItemId = useItem.dataset.useItemPlayer; playerTab = "inventory"; activePanel = "players"; renderPanel(); if (selectedPlayer?.uid) setTimeout(() => selectPlayer(selectedPlayer.uid, true), 0); return; }
+    if (useItem) { selectedCatalogItemId = useItem.dataset.useItemPlayer; playerTab = "inventory"; activePanel = "players"; renderPanel(); if (selectedPlayer?.uid) setTimeout(() => selectPlayer(selectedPlayer.uid, num(selectedPlayer.save?.slot ?? selectedPlayer.profile?.slot), true), 0); return; }
     const idCategoryButton = event.target.closest("[data-id-category]");
     if (idCategoryButton) { idCategory = idCategoryButton.dataset.idCategory; renderIdsPanel(); return; }
     const toggle = event.target.closest("[data-id-overlay-toggle]");
@@ -1063,13 +1076,13 @@
       const reason = String(playerActionReason || content().querySelector("[data-player-change-reason]")?.value || "").trim();
       if (reason.length < 4) { content().querySelector("[data-player-change-reason]")?.focus(); return toast("Bitte zuerst einen Grund oder Supportfall eintragen.", "error"); }
       if (!selectedPlayer?.uid || !confirm("Diesen Spieler wirklich als Hack-Charakter markieren?")) return;
-      try { await callFunction("staffAction", { action: "markHacker", targetUid: selectedPlayer.uid, reason }); toast("Spieler wurde als Hack-Charakter markiert."); await selectPlayer(selectedPlayer.uid, true); }
+      try { await callFunction("staffAction", { action: "markHacker", targetUid: selectedPlayer.uid, reason }); toast("Spieler wurde als Hack-Charakter markiert."); await selectPlayer(selectedPlayer.uid, num(selectedPlayer.save?.slot ?? selectedPlayer.profile?.slot), true); }
       catch (error) { toast(error.message, "error"); }
       return;
     }
     if (event.target.closest("[data-clear-selected-mod]")) {
       if (!selectedPlayer?.uid || !confirm("Mod-Markierung dieses Spielers wirklich entfernen?")) return;
-      try { await callFunction("staffAction", { action: "clearModMarker", targetUid: selectedPlayer.uid }); toast("Mod-Markierung wurde entfernt."); await selectPlayer(selectedPlayer.uid, true); }
+      try { await callFunction("staffAction", { action: "clearModMarker", targetUid: selectedPlayer.uid }); toast("Mod-Markierung wurde entfernt."); await selectPlayer(selectedPlayer.uid, num(selectedPlayer.save?.slot ?? selectedPlayer.profile?.slot), true); }
       catch (error) { toast(error.message, "error"); }
       return;
     }
@@ -1152,7 +1165,7 @@
       if (selectedPlayer?.trust && response.characterStatus) selectedPlayer.trust.status = response.characterStatus;
       if (selectedPlayer?.uid) {
         const uid = selectedPlayer.uid;
-        setTimeout(() => { if (selectedPlayer?.uid === uid && activePanel === "players") selectPlayer(uid, true).catch(() => {}); }, response.appliedToCloud ? 650 : 1200);
+        setTimeout(() => { if (selectedPlayer?.uid === uid && activePanel === "players") selectPlayer(uid, num(selectedPlayer.save?.slot ?? selectedPlayer.profile?.slot), true).catch(() => {}); }, response.appliedToCloud ? 650 : 1200);
       }
     } catch (error) {
       if (message) { message.textContent = error.message; message.classList.add("error"); }
@@ -1216,7 +1229,7 @@
       const data = formDataObject(form);
       const message = form.querySelector("[data-event-message]");
       try {
-        const payload = { title: data.title, description: data.description, task: data.task, proofHint: data.proofHint, startsAtMs: data.startsAt ? new Date(data.startsAt).getTime() : 0, endsAtMs: data.endsAt ? new Date(data.endsAt).getTime() : 0, rewardMoney: num(data.rewardMoney), maxWinners: num(data.maxWinners, 1), rewardItems: parseRewardItems(data.rewardItems) };
+        const criterionType = data.criterionType || "manual"; const criterionTarget = String(data.criterionTarget || "").trim(); const criterionRow = catalogRows.find((row) => row.id === criterionTarget); const payload = { title: data.title, description: data.description, task: data.task, proofHint: data.proofHint, startsAtMs: data.startsAt ? new Date(data.startsAt).getTime() : 0, endsAtMs: data.endsAt ? new Date(data.endsAt).getTime() : 0, rewardMoney: num(data.rewardMoney), maxWinners: num(data.maxWinners, 1), rewardItems: parseRewardItems(data.rewardItems), criterion: { type: criterionType, itemId: criterionType === "item" ? criterionTarget : "", achievementId: criterionType === "achievement" ? criterionTarget : "", label: criterionRow?.name || criterionTarget, amount: criterionType === "item" ? Math.max(1, num(data.criterionValue, 1)) : 1, value: ["level", "money"].includes(criterionType) ? Math.max(1, num(data.criterionValue, 1)) : 0 } };
         await callFunction("eventAction", { action, event: payload });
         message.textContent = "Event aktualisiert."; message.classList.remove("error"); toast("Event aktualisiert.");
       } catch (error) { message.textContent = error.message; message.classList.add("error"); toast(error.message, "error"); }

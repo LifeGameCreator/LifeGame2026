@@ -14933,3 +14933,5 @@ dialog.character-dialog[open] .character-hub-content {
     max-width:100% !important;
   }
 }
+
+.finder-own-profile-shortcut{width:100%;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:10px 12px;margin:8px 0 10px;border:1px solid rgba(84,231,153,.32);border-radius:15px;background:linear-gradient(135deg,rgba(30,92,62,.7),rgba(10,36,27,.9));color:inherit;text-align:left}.finder-own-profile-shortcut>span{width:44px;height:44px;display:grid;place-items:center;overflow:hidden}.finder-own-profile-shortcut .finder-avatar{transform:scale(.55);transform-origin:center}.finder-own-profile-shortcut div{display:grid;gap:2px}.finder-own-profile-shortcut small{color:#5ce697;font-weight:900}.finder-own-profile-shortcut em{font-style:normal;opacity:.72;font-size:.78rem}.finder-own-profile-shortcut i{font-size:1.5rem}.finder-swipe-actions{position:sticky;bottom:4px;z-index:4;background:linear-gradient(transparent,rgba(5,18,13,.96) 28%);padding-top:18px;margin-top:-8px}

@@ -408,3 +408,5 @@ html.online-mod-open, html.online-mod-open body { overflow: hidden !important; o
   .online-mod-change-reason { margin-inline:0; }
   .online-mod-change-reason input { font-size:16px; }
 }
+
+.online-mod-account-group{border:1px solid rgba(92,220,151,.14);border-radius:14px;overflow:hidden;background:rgba(5,20,14,.45);margin-bottom:8px}.online-mod-account-row{width:100%;display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:12px;border:0;background:rgba(15,50,35,.55);color:inherit;text-align:left}.online-mod-account-row span:nth-child(2){display:grid;gap:3px}.online-mod-account-row small{opacity:.68}.online-mod-character-list{display:none;padding:7px}.online-mod-account-group.expanded .online-mod-character-list{display:grid;gap:6px}.online-mod-avatar.mini{width:34px;height:34px;font-size:13px}.online-mod-trust-events article strong{display:block;color:#f1ce69;font-size:.78rem;margin:.2rem 0}
