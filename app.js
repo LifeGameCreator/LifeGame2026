@@ -19,7 +19,10 @@ const actionRules = {
 
 const MANUAL_WORK_BASE_DURATION = 1 * minute;
 const MANUAL_WORK_COOLDOWN = 5 * minute;
-const MANUAL_WORK_ACTION_DELAY = 650;
+const MANUAL_WORK_ACTION_DELAY = 75;
+const MANUAL_WORK_CLICK_WINDOW_MS = 1000;
+const MANUAL_WORK_MAX_CLICKS_PER_WINDOW = 13;
+const MANUAL_WORK_AUTCLICK_BLOCK_MS = 1800;
 const BUSINESS_OFFER_COST = 5000;
 const BUSINESS_OFFER_LIMIT = 2;
 const BUSINESS_OFFER_COOLDOWN = 0;
@@ -56,6 +59,8 @@ const manualWorkDefinitions = {
 
 let manualWorkTimer = null;
 let manualWorkActionReadyAt = 0;
+let manualWorkClickTimes = [];
+let manualWorkAutoClickBlockedUntil = 0;
 let logisticsWorkTimer = null;
 let playerShopTimer = null;
 let playerShopOnlineUnsubscribe = null;
@@ -66,6 +71,7 @@ const LOGISTICS_SKILL_BRANCH_MAX = 25;
 const LOGISTICS_EMPLOYEE_MAX = 20;
 
 const FIRESTORE_DATABASE_ID = "gamekl";
+const FIREBASE_FUNCTIONS_REGION = "europe-west3";
 
 const firebasePhoneConfig = {
   apiKey: "AIzaSyB0rCUbDhATvtTQNOvJDNZQxK0PChnDK60",
@@ -1145,7 +1151,8 @@ async function saveFinderOnlineProfile(form, item) {
     const uid = fb.auth.currentUser?.uid;
     if (!uid) throw new Error("Bitte zuerst mit deinem LifeBuilder-Account anmelden.");
     const data = new FormData(form);
-    const displayName = String(data.get("displayName") || `${state.firstName || "Spieler"} ${state.lastName || ""}`).trim().slice(0, 40);
+    const displayName = String(data.get("displayName") || `${state.firstName || "Spieler"} ${state.lastName || ""}`).trim().replace(/\s+/g, " ").slice(0, 40);
+    if (displayName.length < 3) throw new Error("Bitte einen Namen mit mindestens 3 Zeichen eingeben.");
     const profile = {
       uid,
       displayName,
@@ -6302,6 +6309,21 @@ function upgradeWorkSkill(branch) {
   renderJobs();
 }
 
+function currentGameDayNumber() {
+  return Math.max(1, Math.floor(Number(state?.day || 1)));
+}
+
+function hasWorkedCurrentGameDay() {
+  if (state?.workedDay == null || state.workedDay === "") return false;
+  const workedDay = Number(state.workedDay);
+  const currentDay = currentGameDayNumber();
+  if (!Number.isFinite(workedDay) || Math.floor(workedDay) !== currentDay) {
+    state.workedDay = null;
+    return false;
+  }
+  return true;
+}
+
 function companySkillLevel() {
   return Math.max(0, Math.min(10, Math.floor(Number(state?.skills?.Unternehmertum || 0))));
 }
@@ -6322,7 +6344,7 @@ function automaticJobUnlockStatus(job) {
 function work(job) {
   const unlock = automaticJobUnlockStatus(job);
   if (!unlock.unlocked) return addFeed(`${job.name} ist noch gesperrt. Erhöhe Unternehmen im Skillbaum auf ${unlock.required}/10.`);
-  if (state.workedDay === state.day) return addFeed("Du hast heute schon 8 Stunden gearbeitet. Morgen wieder.");
+  if (hasWorkedCurrentGameDay()) return addFeed("Du hast heute schon 8 Stunden gearbeitet. Morgen wieder.");
   if (!canWorkAtCurrentPlace()) return openReturnHomeChoice("Arbeiten geht nur in deiner Wohnung, der Notunterkunft oder in einem gebuchten Hotelzimmer.");
   if (state.energy < job.energy) return addFeed("Du bist zu müde für diese Schicht.");
   state.energy -= job.energy;
@@ -6330,7 +6352,7 @@ function work(job) {
   state.pendingSalary = 0;
   state.workDaysThisMonth += 1;
   state.totalWorkDays = (state.totalWorkDays || 0) + 1;
-  state.workedDay = state.day;
+  state.workedDay = currentGameDayNumber();
   const adjustedPay = automaticWorkPay(job);
   payoutFromTreasury(adjustedPay);
   recordIncome("salary", adjustedPay);
@@ -7286,10 +7308,11 @@ function renderJobs() {
 }
 
 function automaticWorkCardsHtml() {
+  const workedToday = hasWorkedCurrentGameDay();
   const jobCards = jobs.map((job, index) => {
     const unlock = automaticJobUnlockStatus(job);
-    const locked = !unlock.unlocked || state.workedDay === state.day;
-    const label = !unlock.unlocked ? "Gesperrt" : state.workedDay === state.day ? "Morgen" : "Arbeiten";
+    const locked = !unlock.unlocked || workedToday;
+    const label = !unlock.unlocked ? "Gesperrt" : workedToday ? "Morgen" : "Arbeiten";
     const adjustedPay = automaticWorkPay(job);
     const bonus = automaticWorkBonusPercent();
     return card(job.name, `${unlock.text} · 8-Stunden-Schicht · Grundlohn ${euro.format(job.pay)} · Skillbonus +${bonus.toLocaleString("de-DE")}% · Auszahlung ${euro.format(adjustedPay)} · Energie -${job.energy}`, label, index, locked, "automatic-job");
@@ -7396,6 +7419,8 @@ function startManualWork(type) {
     electricalRound: createElectricalRound()
   };
   manualWorkActionReadyAt = 0;
+  manualWorkClickTimes = [];
+  manualWorkAutoClickBlockedUntil = 0;
   save();
   openManualWorkSessionDialog();
   ensureManualWorkTimer();
@@ -7500,10 +7525,10 @@ function openManualWorkSessionDialog() {
 }
 
 function bindManualWorkSessionActions() {
-  els.dialog.querySelector("[data-manual-mine-hit]")?.addEventListener("click", handleMineWorkAction);
+  els.dialog.querySelector("[data-manual-mine-hit]")?.addEventListener("click", (event) => handleMineWorkAction(event));
   els.dialog.querySelectorAll("[data-electric-wire]").forEach((button) => button.addEventListener("click", () => selectElectricalWire(button.dataset.electricWire)));
-  els.dialog.querySelectorAll("[data-electric-socket]").forEach((button) => button.addEventListener("click", () => connectElectricalSocket(button.dataset.electricSocket)));
-  els.dialog.querySelectorAll("[data-construction-tile]").forEach((button) => button.addEventListener("click", () => handleConstructionWorkAction(Number(button.dataset.constructionTile))));
+  els.dialog.querySelectorAll("[data-electric-socket]").forEach((button) => button.addEventListener("click", (event) => connectElectricalSocket(button.dataset.electricSocket, event)));
+  els.dialog.querySelectorAll("[data-construction-tile]").forEach((button) => button.addEventListener("click", (event) => handleConstructionWorkAction(Number(button.dataset.constructionTile), event)));
   els.dialog.querySelector("[data-sell-manual-work]")?.addEventListener("click", sellManualWorkResults);
 }
 
@@ -7512,11 +7537,37 @@ function manualWorkGain() {
   return Math.max(1, Math.round(base * manualWorkYieldMultiplier()));
 }
 
-function manualWorkActionAllowed() {
+function manualWorkActionAllowed(event = null) {
   const session = normalizeManualWorkState();
+  const now = performance.now();
   if (!session || session.finished || Date.now() >= session.endsAt) return false;
-  if (Date.now() < manualWorkActionReadyAt) return false;
-  manualWorkActionReadyAt = Date.now() + MANUAL_WORK_ACTION_DELAY;
+  if (event && event.isTrusted === false) {
+    session.message = "Automatisch erzeugter Klick wurde blockiert.";
+    updateManualWorkSessionUi();
+    return false;
+  }
+  if (now < manualWorkAutoClickBlockedUntil) {
+    session.message = "Klickfolge war zu schnell oder zu gleichmäßig. Kurz warten und normal weiterklicken.";
+    updateManualWorkSessionUi();
+    return false;
+  }
+  if (now < manualWorkActionReadyAt) return false;
+
+  manualWorkClickTimes = manualWorkClickTimes.filter((stamp) => now - stamp <= MANUAL_WORK_CLICK_WINDOW_MS);
+  manualWorkClickTimes.push(now);
+  const intervals = manualWorkClickTimes.slice(-8).map((stamp, index, list) => index ? stamp - list[index - 1] : 0).slice(1);
+  const suspiciousRhythm = intervals.length >= 6
+    && intervals.every((value) => value < 125)
+    && Math.max(...intervals) - Math.min(...intervals) < 4;
+  if (manualWorkClickTimes.length > MANUAL_WORK_MAX_CLICKS_PER_WINDOW || suspiciousRhythm) {
+    manualWorkAutoClickBlockedUntil = now + MANUAL_WORK_AUTCLICK_BLOCK_MS;
+    manualWorkClickTimes = [];
+    session.message = "Auto-Clicker-Schutz aktiv: Bitte kurz warten und mit normalen Abständen weitermachen.";
+    updateManualWorkSessionUi();
+    return false;
+  }
+
+  manualWorkActionReadyAt = now + MANUAL_WORK_ACTION_DELAY;
   return true;
 }
 
@@ -7530,8 +7581,8 @@ function addManualWorkResource(amount, message) {
   updateManualWorkSessionUi();
 }
 
-function handleMineWorkAction() {
-  if (!manualWorkActionAllowed()) return;
+function handleMineWorkAction(event) {
+  if (!manualWorkActionAllowed(event)) return;
   const gain = manualWorkGain();
   const button = els.dialog.querySelector("[data-manual-mine-hit]");
   button?.classList.remove("hit");
@@ -7601,7 +7652,7 @@ function selectElectricalWire(colorId) {
   openManualWorkSessionDialog();
 }
 
-function connectElectricalSocket(colorId) {
+function connectElectricalSocket(colorId, event = null) {
   const session = normalizeManualWorkState();
   if (!session || session.finished || session.electricalRound?.locked) return;
   const selected = session.electricalRound?.selected;
@@ -7627,7 +7678,7 @@ function connectElectricalSocket(colorId) {
     }, 360);
     return;
   }
-  if (!manualWorkActionAllowed()) return;
+  if (!manualWorkActionAllowed(event)) return;
   session.electricalRound.locked = true;
   const gain = manualWorkGain();
   session.message = `Stromkreis verbunden: +${gain} Auftragswert.`;
@@ -7642,7 +7693,7 @@ function connectElectricalSocket(colorId) {
   }, 360);
 }
 
-function handleConstructionWorkAction(index) {
+function handleConstructionWorkAction(index, event) {
   const session = normalizeManualWorkState();
   if (!session || session.finished) return;
   if (index !== session.constructionTarget) {
@@ -7650,7 +7701,7 @@ function handleConstructionWorkAction(index) {
     updateManualWorkSessionUi();
     return;
   }
-  if (!manualWorkActionAllowed()) return;
+  if (!manualWorkActionAllowed(event)) return;
   const gain = manualWorkGain();
   let next = Math.floor(Math.random() * 12);
   if (next === index) next = (next + 1) % 12;
@@ -11240,11 +11291,12 @@ async function loadFirebasePhoneRuntime() {
   if (firebasePhoneRuntime) return firebasePhoneRuntime;
   if (firebasePhoneRuntimePromise) return firebasePhoneRuntimePromise;
   firebasePhoneRuntimePromise = (async () => {
-    const [appMod, authMod, dbMod, storageMod] = await Promise.all([
+    const [appMod, authMod, dbMod, storageMod, functionsMod] = await Promise.all([
       import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js"),
       import("https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js"),
       import("https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js"),
-      import("https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js")
+      import("https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js"),
+      import("https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js")
     ]);
     const app = appMod.getApps().length ? appMod.getApp() : appMod.initializeApp(firebasePhoneConfig);
     const auth = authMod.getAuth(app);
@@ -11258,7 +11310,8 @@ async function loadFirebasePhoneRuntime() {
     }
     const db = dbMod.getFirestore(app, FIRESTORE_DATABASE_ID);
     const storage = storageMod.getStorage(app);
-    firebasePhoneRuntime = { ...dbMod, ...storageMod, auth, db, storage };
+    const functions = functionsMod.getFunctions(app, FIREBASE_FUNCTIONS_REGION);
+    firebasePhoneRuntime = { ...dbMod, ...storageMod, ...functionsMod, auth, db, storage, functions };
     return firebasePhoneRuntime;
   })().catch((error) => {
     firebasePhoneRuntimePromise = null;
@@ -11266,6 +11319,12 @@ async function loadFirebasePhoneRuntime() {
     throw error;
   });
   return firebasePhoneRuntimePromise;
+}
+
+async function callFirebasePhoneFunction(name, data = {}) {
+  const fb = await loadFirebasePhoneRuntime();
+  const result = await fb.httpsCallable(fb.functions, name)(data);
+  return result?.data || {};
 }
 
 function sharedSystemAccountsPayload() {
@@ -11823,6 +11882,7 @@ function normalizeFinderSave(value = {}, owner = state || {}) {
   finder.metProfiles = Array.isArray(finder.metProfiles) ? [...new Set(finder.metProfiles)] : [];
   finder.dateHistory = Array.isArray(finder.dateHistory) ? finder.dateHistory : [];
   finder.lastMeetingDay = Math.max(0, Number(finder.lastMeetingDay || 0));
+  finder.onlineProfileRegistered = !!finder.onlineProfileRegistered;
   if (finder.swipeDay !== Number(owner.day || 1)) {
     finder.swipeDay = Number(owner.day || 1);
     finder.swipesToday = 0;
@@ -12216,7 +12276,7 @@ function finderDiscoverHtml() {
     ${cooldown ? `<div class="finder-cooldown-note"><b>Free-Matchpause</b><span>Noch ${cooldown} Schlaf-Tag${cooldown === 1 ? "" : "e"}, bis ein neues Match entstehen kann.</span></div>` : ""}
     ${profile ? `<div class="finder-swipe-stage">
       <article class="finder-profile-card" data-finder-swipe-card data-profile-id="${profile.id}">
-        <span class="finder-source-badge ${profile.source === "player" ? "player" : "bot"}">${profile.source === "player" ? "PLAYER · ONLINE" : "BOT"}</span>
+        <span class="finder-source-badge ${profile.source === "player" ? "player" : "bot"}">${profile.source === "player" ? "ECHTER SPIELER · ONLINE" : "BOT"}</span>
         ${finderProfileAvatarHtml(profile, "hero")}
         <div class="finder-profile-teaser">
           <p>${escapeHtml(profile.bio)}</p>
@@ -12277,7 +12337,7 @@ function finderOnlineSettingsHtml() {
     online: finder.onlineVisible !== false
   };
   return `<div class="finder-settings-card finder-online-card">
-    <header><div><small>ECHTE SPIELER</small><h4>${profile ? "Dein Finder.KL-Profil" : "Bei Finder.KL anmelden"}</h4></div><span class="finder-online-state ${current.online ? "online" : "offline"}">${current.online ? "ONLINE" : "OFFLINE"}</span></header>
+    <header><div><small>ECHTE SPIELER</small><h4>${profile ? "Dein Finder.KL-Profil" : "Finder.KL-Konto erstellen"}</h4></div><span class="finder-online-state ${current.online ? "online" : "offline"}">${current.online ? "ONLINE" : "OFFLINE"}</span></header>
     <p>Du verwendest automatisch deinen angemeldeten LifeBuilder-Firebase-Account. Es ist keine zweite E-Mail-Anmeldung nötig.</p>
     <form data-finder-online-profile-form class="finder-online-form">
       <label>Name<input name="displayName" maxlength="40" required value="${escapeHtml(current.name || "")}"></label>
@@ -12289,7 +12349,7 @@ function finderOnlineSettingsHtml() {
       <label class="wide">Profiltext<textarea name="bio" maxlength="240">${escapeHtml(current.bio || "")}</textarea></label>
       <label class="wide">Ich suche<input name="intention" maxlength="100" value="${escapeHtml(current.intention || "jemanden zum Kennenlernen")}"></label>
       <label class="finder-online-check wide"><input name="online" type="checkbox" ${current.online ? "checked" : ""}> Profil nach dem Speichern online anzeigen</label>
-      <button class="mini-button gold wide" type="submit">${profile ? "Profil aktualisieren" : "Profil erstellen"}</button>
+      <button class="mini-button gold wide" type="submit">${profile ? "Profil aktualisieren" : "Anmelden & Profil erstellen"}</button>
     </form>
     ${profile ? `<div class="finder-online-actions"><button class="mini-button ${current.online ? "danger" : "gold"}" data-finder-online-toggle="${current.online ? "off" : "on"}">${current.online ? "Offline stellen" : "Online stellen"}</button><button class="mini-button" data-finder-online-refresh>Spieler aktualisieren</button></div>` : ""}
   </div>`;
@@ -12349,6 +12409,9 @@ function finderChatHtml(profile) {
 
 function finderAppHtml() {
   const finder = ensureFinderState();
+  if (!finder.onlineProfileRegistered) {
+    return `<div class="finder-app finder-registration-gate"><div class="finder-empty"><b>Finder.KL-Anmeldung erforderlich</b><p>Erstelle zuerst dein persönliches Profil mit Namen. Danach bist du als echter LifeBuilder-Spieler zwischen den Bots sichtbar.</p></div>${finderOnlineSettingsHtml()}</div>`;
+  }
   const active = finderProfileById(finder.activeProfileId);
   let body = "";
   if (finder.view === "matches") body = finderMatchesHtml();
@@ -30828,9 +30891,13 @@ render();
 
   const DAILY_GIFTS_APP_ID = "dailygifts";
   const DAILY_QUESTS_APP_ID = "dailyquests";
-  const DAILY_APPS_VERSION = "2026-07-21-daily-apps-modcodes-2";
+  const DAILY_APPS_VERSION = "2026-07-23-serverzeit-finder-work-3";
   const DAILY_METRIC_KEYS = ["moneySpent", "moneyEarned", "itemsUsed", "itemsSold", "casinoStake", "travels", "gameRounds"];
   let dailyRewardGrantInProgress = false;
+  let dailyGiftServerCalendar = null;
+  let dailyGiftServerLoadState = "idle";
+  let dailyGiftServerPromise = null;
+  let dailyGiftServerSyncedAtMonotonic = 0;
 
   const dailyRewardConsumables = {
     "Mineralwasser 1L": { name: "Mineralwasser 1L", effect: { thirst: 34 }, text: "Mehr Inhalt, besser für längere Wege." },
@@ -30973,25 +31040,70 @@ render();
     return needed <= 0 || inventoryUsed() + needed <= inventoryCapacity();
   }
 
-  function markDailyGiftCheckin() {
-    if (!state || !isPhoneAppInstalled(DAILY_GIFTS_APP_ID)) return false;
-    const now = new Date();
-    const month = dailyGiftMonthState(now);
-    const day = now.getDate();
-    const changed = !month.checkedInDays.includes(day);
-    if (changed) month.checkedInDays.push(day);
-    month.checkedInDays.sort((a, b) => a - b);
-    month.lastOpenedAt = Date.now();
-    if (changed) {
-      addFeed(`Tägliche Geschenke: Tag ${day} wurde als Login-Tag gespeichert.`);
-      save();
-    }
-    return changed;
+  function dailyGiftDateFromServer(calendar = dailyGiftServerCalendar) {
+    if (!calendar) return null;
+    return new Date(Number(calendar.year), Number(calendar.month) - 1, Number(calendar.day), 12, 0, 0, 0);
   }
 
-  function dailyGiftPerfectAttendance(date = new Date()) {
+  function applyDailyGiftServerCalendar(calendar) {
+    if (!calendar || !/^\d{4}-\d{2}$/.test(String(calendar.monthKey || ""))) return false;
+    const days = Math.max(28, Math.min(31, Number(calendar.daysInMonth || 31)));
+    const cleanDays = (value) => [...new Set((Array.isArray(value) ? value : []).map(Number).filter((day) => day >= 1 && day <= days))].sort((a, b) => a - b);
+    dailyGiftServerCalendar = {
+      year: Number(calendar.year),
+      month: Number(calendar.month),
+      day: Number(calendar.day),
+      monthKey: String(calendar.monthKey),
+      dateKey: String(calendar.dateKey || ""),
+      daysInMonth: days,
+      monthLabel: String(calendar.monthLabel || ""),
+      serverTimeMs: Number(calendar.serverTimeMs || 0),
+      checkedInDays: cleanDays(calendar.checkedInDays),
+      claimedDays: cleanDays(calendar.claimedDays),
+      specialClaimed: calendar.specialClaimed === true
+    };
+    ensureDailyFeatureState();
+    state.dailyGiftMonths[dailyGiftServerCalendar.monthKey] = {
+      checkedInDays: [...dailyGiftServerCalendar.checkedInDays],
+      claimedDays: [...dailyGiftServerCalendar.claimedDays],
+      specialClaimed: dailyGiftServerCalendar.specialClaimed,
+      lastOpenedAt: dailyGiftServerCalendar.serverTimeMs,
+      serverDateKey: dailyGiftServerCalendar.dateKey,
+      authoritative: true
+    };
+    return true;
+  }
+
+  async function syncDailyGiftServerState(item = null, force = false) {
+    if (!state || !isPhoneAppInstalled(DAILY_GIFTS_APP_ID)) return null;
+    if (dailyGiftServerPromise) return dailyGiftServerPromise;
+    if (!force && dailyGiftServerCalendar && dailyGiftServerLoadState === "ready") return dailyGiftServerCalendar;
+    dailyGiftServerLoadState = "loading";
+    dailyGiftServerPromise = (async () => {
+      const response = await callFirebasePhoneFunction("syncDailyGiftState", {});
+      if (!applyDailyGiftServerCalendar(response.calendar)) throw new Error("Firebase hat keinen gültigen Kalender geliefert.");
+      dailyGiftServerLoadState = "ready";
+      dailyGiftServerSyncedAtMonotonic = performance.now();
+      save();
+      return dailyGiftServerCalendar;
+    })().catch((error) => {
+      dailyGiftServerLoadState = "error";
+      console.warn("Daily gift server time failed", error);
+      addFeed(`Tägliche Geschenke sind ohne Firebase-Serverzeit gesperrt: ${error.message || error}`);
+      return null;
+    }).finally(() => {
+      dailyGiftServerPromise = null;
+      if (item && els.dialog?.open && els.dialog.querySelector(".daily-gifts-app, .daily-gift-server-state")) {
+        refreshDeviceApp(DAILY_GIFTS_APP_ID, item);
+      }
+    });
+    return dailyGiftServerPromise;
+  }
+
+  function dailyGiftPerfectAttendance(date = dailyGiftDateFromServer()) {
+    if (!date || !dailyGiftServerCalendar) return false;
     const month = dailyGiftMonthState(date);
-    const days = dailyDaysInMonth(date);
+    const days = dailyGiftServerCalendar.daysInMonth;
     return Array.from({ length: days }, (_, index) => index + 1).every((day) => month.checkedInDays.includes(day));
   }
 
@@ -31025,35 +31137,42 @@ render();
     }
   }
 
-  function claimDailyGift(day, item) {
+  async function claimDailyGift(day, item) {
     if (!state) return;
-    const now = new Date();
-    const days = dailyDaysInMonth(now);
-    const today = now.getDate();
-    const selectedDay = Math.max(1, Math.min(days, Math.floor(Number(day || today))));
+    const calendar = dailyGiftServerCalendar || await syncDailyGiftServerState(item, true);
+    if (!calendar) return addFeed("Tägliche Geschenke benötigen eine aktive Firebase-Verbindung.");
+    const now = dailyGiftDateFromServer(calendar);
+    const selectedDay = Math.max(1, Math.min(calendar.daysInMonth, Math.floor(Number(day || calendar.day))));
     const month = dailyGiftMonthState(now);
-    if (selectedDay > today) return addFeed("Dieses Geschenk wird erst an seinem Kalendertag freigeschaltet.");
+    if (selectedDay > calendar.day) return addFeed("Dieses Geschenk ist laut Firebase-Serverzeit noch nicht freigeschaltet.");
     if (month.claimedDays.includes(selectedDay)) return addFeed("Dieses Tagesgeschenk wurde bereits abgeholt.");
     const reward = dailyGiftRewardForDay(selectedDay, now);
     if (reward.type === "special" && !dailyGiftPerfectAttendance(now)) {
-      return addFeed("Der Monatspreis ist gesperrt, weil mindestens ein echter Login-Tag in diesem Monat fehlt.");
+      return addFeed("Der Monatspreis ist gesperrt, weil mindestens ein echter Firebase-Login-Tag fehlt.");
     }
-    if (!grantDailyReward(reward)) return;
-    month.claimedDays.push(selectedDay);
-    month.claimedDays.sort((a, b) => a - b);
-    if (reward.type === "special") month.specialClaimed = true;
-    addFeed(`${reward.type === "special" ? "Monatspreis" : `Tagesgeschenk Tag ${selectedDay}`} abgeholt: ${reward.label}.`, {
-      purchase: { kind: "use", title: reward.type === "special" ? "Monatspreis erhalten" : "Tagesgeschenk", name: reward.label, icon: reward.icon }
-    });
-    save();
+    if (!dailyGiftCanFit(reward)) {
+      return addFeed(`Inventar voll: Für ${reward.label} brauchst du ${dailyGiftRequiredInventory(reward)} freie Plätze.`);
+    }
+    try {
+      const response = await callFirebasePhoneFunction("claimDailyGiftServer", { day: selectedDay });
+      if (!applyDailyGiftServerCalendar(response.calendar)) throw new Error("Firebase konnte den Abholstatus nicht bestätigen.");
+      if (!grantDailyReward(reward)) return;
+      addFeed(`${reward.type === "special" ? "Monatspreis" : `Tagesgeschenk Tag ${selectedDay}`} abgeholt: ${reward.label}.`, {
+        purchase: { kind: "use", title: reward.type === "special" ? "Monatspreis erhalten" : "Tagesgeschenk", name: reward.label, icon: reward.icon }
+      });
+      save();
+    } catch (error) {
+      const message = String(error?.message || error || "Firebase-Fehler").replace(/^FirebaseError:\s*/i, "");
+      addFeed(`Tagesgeschenk nicht abgeholt: ${message}`);
+    }
     pendingDeviceScrollTop = document.querySelector(".device-screen")?.scrollTop ?? null;
     openDeviceInterface(item, DAILY_GIFTS_APP_ID, false);
   }
 
-  function dailyGiftCardHtml(day, date = new Date()) {
+  function dailyGiftCardHtml(day, date, calendar) {
     const month = dailyGiftMonthState(date);
     const reward = dailyGiftRewardForDay(day, date);
-    const today = date.getDate();
+    const today = calendar.day;
     const claimed = month.claimedDays.includes(day);
     const checked = month.checkedInDays.includes(day);
     const future = day > today;
@@ -31071,10 +31190,15 @@ render();
 
   function dailyGiftsAppHtml() {
     if (!state) return `<p class="device-hint">Starte zuerst einen Spielstand.</p>`;
-    const now = new Date();
+    if (!dailyGiftServerCalendar) {
+      const failed = dailyGiftServerLoadState === "error";
+      return `<div class="daily-app daily-gifts-app daily-gift-server-state"><header class="daily-app-hero gifts"><span>🎁</span><div><p class="eyebrow">FIREBASE-SERVERZEIT</p><h4>Tägliche Geschenke</h4><small>Das Geräte-Datum wird nicht verwendet.</small></div></header><section class="daily-streak-panel ${failed ? "broken" : "active"}"><div><small>STATUS</small><b>${failed ? "Offline" : "Wird geprüft …"}</b></div><p>${failed ? "Ohne Firebase-Verbindung bleiben alle Geschenke gesperrt. Datum und Uhrzeit von PC oder Handy haben keinen Einfluss." : "Der echte Kalendertag wird gerade direkt von Firebase geladen."}</p></section></div>`;
+    }
+    const calendar = dailyGiftServerCalendar;
+    const now = dailyGiftDateFromServer(calendar);
     const month = dailyGiftMonthState(now);
-    const days = dailyDaysInMonth(now);
-    const today = now.getDate();
+    const days = calendar.daysInMonth;
+    const today = calendar.day;
     const special = dailySpecialReward(now);
     const perfectSoFar = Array.from({ length: today }, (_, index) => index + 1).every((day) => month.checkedInDays.includes(day));
     const remaining = Math.max(0, days - month.checkedInDays.length);
@@ -31082,14 +31206,14 @@ render();
       <div class="daily-app daily-gifts-app">
         <header class="daily-app-hero gifts">
           <span>🎁</span>
-          <div><p class="eyebrow">${escapeHtml(dailyMonthLabel(now))}</p><h4>Tägliche Geschenke</h4><small>Jeder Spieler erhält diesen Monat denselben Kalender.</small></div>
+          <div><p class="eyebrow">${escapeHtml(calendar.monthLabel || dailyMonthLabel(now))}</p><h4>Tägliche Geschenke</h4><small>Firebase-Serverzeit · Geräte-Datum ohne Einfluss.</small></div>
         </header>
         <section class="daily-streak-panel ${perfectSoFar ? "active" : "broken"}">
           <div><small>LOGIN-SERIE</small><b>${month.checkedInDays.length}/${days} Tage</b></div>
-          <p>${perfectSoFar ? `Perfekt bis heute. Noch ${remaining} Login-Tage bis zum seltenen Monatspreis.` : "Mindestens ein Login-Tag fehlt. Normale Geschenke kannst du nachholen, der seltene Monatspreis bleibt diesen Monat gesperrt."}</p>
+          <p>${perfectSoFar ? `Perfekt bis heute. Noch ${remaining} Login-Tage bis zum seltenen Monatspreis.` : "Mindestens ein echter Firebase-Login-Tag fehlt. Normale Geschenke kannst du nachholen, der seltene Monatspreis bleibt diesen Monat gesperrt."}</p>
           <strong>${special.icon} ${escapeHtml(special.name)} · ${euro.format(special.value)}</strong>
         </section>
-        <div class="daily-gift-grid">${Array.from({ length: days }, (_, index) => dailyGiftCardHtml(index + 1, now)).join("")}</div>
+        <div class="daily-gift-grid">${Array.from({ length: days }, (_, index) => dailyGiftCardHtml(index + 1, now, calendar)).join("")}</div>
       </div>`;
   }
 
@@ -31351,7 +31475,7 @@ render();
   function bindDailyApps(shell, item, activeApp) {
     if (!shell) return;
     if (activeApp === DAILY_GIFTS_APP_ID) {
-      shell.querySelectorAll("[data-daily-gift-claim]:not(:disabled)").forEach((button) => button.addEventListener("click", () => claimDailyGift(button.dataset.dailyGiftClaim, item)));
+      shell.querySelectorAll("[data-daily-gift-claim]:not(:disabled)").forEach((button) => button.addEventListener("click", () => claimDailyGift(button.dataset.dailyGiftClaim, item).catch((error) => addFeed(`Tagesgeschenk-Fehler: ${error.message || error}`))));
     }
     if (activeApp === DAILY_QUESTS_APP_ID) {
       shell.querySelectorAll("[data-daily-quest-claim]:not(:disabled)").forEach((button) => button.addEventListener("click", () => claimDailyQuest(button.dataset.dailyQuestClaim, item)));
@@ -31436,11 +31560,14 @@ render();
 
   const dailyBaseOpenDeviceInterface = openDeviceInterface;
   openDeviceInterface = function dailyAppsOpenDeviceInterface(item, activeApp = "home", activeUse = true) {
-    if (activeApp === DAILY_GIFTS_APP_ID) markDailyGiftCheckin();
     if (activeApp === DAILY_QUESTS_APP_ID) ensureDailyQuestDay();
     const result = dailyBaseOpenDeviceInterface(item, activeApp, activeUse);
     const shell = document.querySelector("#detailDialog .device-shell:last-of-type") || document.querySelector("#detailDialog .device-shell");
     bindDailyApps(shell, item, activeApp);
+    if (activeApp === DAILY_GIFTS_APP_ID) {
+      const serverCalendarStale = !dailyGiftServerCalendar || performance.now() - dailyGiftServerSyncedAtMonotonic > 60_000;
+      syncDailyGiftServerState(item, serverCalendarStale).catch(() => {});
+    }
     return result;
   };
 
@@ -31560,7 +31687,10 @@ render();
     version: DAILY_APPS_VERSION,
     giftAppId: DAILY_GIFTS_APP_ID,
     questAppId: DAILY_QUESTS_APP_ID,
-    getGiftPlan: () => Array.from({ length: dailyDaysInMonth() }, (_, index) => dailyGiftRewardForDay(index + 1)),
+    getGiftPlan: () => {
+      const date = dailyGiftDateFromServer();
+      return date && dailyGiftServerCalendar ? Array.from({ length: dailyGiftServerCalendar.daysInMonth }, (_, index) => dailyGiftRewardForDay(index + 1, date)) : [];
+    },
     getQuests: () => ensureDailyQuestDay()?.quests || [],
     refreshProgress: () => updateDailyQuestProgress(true)
   };

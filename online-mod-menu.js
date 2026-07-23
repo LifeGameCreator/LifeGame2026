@@ -651,7 +651,7 @@
         <article class="online-mod-card"><div class="online-mod-card-title"><span>📦</span><div><small>INVENTAR</small><h3>Häufigste Items</h3></div></div><div class="online-mod-item-summary">${topItems.length ? topItems.map(([name, amount]) => `<span><b>${esc(name)}</b><em>${num(amount)}×</em></span>`).join("") : `<p>Keine Inventardaten vorhanden.</p>`}</div></article>
         <article class="online-mod-card"><div class="online-mod-card-title"><span>📊</span><div><small>STATISTIK</small><h3>Weitere Werte</h3></div></div><div class="online-mod-data-list"><span><small>Immobilien</small><b>${safeArray(save.properties || privateData.properties).length}</b></span><span><small>Kleidung</small><b>${num(stats.wardrobeCount || safeArray(save.wardrobe).length)}</b></span><span><small>Logistik-Mitarbeiter</small><b>${num(stats.logisticsEmployees || save.logisticsEmployees)}</b></span><span><small>Shop-Verkäufe</small><b>${num(stats.shopSales || save.shop?.sales)}</b></span></div></article>
       </section>
-      ${safeArray(audit.reasons).length ? `<section class="online-mod-warning"><b>Cheat-Prüfung · ${num(audit.riskScore)}%</b>${audit.reasons.map((reason) => `<p>${esc(reason)}</p>`).join("")}</section>` : ""}`;
+      ${canInspectTrust() && status === "hack" && trust.lastReason ? `<section class="online-mod-warning"><b>Hack-Prüfung · ${num(trust.riskScore)}%</b><p>${esc(trust.lastReason)}</p></section>` : ""}`;
   }
 
   function needInput(label, name, value) {

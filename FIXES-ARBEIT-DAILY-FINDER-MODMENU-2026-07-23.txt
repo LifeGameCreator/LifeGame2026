@@ -1,0 +1,29 @@
+LifeBuilder 2026 – Arbeit, Daily Gifts, Finder.KL und Mod-Menü
+Stand: 23.07.2026
+
+1. Automatische Arbeit
+- Der bereits-gearbeitet-Status wird immer als Zahl mit dem aktuellen Spieltag verglichen.
+- Veraltete oder ungültige workedDay-Werte werden automatisch entfernt.
+- Nach einem neuen Spieltag wird die automatische Arbeit zuverlässig wieder freigegeben.
+
+2. Manuelle Klick-Arbeiten
+- Menschliche schnelle Klicks sind nun deutlich schneller möglich (75 ms statt 650 ms).
+- Nicht vertrauenswürdige/synthetische Klicks werden blockiert.
+- Extrem schnelle oder auffällig gleichmäßige Klickfolgen lösen eine kurze Sperre aus.
+
+3. Tägliche Geschenke
+- PC-/Handy-Datum wird nicht mehr zur Freischaltung verwendet.
+- Monat, Tag, Login-Serie und Abholstatus kommen aus Firebase Cloud Functions.
+- Ohne Firebase-Verbindung bleiben Geschenke gesperrt.
+- Der seltene Monatspreis benötigt jeden echten, serverseitig registrierten Login-Tag.
+
+4. Finder.KL
+- Vor der Nutzung muss ein echtes Finder.KL-Profil mit Namen erstellt werden.
+- Angemeldete echte Spieler werden online zwischen den Bots angezeigt.
+- Echte Profile tragen die Kennzeichnung „ECHTER SPIELER · ONLINE“.
+
+5. Online-Mod-Menü
+- Der Fehler „audit is not defined“ in der Player-Ansicht wurde behoben.
+
+Wichtig:
+Die Firebase-ZIP muss zusätzlich deployed werden, damit die serverseitige Zeitprüfung funktioniert.
