@@ -1,0 +1,13 @@
+LIFEBUILDER 2026 – FIX „DATENBANKPRÜFUNG ERFORDERLICH"
+========================================================
+
+GEÄNDERT
+- Die Firestore-Prüfung nutzt jetzt einen echten Server-Lesezugriff statt eines blockierenden Pflicht-Schreibzugriffs.
+- Die Prüfung besitzt ein 12-Sekunden-Zeitlimit und kann nicht mehr endlos hängen.
+- Ein gültiger Firebase-Login startet das Spiel auch dann, wenn Firestore vorübergehend langsam ist.
+- Die Datenbankverbindung wird automatisch im Hintergrund erneut versucht.
+- Der optionale Eintrag connectionChecks bleibt erhalten, blockiert den Login aber nicht mehr.
+- Neue Cache-Version in index.html, damit GitHub Pages die korrigierte online-events.js sicher lädt.
+
+UPLOAD AUF GITHUB PAGES
+Alle Dateien und den Ordner assets aus diesem Paket in das Repository hochladen und vorhandene Dateien ersetzen.

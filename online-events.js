@@ -1,6 +1,8 @@
 (() => {
-  const ONLINE_VERSION = "2026-07-22-mod-actions-live-1";
+  const ONLINE_VERSION = "2026-07-23-database-check-fix-1";
   const FIRESTORE_DATABASE_ID = "gamekl";
+  const DATABASE_VERIFY_TIMEOUT_MS = 12000;
+  const DATABASE_RETRY_MS = 15000;
   const AUDIT_STORAGE_PREFIX = "lifebuilder-2026-online-audit:";
   const HEARTBEAT_MS = 25000;
   const ONLINE_WINDOW_MS = 70000;
@@ -29,6 +31,7 @@
   let databaseReadyUid = "";
   let databaseVerificationPromise = null;
   let databaseConnectionError = "";
+  let databaseRetryTimer = null;
 
   const htmlEscape = (value) => typeof escapeHtml === "function"
     ? escapeHtml(value)
@@ -57,6 +60,20 @@
     return firebasePromise;
   }
 
+  function databaseTimeoutError() {
+    const error = new Error("Die Datenbankprüfung hat zu lange gedauert.");
+    error.code = "database-timeout";
+    return error;
+  }
+
+  function withDatabaseTimeout(promise, timeoutMs = DATABASE_VERIFY_TIMEOUT_MS) {
+    let timeoutId = null;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => reject(databaseTimeoutError()), timeoutMs);
+    });
+    return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId));
+  }
+
   function databaseErrorText(error) {
     const raw = String(error?.message || error || "");
     const code = String(error?.code || error?.name || "");
@@ -65,6 +82,9 @@
     }
     if (code.includes("permission-denied")) {
       return `Die Firestore-Datenbank ${FIRESTORE_DATABASE_ID} ist erreichbar, aber ihre Sicherheitsregeln lehnen den Zugriff ab. Veröffentliche die aktuellen Regeln ausdrücklich in ${FIRESTORE_DATABASE_ID}.`;
+    }
+    if (code.includes("database-timeout")) {
+      return "Die Live-Datenbank antwortet gerade zu langsam. Das Spiel startet trotzdem und versucht die Verbindung automatisch erneut.";
     }
     if (code.includes("unavailable") || code.includes("network-request-failed") || code.includes("failed-precondition")) {
       return "Die Live-Datenbank ist gerade nicht erreichbar. Prüfe Internet, Firestore-Einrichtung und die Firebase-Projekt-ID life-kl.";
@@ -80,25 +100,77 @@
       const runtime = fb || await loadOnlineFirebase();
       const now = Date.now();
       try {
-        await runtime.setDoc(runtime.doc(runtime.db, "connectionChecks", user.uid), {
+        // Ein echter Server-Lesezugriff ist der zuverlässige Verbindungsnachweis.
+        // Der frühere Pflicht-Schreibzugriff konnte bei einer langsamen/alten Regelversion
+        // unbegrenzt warten und hielt den Spieler bei „Datenbankprüfung erforderlich“ fest.
+        const accountRef = runtime.doc(runtime.db, "accounts", user.uid);
+        const probe = typeof runtime.getDocFromServer === "function"
+          ? runtime.getDocFromServer(accountRef)
+          : runtime.getDoc(accountRef);
+        await withDatabaseTimeout(probe);
+
+        databaseReadyUid = user.uid;
+        databaseConnectionError = "";
+        clearTimeout(databaseRetryTimer);
+        databaseRetryTimer = null;
+        updateOnlineStatusBadge();
+        updateAuthOverlayState();
+
+        // Der sichtbare Verbindungsnachweis bleibt erhalten, blockiert den Login aber nicht mehr.
+        // Falls nur diese optionale Schreibregel noch nicht veröffentlicht wurde, funktionieren
+        // Anmeldung, Spielstart und die übrigen Online-Daten trotzdem weiter.
+        withDatabaseTimeout(runtime.setDoc(runtime.doc(runtime.db, "connectionChecks", user.uid), {
           uid: user.uid,
           email: user.email || "",
           displayName: user.displayName || "",
           lastConnectedAtMs: now,
           version: ONLINE_VERSION
-        }, { merge: true });
-        databaseReadyUid = user.uid;
-        databaseConnectionError = "";
-        updateOnlineStatusBadge();
+        }, { merge: true })).catch((error) => {
+          console.warn("Optionaler Firestore-Verbindungsnachweis konnte nicht gespeichert werden", error);
+        });
         return true;
       } catch (error) {
         databaseReadyUid = "";
         databaseConnectionError = databaseErrorText(error);
         updateOnlineStatusBadge();
+        updateAuthOverlayState();
         throw error;
       }
     })().finally(() => { databaseVerificationPromise = null; });
     return databaseVerificationPromise;
+  }
+
+  function resolvePendingAuth(user = onlineUser) {
+    if (authWaitResolve && user) authWaitResolve(user);
+    authWaitResolve = null;
+    authWaitReject = null;
+    authWaitPromise = null;
+  }
+
+  function scheduleDatabaseRetry(user = onlineUser, delay = DATABASE_RETRY_MS) {
+    clearTimeout(databaseRetryTimer);
+    databaseRetryTimer = null;
+    if (!hostedOnlineMode || !user || databaseReadyUid === user.uid) return;
+    const expectedUid = user.uid;
+    databaseRetryTimer = setTimeout(async () => {
+      if (!onlineUser || onlineUser.uid !== expectedUid || databaseReadyUid === expectedUid) return;
+      try {
+        const fb = await loadOnlineFirebase();
+        await verifyOnlineDatabase(fb, onlineUser, true);
+        try {
+          await ensureOnlineIdentity(fb, onlineUser);
+        } catch (error) {
+          console.warn("Online-Identität wird nach erfolgreicher Datenbankverbindung später synchronisiert", error);
+        }
+        await hydrateCloudSlots(onlineUser).catch((error) => console.warn("Cloud-Spielstände konnten noch nicht geladen werden", error));
+        startOnlineServices();
+      } catch (error) {
+        databaseConnectionError = databaseErrorText(error);
+        updateOnlineStatusBadge();
+        updateAuthOverlayState();
+        scheduleDatabaseRetry(onlineUser, DATABASE_RETRY_MS);
+      }
+    }, Math.max(0, Number(delay) || 0));
   }
 
   function authErrorText(error) {
@@ -339,20 +411,14 @@
       authWaitReject = null;
       authWaitPromise = null;
     });
-    overlay.querySelector("[data-online-auth-continue]").addEventListener("click", async () => {
+    overlay.querySelector("[data-online-auth-continue]").addEventListener("click", () => {
       const message = overlay.querySelector("[data-online-auth-message]");
-      try {
-        const fb = await loadOnlineFirebase();
-        message.textContent = "Live-Datenbank wird geprüft …";
-        await verifyOnlineDatabase(fb, onlineUser, true);
-        overlay.classList.remove("show");
-        if (authWaitResolve) authWaitResolve(onlineUser);
-        authWaitResolve = null;
-        authWaitReject = null;
-        authWaitPromise = null;
-      } catch (error) {
-        message.textContent = databaseErrorText(error);
-      }
+      message.textContent = databaseReadyUid === onlineUser?.uid
+        ? "Live-Datenbank verbunden."
+        : "Account ist angemeldet. Die Live-Datenbank wird automatisch im Hintergrund verbunden.";
+      overlay.classList.remove("show");
+      resolvePendingAuth(onlineUser);
+      scheduleDatabaseRetry(onlineUser, 0);
     });
     overlay.querySelector("[data-online-auth-logout]").addEventListener("click", async () => {
       const fb = await loadOnlineFirebase();
@@ -407,18 +473,26 @@
         }
         onlineUser = credentials.user;
         message.textContent = `Angemeldet als ${credentials.user.displayName || credentials.user.email}. Live-Datenbank wird geprüft …`;
-        await verifyOnlineDatabase(fb, credentials.user, true);
-        message.textContent = `Live verbunden als ${credentials.user.displayName || credentials.user.email}. Spielstände werden geladen …`;
+        let databaseConnected = false;
+        try {
+          await verifyOnlineDatabase(fb, credentials.user, true);
+          databaseConnected = true;
+          message.textContent = `Live verbunden als ${credentials.user.displayName || credentials.user.email}. Spielstände werden geladen …`;
+          await hydrateCloudSlots(credentials.user);
+          startOnlineServices();
+        } catch (databaseError) {
+          databaseConnectionError = databaseErrorText(databaseError);
+          console.warn("Firebase-Login erfolgreich; Firestore verbindet sich im Hintergrund", databaseError);
+          scheduleDatabaseRetry(credentials.user, 1500);
+        }
         updateAuthOverlayState();
-        await hydrateCloudSlots(credentials.user);
-        startOnlineServices();
+        message.textContent = databaseConnected
+          ? `Live verbunden als ${credentials.user.displayName || credentials.user.email}.`
+          : `Angemeldet als ${credentials.user.displayName || credentials.user.email}. Das Spiel startet; die Live-Datenbank wird automatisch erneut verbunden.`;
         setTimeout(() => {
           overlay.classList.remove("show");
-          if (authWaitResolve) authWaitResolve(credentials.user);
-          authWaitResolve = null;
-          authWaitReject = null;
-          authWaitPromise = null;
-        }, 350);
+          resolvePendingAuth(credentials.user);
+        }, databaseConnected ? 350 : 900);
       } catch (error) {
         if (newlyCreatedUser && fb?.auth?.currentUser?.uid === newlyCreatedUser.uid) {
           await fb.signOut(fb.auth).catch(() => {});
@@ -451,10 +525,12 @@
       title.textContent = databaseReadyUid === onlineUser.uid ? "LifeBuilder live verbunden" : "Firebase-Account angemeldet";
       copy.textContent = databaseReadyUid === onlineUser.uid
         ? "Account, Spielstände, Tickets, Events und Online-Funktionen sind mit der Firestore-Datenbank verbunden."
-        : "Der Account ist angemeldet, aber die Firestore-Datenbank wurde noch nicht erfolgreich geprüft.";
+        : "Der Account ist gültig angemeldet. Die Live-Datenbank wird automatisch im Hintergrund verbunden und blockiert den Spielstart nicht mehr.";
       message.textContent = databaseReadyUid === onlineUser.uid
         ? `${onlineUser.displayName || "Spieler"} · Live-Datenbank verbunden`
-        : (databaseConnectionError || `${onlineUser.displayName || "Spieler"} · Datenbankprüfung erforderlich`);
+        : databaseConnectionError
+          ? `${databaseConnectionError} Automatischer neuer Versuch läuft.`
+          : `${onlineUser.displayName || "Spieler"} · Datenbankverbindung läuft …`;
     } else {
       title.textContent = "Account anmelden";
       copy.textContent = "Auf GitHub Pages wird dein Firebase-Account benötigt, damit Events, Online-Spieler, Shops, Nachrichten und Belohnungen eindeutig deinem Charakter zugeordnet werden.";
@@ -475,15 +551,10 @@
     const fb = await loadOnlineFirebase();
     const activeAuth = auth || fb.auth;
     if (activeAuth.currentUser) {
-      // Eine erfolgreiche Firebase-Authentifizierung darf nicht durch eine
-      // vorübergehend fehlgeschlagene Firestore-Profilmigration blockiert werden.
+      // Firebase Authentication reicht für den Spielstart. Firestore verbindet
+      // sich danach im Hintergrund und kann den gültigen Login nicht mehr festhalten.
       onlineUser = activeAuth.currentUser;
-      if (hostedOnlineMode) await verifyOnlineDatabase(fb, onlineUser);
-      try {
-        await ensureOnlineIdentity(fb, activeAuth.currentUser);
-      } catch (error) {
-        console.warn("Online-Profil konnte nach der Anmeldung noch nicht synchronisiert werden", error);
-      }
+      if (hostedOnlineMode && databaseReadyUid !== onlineUser.uid) scheduleDatabaseRetry(onlineUser, 0);
       return onlineUser;
     }
     if (!authWaitPromise) {
@@ -506,11 +577,13 @@
     if (!badge) return;
     const liveConnected = !!onlineUser && databaseReadyUid === onlineUser.uid;
     badge.classList.toggle("online", liveConnected);
-    badge.classList.toggle("error", !!onlineUser && !liveConnected);
+    badge.classList.toggle("error", !!onlineUser && !liveConnected && !!databaseConnectionError);
     badge.innerHTML = liveConnected
       ? `<span></span><b>Live</b><small>${htmlEscape(onlineUser.displayName || onlineUser.email || "Account")}</small>`
       : onlineUser
-        ? `<span></span><b>Datenbankfehler</b><small>${htmlEscape(databaseConnectionError || "Verbindung prüfen")}</small>`
+        ? databaseConnectionError
+          ? `<span></span><b>Wird neu verbunden</b><small>${htmlEscape(databaseConnectionError)}</small>`
+          : `<span></span><b>Verbinden …</b><small>${htmlEscape(onlineUser.displayName || onlineUser.email || "Account")}</small>`
         : `<span></span><b>Offline</b><small>${hostedOnlineMode ? "Anmeldung erforderlich" : "Lokaler Testmodus"}</small>`;
   }
 
@@ -575,7 +648,10 @@
       const fb = await loadOnlineFirebase();
       window.__lifeBuilderCloudHydrating = true;
       try {
-        const snapshots = await Promise.all(Array.from({ length: 4 }, (_, index) => fb.getDoc(cloudSlotRef(fb, user.uid, index))));
+        const snapshots = await withDatabaseTimeout(
+          Promise.all(Array.from({ length: 4 }, (_, index) => fb.getDoc(cloudSlotRef(fb, user.uid, index)))),
+          DATABASE_VERIFY_TIMEOUT_MS
+        );
         const uploads = [];
         snapshots.forEach((snapshot, index) => {
           const localState = saveSlots?.[index] || null;
@@ -1167,43 +1243,28 @@
   async function initializeAuthState() {
     try {
       const fb = await loadOnlineFirebase();
-      fb.onAuthStateChanged(fb.auth, async (user) => {
+      fb.onAuthStateChanged(fb.auth, (user) => {
         if (!user) {
           onlineUser = null;
           cloudSaveReadyUid = "";
           databaseReadyUid = "";
           databaseConnectionError = "";
           clearTimeout(cloudSaveTimer);
+          clearTimeout(databaseRetryTimer);
+          databaseRetryTimer = null;
           updateOnlineStatusBadge();
           updateAuthOverlayState();
           stopOnlineServices();
           return;
         }
         if (interactiveAuthInProgress) return;
-        // Firebase Auth entscheidet, ob der Spieler angemeldet ist. Firestore-
-        // Profil- oder Regelprobleme dürfen den gültigen Login nicht rückgängig machen.
+        // Bestehende Firebase-Sitzungen starten sofort. Die Datenbankprüfung
+        // erfolgt mit Zeitlimit und automatischem Wiederholungsversuch im Hintergrund.
         onlineUser = user;
         updateOnlineStatusBadge();
         updateAuthOverlayState();
-        try {
-          await verifyOnlineDatabase(fb, user, true);
-          try {
-            await ensureOnlineIdentity(fb, user);
-          } catch (error) {
-            console.warn("Online-Identität wird später erneut synchronisiert", error);
-          }
-          await hydrateCloudSlots(user);
-          startOnlineServices();
-          if (authWaitResolve) authWaitResolve(onlineUser);
-          authWaitResolve = null;
-          authWaitReject = null;
-          authWaitPromise = null;
-        } catch (error) {
-          databaseConnectionError = databaseErrorText(error);
-          updateOnlineStatusBadge();
-          updateAuthOverlayState();
-          if (hostedOnlineMode) showAuthOverlay();
-        }
+        resolvePendingAuth(user);
+        scheduleDatabaseRetry(user, 0);
       });
     } catch (error) {
       console.warn("Firebase Auth konnte nicht geladen werden", error);
@@ -1282,17 +1343,24 @@
     event.stopImmediatePropagation();
     requireUser().then(async (user) => {
       if (!user) return;
-      await hydrateCloudSlots(user).catch((error) => console.warn("Cloud-Spielstände konnten noch nicht geladen werden", error));
+      if (databaseReadyUid === user.uid) {
+        await hydrateCloudSlots(user).catch((error) => console.warn("Cloud-Spielstände konnten noch nicht geladen werden", error));
+        syncPlayerOnline(true).catch(() => {});
+      } else {
+        scheduleDatabaseRetry(user, 0);
+      }
       setSetupView("slots");
-      syncPlayerOnline(true).catch(() => {});
     }).catch(() => {});
   }, true);
 
   if (hostedOnlineMode && els.openSlotsBtn) els.openSlotsBtn.textContent = "Anmelden & Spiel starten";
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) schedulePlayerSync(100);
-    else setPlayerOffline().catch(() => {});
+    if (!document.hidden) {
+      schedulePlayerSync(100);
+      scheduleDatabaseRetry(onlineUser, 250);
+    } else setPlayerOffline().catch(() => {});
   });
+  window.addEventListener("online", () => scheduleDatabaseRetry(onlineUser, 100));
   window.addEventListener("pagehide", () => { setPlayerOffline().catch(() => {}); });
 
   window.LifeBuilderOnline = {
