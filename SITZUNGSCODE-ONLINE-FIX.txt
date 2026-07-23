@@ -1,15 +1,1 @@
-LIFEBUILDER – ONLINE-SITZUNGSCODE-FIX
-=====================================
 
-Geändert:
-- Das Online-Mod-Menü ruft openStaffSession bereits korrekt in europe-west3 auf.
-- Im Owner-Reiter gibt es jetzt „Neuen KL-Sitzungscode erstellen“.
-- Der Button ruft die geschützte Firebase-Funktion bootstrapOwner auf. Nur die in OWNER_UID eingetragene Firebase-UID darf einen Owner-Code erzeugen.
-- Nach dem Erzeugen wird der alte KL-Sitzungscode ungültig.
-
-GitHub Pages:
-- Den Inhalt dieses Ordners wie gewohnt in dein GitHub-Pages-Repository hochladen.
-- Danach die Seite mit Strg+F5 neu laden.
-
-Wichtig:
-- Damit der Button funktioniert, muss das aktualisierte Firebase-Paket separat veröffentlicht werden.
