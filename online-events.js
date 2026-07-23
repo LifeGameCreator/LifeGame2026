@@ -1226,8 +1226,8 @@
   const basePhoneAppStoreHtml = phoneAppStoreHtml;
   phoneAppStoreHtml = function patchedPhoneAppStoreHtml(item) {
     return basePhoneAppStoreHtml(item).replace(
-      "Finder.KL und finster.kl erscheinen nach dem Download als eigene Apps unten im Handy. Die Casino-App bleibt bis zum nächsten Ausbau gesperrt.",
-      "Finder.KL, finster.kl und Event erscheinen nach dem Download als eigene Apps unten im Handy. Die Casino-App bleibt bis zum nächsten Ausbau gesperrt."
+      "Finder.KL und Finsta.KL erscheinen nach dem Download als eigene Apps unten im Handy. Die Casino-App bleibt bis zum nächsten Ausbau gesperrt.",
+      "Finder.KL, Finsta.KL und Event erscheinen nach dem Download als eigene Apps unten im Handy. Die Casino-App bleibt bis zum nächsten Ausbau gesperrt."
     );
   };
 

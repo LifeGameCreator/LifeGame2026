@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "2026-07-23-online-modmenu-session-fix-1";
+  const VERSION = "2026-07-23-online-modmenu-trust-ui-fix-2";
   const DB_ID = "gamekl";
   const REGION = "europe-west3";
   const SESSION_KEY = "lifebuilder-2026-online-mod-session";
@@ -76,6 +76,8 @@
   let selectedCatalogItemId = "";
   let playerItemSearch = "";
   let playerItemCategory = "all";
+  let playerActionReason = "";
+  let firebaseOnline = navigator.onLine !== false;
 
   let tickets = [];
   let selectedTicket = null;
@@ -130,8 +132,12 @@
     const fb = await runtime();
     try {
       const result = await fb.httpsCallable(fb.functions, name)(data);
+      firebaseOnline = true;
+      updateConnectionStatus();
       return result.data || {};
     } catch (error) {
+      if (/network|unavailable|offline|failed-precondition/i.test(String(error?.code || error?.message || ""))) firebaseOnline = false;
+      updateConnectionStatus();
       const raw = String(error?.message || error || "Unbekannter Fehler");
       if (/not-found|internal/i.test(String(error?.code || "")) && /function/i.test(raw)) {
         throw new Error("Die Online-Mod-Functions sind noch nicht in Firebase veröffentlicht.");
@@ -157,6 +163,41 @@
   function roleLabel() {
     return roleData?.roleLabel || ROLE_LABELS[roleData?.role] || "Teamrolle";
   }
+
+  function roleRank(role = roleData?.role) {
+    return ROLE_ORDER.indexOf(String(role || ""));
+  }
+  function isOwnerRole() {
+    return roleData?.role === "owner";
+  }
+  function canInspectTrust() {
+    return ["admin", "owner"].includes(roleData?.role);
+  }
+  function currentConnectionOnline() {
+    return navigator.onLine !== false && firebaseOnline && !!currentUser;
+  }
+  function trustOf(player = selectedPlayer) {
+    return safeObject(player?.trust);
+  }
+  function characterStatus(player = selectedPlayer) {
+    const trust = trustOf(player);
+    return trust.status === "hack" ? "hack" : trust.status === "mod" ? "mod" : "clean";
+  }
+  function characterStatusLabel(status = characterStatus()) {
+    return status === "hack" ? "Hack-Charakter" : status === "mod" ? "Mod-Charakter" : "Unauffällig";
+  }
+  function characterStatusClass(status = characterStatus()) {
+    return status === "hack" ? "danger" : status === "mod" ? "mod" : "ok";
+  }
+  function updateConnectionStatus() {
+    const online = currentConnectionOnline();
+    document.querySelectorAll("[data-mod-connection-status]").forEach((node) => {
+      node.classList.toggle("offline", !online);
+      const label = node.querySelector("b");
+      if (label) label.textContent = online ? "Online" : "Offline";
+    });
+  }
+
   function availablePanels() {
     return PANEL_DEFS.filter((panel) => {
       if (panel.ownerOnly) return roleData?.role === "owner";
@@ -249,13 +290,14 @@
           <aside class="online-mod-sidebar">
             <div class="online-mod-sidebar-title"><small>WERKZEUGE</small><b>Administration</b></div>
             <nav class="online-mod-nav" data-mod-nav></nav>
-            <div class="online-mod-sidebar-footer"><span class="online-mod-db-dot"></span><div><b>Firebase live</b><small>Datenbank ${DB_ID}</small></div></div>
+            <div class="online-mod-sidebar-footer" data-mod-connection-status><span class="online-mod-db-dot"></span><div><b>${currentConnectionOnline() ? "Online" : "Offline"}</b></div></div>
           </aside>
           <main class="online-mod-content" data-mod-content></main>
         </div>
         <div class="online-mod-toast-holder" data-mod-toasts></div>
       </section>`;
     document.body.appendChild(overlay);
+    updateConnectionStatus();
     overlay.querySelector("[data-mod-close]").addEventListener("click", closeModMenu);
     overlay.addEventListener("click", handleClick);
     overlay.addEventListener("submit", handleSubmit);
@@ -357,22 +399,26 @@
 
   function renderHomePanel() {
     const expires = num(roleData?.activeSessionExpiresAtMs);
+    const ownerView = isOwnerRole();
+    const online = currentConnectionOnline();
     const quick = availablePanels().filter((panel) => panel.id !== "home").map((panel) => `
       <button type="button" class="online-mod-launch-card" data-mod-panel="${panel.id}">
         <span>${panel.icon}</span><div><b>${esc(panel.label)}</b><small>${panel.id === "players" ? "Spieler prüfen und bearbeiten" : panel.id === "tickets" ? "Anfragen übernehmen und lösen" : panel.id === "ids" ? "Suchen, kopieren und vergeben" : "Bereich öffnen"}</small></div><em>›</em>
       </button>`).join("");
+    const ownerSecurity = ownerView ? `<p>Owner-Ansicht: Serverseitige Prüfung und Audit sind aktiv.</p><div class="online-mod-chip-list">${permissions().slice(0, 18).map((permission) => `<span>${esc(permission)}</span>`).join("")}${permissions().length > 18 ? `<span>+${permissions().length - 18}</span>` : ""}</div>` : "";
     content().innerHTML = `
       ${pageHead("ONLINE-MOD-ZENTRALE", "Übersicht", "Schneller Zugriff auf Spieler, Support, Events und Item-Katalog.")}
       <section class="online-mod-metric-grid">
-        <article><small>AKTIVE ROLLE</small><b>${esc(roleLabel())}</b><span>${permissions().length} Rechte geladen</span></article>
-        <article><small>SITZUNG</small><b>${expires > 4000000000000 ? "Dauerhaft" : relativeTime(expires)}</b><span>${expires > 4000000000000 ? "Owner-Zugriff" : `bis ${dateTime(expires)}`}</span></article>
-        <article><small>DATENBANK</small><b>${DB_ID}</b><span>Cloud Functions online</span></article>
+        <article><small>AKTIVE ROLLE</small><b>${esc(roleLabel())}</b><span>${ownerView ? `${permissions().length} Rechte geladen` : "Rolle aktiv"}</span></article>
+        <article><small>SITZUNG</small><b>${expires > 4000000000000 ? "Dauerhaft" : relativeTime(expires)}</b><span>${expires > 4000000000000 ? `${roleLabel()}-Zugriff` : `bis ${dateTime(expires)}`}</span></article>
+        <article><small>VERBINDUNG</small><b>${online ? "Online" : "Offline"}</b><span>${online ? "Server erreichbar" : "Verbindung unterbrochen"}</span></article>
         <article><small>GERÄT</small><b>${matchMedia("(max-width:760px)").matches ? "Handy" : "PC"}</b><span>Ansicht automatisch angepasst</span></article>
       </section>
       <section class="online-mod-home-grid">
         <article class="online-mod-card"><div class="online-mod-card-title"><span>⚡</span><div><small>SCHNELLSTART</small><h3>Werkzeuge öffnen</h3></div></div><div class="online-mod-launch-grid">${quick}</div></article>
-        <article class="online-mod-card"><div class="online-mod-card-title"><span>🛡</span><div><small>SITZUNG</small><h3>Sicherheit & Status</h3></div></div><p>Alle Aktionen werden serverseitig geprüft und im Firebase-Audit protokolliert.</p><div class="online-mod-chip-list">${permissions().slice(0, 18).map((permission) => `<span>${esc(permission)}</span>`).join("")}${permissions().length > 18 ? `<span>+${permissions().length - 18}</span>` : ""}</div><div class="online-mod-actions"><button type="button" data-mod-refresh-role>Rolle neu laden</button><button type="button" class="danger" data-mod-close-session>Sitzung schließen</button></div><p class="online-mod-message" data-mod-home-message></p></article>
+        <article class="online-mod-card online-mod-session-card"><div class="online-mod-card-title"><span>🛡</span><div><small>SITZUNG</small><h3>${ownerView ? "Sicherheit & Status" : "Sitzung"}</h3></div></div>${ownerSecurity}<div class="online-mod-actions"><button type="button" data-mod-refresh-role>Rolle neu laden</button><button type="button" class="danger" data-mod-close-session>Sitzung schließen</button></div><p class="online-mod-message" data-mod-home-message></p></article>
       </section>`;
+    updateConnectionStatus();
   }
 
   async function renderPlayersPanel() {
@@ -430,12 +476,13 @@
       <button type="button" class="online-mod-player-row ${selectedPlayer?.uid === player.uid ? "active" : ""}" data-select-player="${esc(player.uid)}">
         <span class="online-dot ${player.online ? "online" : ""}"></span>
         <span class="online-mod-player-row-main"><b>${esc(player.displayName || "Spieler")}</b><small>Level ${num(player.level)} · ${esc(player.city || "Kein Ort")}</small><small>${esc(player.job || "Kein Job")}</small></span>
-        <span class="online-mod-player-row-meta">${player.suspicious ? `<i class="risk">${num(player.riskScore)}%</i>` : ""}<em>${player.online ? "LIVE" : relativeTime(player.lastSeenAtMs)}</em></span>
+        <span class="online-mod-player-row-meta">${player.characterStatus === "hack" ? `<i class="risk">HACK</i>` : player.characterStatus === "mod" ? `<i class="mod">MOD</i>` : ""}<em>${player.online ? "LIVE" : relativeTime(player.lastSeenAtMs)}</em></span>
       </button>`).join("") : `<div class="online-mod-empty-state compact"><span>⌕</span><p>Keine passenden Spieler gefunden.</p></div>`;
   }
 
   async function selectPlayer(uid, silent = false) {
     const detail = content().querySelector("[data-player-detail]");
+    if (selectedPlayer?.uid !== uid) playerActionReason = "";
     if (!detail) return;
     if (!silent) detail.innerHTML = `<div class="online-mod-loading"><i></i><p>Spielerdaten werden geladen …</p></div>`;
     try {
@@ -463,15 +510,17 @@
     const detail = content().querySelector("[data-player-detail]");
     if (!detail || !selectedPlayer) return;
     const profile = safeObject(selectedPlayer.profile);
-    const privateData = safeObject(selectedPlayer.private);
-    const audit = safeObject(privateData.audit);
+    const trust = trustOf();
+    const status = characterStatus();
     const tabs = availablePlayerTabs();
+    const canChange = hasAny(["player.write", "money.write", "items.write", "smartphone.write", "work.write", "games.write", "world.write", "shop.write", "properties.write", "player.reset"]);
     detail.innerHTML = `
       <section class="online-mod-player-hero">
         <div class="online-mod-avatar">${esc(playerName().slice(0, 1).toUpperCase())}</div>
         <div class="online-mod-player-identity"><small>AUSGEWÄHLTER SPIELER</small><h2>${esc(playerName())}</h2><p>${profile.online ? "Online" : relativeTime(profile.lastSeenAtMs)} · Slot ${num(profile.slot) + 1}</p><code>${esc(selectedPlayer.uid)}</code></div>
-        <div class="online-mod-player-hero-actions"><span class="online-mod-risk ${audit.suspicious ? "danger" : "ok"}">${audit.suspicious ? `Verdacht ${num(audit.riskScore)}%` : "Unauffällig"}</span><button type="button" data-copy-id="${esc(selectedPlayer.uid)}">UID kopieren</button></div>
+        <div class="online-mod-player-hero-actions"><span class="online-mod-risk ${characterStatusClass(status)}">${esc(characterStatusLabel(status))}${status === "hack" && trust.riskScore ? ` · ${num(trust.riskScore)}%` : ""}</span><button type="button" data-copy-id="${esc(selectedPlayer.uid)}">UID kopieren</button></div>
       </section>
+      ${canChange ? `<label class="online-mod-change-reason"><span>Grund / Supportfall</span><input data-player-change-reason maxlength="240" value="${esc(playerActionReason)}" placeholder="z. B. Supportfall: verlorenes Item ersetzt"><small>Jede Änderung wird damit nachvollziehbar als Mod-Änderung gespeichert.</small></label>` : ""}
       <nav class="online-mod-player-tabs">${tabs.map((tab) => `<button type="button" class="${playerTab === tab.id ? "active" : ""}" data-player-tab="${tab.id}"><span>${tab.icon}</span>${esc(tab.label)}</button>`).join("")}</nav>
       <div class="online-mod-player-tab-content" data-player-tab-content>${playerTabHtml(playerTab)}</div>
       <div class="online-mod-command-status"><span></span><p class="online-mod-message" data-player-action-message></p></div>`;
@@ -486,7 +535,8 @@
     const privateData = safeObject(selectedPlayer.private);
     const stats = safeObject(privateData.statistics);
     const save = safeObject(selectedPlayer.save);
-    const audit = safeObject(privateData.audit);
+    const trust = trustOf();
+    const status = characterStatus();
     const itemCounts = safeObject(save.itemCounts || privateData.itemCounts);
 
     if (tab === "character") {
@@ -547,12 +597,12 @@
           <article class="online-mod-card"><div class="online-mod-card-title"><span>📱</span><div><small>SMARTPHONE</small><h3>Gerät & Apps</h3></div></div>
             <form data-command-form="setPhone" class="online-mod-form-grid">
               <label>Guthaben<input name="phoneCredit" type="number" min="0" value="${num(privateData.phoneCredit)}"></label><label>Akku<input name="battery" type="number" min="0" max="100" value="${num(save.phoneBattery || 100)}"></label><label class="wide">SIM-Tarif<input name="simPlan" value="${esc(save.phonePlan || "Unlimited SIM")}"></label>
-              <label class="check"><input name="installApps" type="checkbox" value="finder" ${apps.includes("finder") ? "checked" : ""}> Finder.KL installieren</label><label class="check"><input name="installApps" type="checkbox" value="finster" ${apps.includes("finster") ? "checked" : ""}> finster.kl installieren</label><label class="check"><input name="installApps" type="checkbox" value="event" ${apps.includes("event") ? "checked" : ""}> Event-App installieren</label>
+              <label class="check"><input name="installApps" type="checkbox" value="finder" ${apps.includes("finder") ? "checked" : ""}> Finder.KL installieren</label><label class="check"><input name="installApps" type="checkbox" value="finster" ${apps.includes("finster") ? "checked" : ""}> Finsta.KL installieren</label><label class="check"><input name="installApps" type="checkbox" value="event" ${apps.includes("event") ? "checked" : ""}> Event-App installieren</label>
               <button class="online-mod-primary wide" type="submit">Smartphone speichern</button>
             </form>
           </article>
           <article class="online-mod-card"><div class="online-mod-card-title"><span>▦</span><div><small>INSTALLIERT</small><h3>Apps auf dem Gerät</h3></div></div><div class="online-mod-chip-list">${apps.length ? apps.map((app) => `<span>${esc(app)}</span>`).join("") : "<span>Keine App-Daten</span>"}</div></article>
-          <article class="online-mod-card"><div class="online-mod-card-title"><span>◉</span><div><small>FINSTER.KL</small><h3>Online-Profil & Moderation</h3></div></div><div class="online-mod-data-list"><span><small>Konto</small><b>${save.finster?.accountCreated ? "Erstellt" : "Nicht erstellt"}</b></span><span><small>Benutzername</small><b>@${esc(save.finster?.handle || "–")}</b></span><span><small>Anzeigename</small><b>${esc(save.finster?.displayName || "–")}</b></span><span><small>Feed</small><b>Nur echte Spielerposts</b></span><span><small>Textfilter</small><b>Schimpfwörter maskiert</b></span></div></article>
+          <article class="online-mod-card"><div class="online-mod-card-title"><span>◉</span><div><small>FINSTA.KL</small><h3>Online-Profil & Moderation</h3></div></div><div class="online-mod-data-list"><span><small>Konto</small><b>${save.finster?.accountCreated ? "Erstellt" : "Nicht erstellt"}</b></span><span><small>Benutzername</small><b>@${esc(save.finster?.handle || "–")}</b></span><span><small>Anzeigename</small><b>${esc(save.finster?.displayName || "–")}</b></span><span><small>Feed</small><b>Nur echte Spielerposts</b></span><span><small>Textfilter</small><b>Schimpfwörter maskiert</b></span></div></article>
           <article class="online-mod-card"><div class="online-mod-card-title"><span>♥</span><div><small>FINDER.KL</small><h3>Online-Dating-Profil</h3></div></div><div class="online-mod-data-list"><span><small>App</small><b>${apps.includes("finder") ? "Installiert" : "Nicht installiert"}</b></span><span><small>Online-Profil</small><b>${save.finder?.onlineProfileRegistered ? "Erstellt" : "Nicht erstellt"}</b></span><span><small>Sichtbarkeit</small><b>${save.finder?.onlineVisible ? "Online" : "Offline"}</b></span><span><small>Tarif</small><b>${esc(save.finder?.plan || "free")}</b></span><span><small>Matches</small><b>${safeArray(save.finder?.matches).length}</b></span><span><small>Spieler/Bots</small><b>Im Feed gekennzeichnet</b></span></div></article>
         </section>`;
     }
@@ -574,10 +624,16 @@
     }
 
     if (tab === "moderation") {
+      const inspect = canInspectTrust();
+      const events = inspect ? safeArray(trust.events) : [];
+      const eventDetails = inspect && events.length ? `<div class="online-mod-trust-events">${events.slice(0, 12).map((entry) => `<article><b>${entry.type === "hack" ? "Hack-Prüfung" : entry.type === "mod" ? "Mod-Änderung" : "Statusänderung"}</b><span>${esc(entry.reason || "Ohne Grund")}</span><small>${dateTime(entry.createdAtMs)}${entry.actorRole ? ` · ${esc(ROLE_LABELS[entry.actorRole] || entry.actorRole)}` : ""}</small></article>`).join("")}</div>` : "";
+      const markHacker = roleRank() >= roleRank("test_moderator") && status !== "hack" ? `<button type="button" class="danger full" data-mark-selected-hacker>Als Hacker markieren</button>` : "";
+      const clearMod = isOwnerRole() && status === "mod" ? `<button type="button" class="full" data-clear-selected-mod>Mod-Markierung entfernen</button>` : "";
+      const resetHack = has("player.reset") ? `<button type="button" class="danger full" data-reset-selected-player ${status === "hack" ? "" : "disabled"}>Spielstand wegen Hack zurücksetzen</button>` : "";
       return `
         <section class="online-mod-section-grid two">
-          <article class="online-mod-card"><div class="online-mod-card-title"><span>⚠</span><div><small>MODERATION</small><h3>Maßnahme durchführen</h3></div></div><form data-moderation-form class="online-mod-form-grid"><label class="wide">Grund<input name="reason" value="Moderationsmaßnahme"></label><label>Dauer in Minuten<input name="minutes" type="number" min="1" value="60"></label><div></div>${has("moderation.kick") ? `<button type="submit" name="mode" value="kick">Kicken</button>` : ""}${has("moderation.timeout") ? `<button type="submit" name="mode" value="timeout">Timeout</button>` : ""}${has("moderation.ban.week") || has("moderation.ban.year") || has("*") ? `<button type="submit" name="mode" value="ban" class="danger">Bannen</button>` : ""}${ROLE_ORDER.indexOf(roleData.role) >= ROLE_ORDER.indexOf("moderator") ? `<button type="submit" name="mode" value="unban">Entbannen</button>` : ""}</form></article>
-          <article class="online-mod-card"><div class="online-mod-card-title"><span>🔎</span><div><small>CHEAT-PRÜFUNG</small><h3>${audit.suspicious ? "Auffällig" : "Unauffällig"}</h3></div></div>${safeArray(audit.reasons).length ? `<div class="online-mod-warning">${audit.reasons.map((reason) => `<p>${esc(reason)}</p>`).join("")}</div>` : `<p>Die automatische Plausibilitätsprüfung hat aktuell keinen deutlichen Verdacht gemeldet.</p>`}${has("player.reset") ? `<button type="button" class="danger full" data-reset-selected-player ${audit.suspicious ? "" : "disabled"}>Spielstand wegen Cheat zurücksetzen</button>` : ""}</article>
+          <article class="online-mod-card"><div class="online-mod-card-title"><span>⚠</span><div><small>MODERATION</small><h3>Maßnahme durchführen</h3></div></div><form data-moderation-form class="online-mod-form-grid"><label class="wide">Grund<input name="reason" value="Moderationsmaßnahme"></label><label>Dauer in Minuten<input name="minutes" type="number" min="1" value="60"></label><div></div>${has("moderation.kick") ? `<button type="submit" name="mode" value="kick">Kicken</button>` : ""}${has("moderation.timeout") ? `<button type="submit" name="mode" value="timeout">Timeout</button>` : ""}${has("moderation.ban.week") || has("moderation.ban.year") || has("*") ? `<button type="submit" name="mode" value="ban" class="danger">Bannen</button>` : ""}${roleRank() >= roleRank("moderator") ? `<button type="submit" name="mode" value="unban">Entbannen</button>` : ""}</form></article>
+          <article class="online-mod-card"><div class="online-mod-card-title"><span>🔎</span><div><small>CHARAKTERSTATUS</small><h3>${esc(characterStatusLabel(status))}</h3></div></div>${status === "clean" ? `<p>Keine serverseitige Mod- oder Hack-Markierung vorhanden.</p>` : inspect ? `<p>${esc(trust.lastReason || "Status wurde serverseitig gespeichert.")}</p>${eventDetails}` : `<p>Der Status ist sichtbar. Einzelheiten dürfen nur Admin und Owner überprüfen.</p>`}<div class="online-mod-actions vertical">${markHacker}${clearMod}${resetHack}</div></article>
         </section>`;
     }
 
@@ -703,9 +759,9 @@
     return `<span>${CATEGORY_ICONS[row.category] || "📦"}</span><div><small>${esc(row.category)}</small><b>${esc(row.name)}</b><code>${esc(row.id)}</code></div>`;
   }
 
-  async function queueCommand(command) {
+  async function queueCommand(command, reason) {
     if (!selectedPlayer?.uid) throw new Error("Bitte zuerst einen Spieler auswählen.");
-    return callFunction("staffAction", { action: "queueCommand", targetUid: selectedPlayer.uid, command });
+    return callFunction("staffAction", { action: "queueCommand", targetUid: selectedPlayer.uid, command, reason });
   }
 
   async function renderTicketsPanel() {
@@ -1003,6 +1059,20 @@
       return;
     }
     if (event.target.closest("[data-refresh-staff]")) return renderStaffPanel();
+    if (event.target.closest("[data-mark-selected-hacker]")) {
+      const reason = String(playerActionReason || content().querySelector("[data-player-change-reason]")?.value || "").trim();
+      if (reason.length < 4) { content().querySelector("[data-player-change-reason]")?.focus(); return toast("Bitte zuerst einen Grund oder Supportfall eintragen.", "error"); }
+      if (!selectedPlayer?.uid || !confirm("Diesen Spieler wirklich als Hack-Charakter markieren?")) return;
+      try { await callFunction("staffAction", { action: "markHacker", targetUid: selectedPlayer.uid, reason }); toast("Spieler wurde als Hack-Charakter markiert."); await selectPlayer(selectedPlayer.uid, true); }
+      catch (error) { toast(error.message, "error"); }
+      return;
+    }
+    if (event.target.closest("[data-clear-selected-mod]")) {
+      if (!selectedPlayer?.uid || !confirm("Mod-Markierung dieses Spielers wirklich entfernen?")) return;
+      try { await callFunction("staffAction", { action: "clearModMarker", targetUid: selectedPlayer.uid }); toast("Mod-Markierung wurde entfernt."); await selectPlayer(selectedPlayer.uid, true); }
+      catch (error) { toast(error.message, "error"); }
+      return;
+    }
     if (event.target.closest("[data-reset-selected-player]")) {
       if (!selectedPlayer?.uid || !confirm("Spielstand dieses Spielers wirklich zurücksetzen?")) return;
       return runCommand({ kind: "resetPlayer" });
@@ -1010,6 +1080,7 @@
   }
 
   function handleInput(event) {
+    if (event.target.matches("[data-player-change-reason]")) playerActionReason = event.target.value;
     if (event.target.matches("[data-player-search]")) { playerSearch = event.target.value; renderPlayerList(); }
     if (event.target.matches("[data-player-item-search]")) { playerItemSearch = event.target.value; const list = content().querySelector("[data-player-item-list]"); if (list) list.innerHTML = renderPlayerItemRows(); }
     if (event.target.matches("[data-id-search]")) { idSearch = event.target.value; renderIdRows(); }
@@ -1066,12 +1137,19 @@
   async function runCommand(command) {
     const message = content().querySelector("[data-player-action-message]");
     try {
-      const response = await queueCommand(command);
+      const reasonInput = content().querySelector("[data-player-change-reason]");
+      playerActionReason = String(reasonInput?.value || playerActionReason || "").trim();
+      if (playerActionReason.length < 4) {
+        reasonInput?.focus();
+        throw new Error("Bitte zuerst einen Grund oder Supportfall für die Änderung eintragen.");
+      }
+      const response = await queueCommand(command, playerActionReason);
       const text = response.appliedToCloud
         ? "Änderung wurde direkt im Cloud-Spielstand gespeichert."
         : "Befehl wurde gespeichert und wird beim nächsten Online-Kontakt angewendet.";
       if (message) { message.textContent = text; message.classList.remove("error"); }
       toast(text);
+      if (selectedPlayer?.trust && response.characterStatus) selectedPlayer.trust.status = response.characterStatus;
       if (selectedPlayer?.uid) {
         const uid = selectedPlayer.uid;
         setTimeout(() => { if (selectedPlayer?.uid === uid && activePanel === "players") selectPlayer(uid, true).catch(() => {}); }, response.appliedToCloud ? 650 : 1200);
@@ -1189,6 +1267,8 @@
   }
 
   async function initialize() {
+    window.addEventListener("online", () => { firebaseOnline = true; updateConnectionStatus(); if (activePanel === "home" && overlay?.classList.contains("show")) renderHomePanel(); });
+    window.addEventListener("offline", () => { firebaseOnline = false; updateConnectionStatus(); if (activePanel === "home" && overlay?.classList.contains("show")) renderHomePanel(); });
     try {
       if (sessionStorage.getItem(ITEM_ID_DISPLAY_KEY) === "on") document.body.classList.add("mod-item-ids-visible");
       const fb = await runtime();

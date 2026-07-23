@@ -1457,13 +1457,11 @@ const els = {
   loadingPercent: document.getElementById("loadingPercent"),
   loadingInfo: document.getElementById("loadingInfo"),
   saveSlotGrid: document.getElementById("saveSlotGrid"),
-  musicVariant: document.getElementById("musicVariant"),
   customMusicLink: document.getElementById("customMusicLink"),
   customMusicPlayer: document.getElementById("customMusicPlayer"),
   musicVolume: document.getElementById("musicVolume"),
   effectVolume: document.getElementById("effectVolume"),
   graphicsQuality: document.getElementById("graphicsQuality"),
-  testMusicBtn: document.getElementById("testMusicBtn"),
   stopMusicBtn: document.getElementById("stopMusicBtn"),
   playCustomMusicBtn: document.getElementById("playCustomMusicBtn"),
   changeCharacterBtn: document.getElementById("changeCharacterBtn"),
@@ -1828,21 +1826,19 @@ function loadSlots() {
 function loadSettings() {
   try {
     const loaded = {
-      musicVariant: "lifebuilder-longmix",
       customMusicLink: "",
       musicVolume: 45,
       effectVolume: 65,
       graphicsQuality: "high",
       musicEnabled: false,
-      musicSource: "sample",
+      musicSource: "youtube",
       ...JSON.parse(localStorage.getItem(SETTINGS_KEY))
     };
-    loaded.musicVariant = "lifebuilder-longmix";
-    loaded.musicEnabled = Boolean(loaded.musicEnabled);
-    loaded.musicSource = loaded.musicSource === "youtube" ? "youtube" : "sample";
+    loaded.musicEnabled = Boolean(loaded.musicEnabled) && loaded.musicSource === "youtube" && Boolean(String(loaded.customMusicLink || "").trim());
+    loaded.musicSource = "youtube";
     return loaded;
   } catch {
-    return { musicVariant: "lifebuilder-longmix", customMusicLink: "", musicVolume: 45, effectVolume: 65, graphicsQuality: "high", musicEnabled: false, musicSource: "sample" };
+    return { customMusicLink: "", musicVolume: 45, effectVolume: 65, graphicsQuality: "high", musicEnabled: false, musicSource: "youtube" };
   }
 }
 
@@ -2333,8 +2329,6 @@ function calculateAge(birthDate) {
 function applySettings() {
   document.body.classList.remove("gfx-minimum", "gfx-medium", "gfx-high", "gfx-diamond", "gfx-ultra");
   document.body.classList.add(`gfx-${settings.graphicsQuality || "high"}`);
-  settings.musicVariant = "lifebuilder-longmix";
-  if (els.musicVariant) els.musicVariant.value = "lifebuilder-longmix";
   if (els.customMusicLink) els.customMusicLink.value = settings.customMusicLink || "";
   if (els.musicVolume) els.musicVolume.value = settings.musicVolume;
   if (els.effectVolume) els.effectVolume.value = settings.effectVolume;
@@ -2433,57 +2427,6 @@ function stopAllMusic({ persist = true } = {}) {
   clearCustomMusicPlayer();
   settings.musicEnabled = false;
   if (persist) saveSettings();
-}
-
-function startMenuMusic() {
-  stopMenuMusic();
-  clearCustomMusicPlayer();
-  settings.musicVariant = "lifebuilder-longmix";
-  settings.musicSource = "sample";
-  settings.musicEnabled = true;
-  saveSettings();
-  const ctx = ensureAudio();
-  const master = ctx.createGain();
-  master.gain.value = (Number(settings.musicVolume) || 0) / 100 * 0.2;
-  master.connect(ctx.destination);
-  const arrangement = [
-    196, 246.94, 293.66, 329.63, 293.66, 246.94, 220, 246.94,
-    174.61, 220, 261.63, 329.63, 293.66, 261.63, 220, null,
-    196, 246.94, 293.66, 392, 329.63, 293.66, 246.94, 220,
-    164.81, 196, 246.94, 293.66, 277.18, 246.94, 196, null,
-    220, 277.18, 329.63, 440, 392, 329.63, 293.66, 246.94,
-    185, 233.08, 277.18, 369.99, 329.63, 277.18, 233.08, null,
-    196, 261.63, 329.63, 392, 349.23, 293.66, 261.63, 220,
-    174.61, 220, 261.63, 329.63, 293.66, 246.94, 220, 196
-  ];
-  menuMusicNodes = [master];
-  let step = 0;
-  const playNote = () => {
-    const freq = arrangement[step % arrangement.length];
-    const currentStep = step;
-    step += 1;
-    if (!freq) return;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = currentStep % 8 === 0 ? "triangle" : currentStep % 3 === 0 ? "sine" : "triangle";
-    osc.frequency.setValueAtTime(freq, ctx.currentTime);
-    osc.frequency.linearRampToValueAtTime(freq * 1.008, ctx.currentTime + 0.24);
-    gain.gain.setValueAtTime(0.001, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(currentStep % 8 === 0 ? 0.34 : 0.25, ctx.currentTime + 0.035);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.54);
-    osc.connect(gain);
-    gain.connect(master);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.58);
-    menuMusicNodes.push(osc, gain);
-    setTimeout(() => {
-      try { osc.disconnect(); } catch {}
-      try { gain.disconnect(); } catch {}
-      menuMusicNodes = menuMusicNodes.filter((node) => node !== osc && node !== gain);
-    }, 680);
-  };
-  playNote();
-  menuMusicTimer = setInterval(playNote, 650);
 }
 
 function updateMusicVolume() {
@@ -13005,7 +12948,7 @@ function finsterDefaultState() {
   return { view: "feed", handle: "", displayName: "", bio: "", accountCreated: false, selectedPostId: "", selectedUserUid: "", activeConversationUid: "", likedPostIds: [], following: [], aiLikes: {}, aiComments: {}, aiMessages: {} };
 }
 
-/* finster.kl moderation: real-player feed and local profanity masking.
+/* Finsta.KL moderation: real-player feed and local profanity masking.
    The original sentence structure remains, only blocked words are replaced with asterisks. */
 const finsterBlockedWordStems = [
   "arschloch","arsch","arschgeige","arschkriecher","arschficker","arschfotze",
@@ -13081,7 +13024,7 @@ function finsterCurrentUid() {
 }
 
 function finsterAiPosts() {
-  // Deaktiviert: finster.kl zeigt ausschließlich Beiträge echter Online-Spieler.
+  // Deaktiviert: Finsta.KL zeigt ausschließlich Beiträge echter Online-Spieler.
   return [];
 }
 
@@ -13171,7 +13114,7 @@ function refreshFinsterIfVisible() {
 function finsterAccountCreateHtml() {
   const finster = ensureFinsterState();
   return `<div class="finster-onboarding">
-    <div class="finster-brand"><span>f</span><div><h3>finster.kl</h3><p>Teile Bilder, entdecke Beiträge und schreibe mit anderen LifeBuilder-Spielern.</p></div></div>
+    <div class="finster-brand"><span>f</span><div><h3>Finsta.KL</h3><p>Teile Bilder, entdecke Beiträge und schreibe mit anderen LifeBuilder-Spielern.</p></div></div>
     <label>Benutzername<input data-finster-handle maxlength="24" value="${escapeHtml(finster.handle)}" placeholder="z. B. julian.kl"></label>
     <label>Anzeigename<input data-finster-display-name maxlength="40" value="${escapeHtml(finster.displayName || state.firstName || "")}" placeholder="Dein Name"></label>
     <label>Profiltext<textarea data-finster-bio maxlength="180" placeholder="Erzähl kurz etwas über dich...">${escapeHtml(finster.bio)}</textarea></label>
@@ -13218,7 +13161,7 @@ function finsterFeedHtml() {
 function finsterExploreHtml() {
   const own = finsterCurrentUid();
   const profiles = finsterUsersCache.filter((profile) => profile.uid !== own);
-  return `<section class="finster-explore"><div class="finster-search"><span>⌕</span><input data-finster-search placeholder="Accounts oder Orte suchen"></div><div class="finster-user-grid" data-finster-user-grid>${profiles.map((profile) => `<article data-finster-user-card="${escapeHtml(`${profile.handle} ${profile.displayName} ${profile.city || ""}`.toLowerCase())}">${finsterAvatarHtml(profile)}<div><strong>${escapeHtml(profile.displayName)}</strong><small>@${escapeHtml(profile.handle)} · ${escapeHtml(profile.city || "LifeBuilder")}</small><p>${escapeHtml(profile.bio || "Finster.KL-Profil")}</p></div><button class="mini-button" data-finster-open-user="${profile.uid}">Profil</button></article>`).join("")}</div></section>`;
+  return `<section class="finster-explore"><div class="finster-search"><span>⌕</span><input data-finster-search placeholder="Accounts oder Orte suchen"></div><div class="finster-user-grid" data-finster-user-grid>${profiles.map((profile) => `<article data-finster-user-card="${escapeHtml(`${profile.handle} ${profile.displayName} ${profile.city || ""}`.toLowerCase())}">${finsterAvatarHtml(profile)}<div><strong>${escapeHtml(profile.displayName)}</strong><small>@${escapeHtml(profile.handle)} · ${escapeHtml(profile.city || "LifeBuilder")}</small><p>${escapeHtml(profile.bio || "Finsta.KL-Profil")}</p></div><button class="mini-button" data-finster-open-user="${profile.uid}">Profil</button></article>`).join("")}</div></section>`;
 }
 
 function finsterCreateHtml() {
@@ -13277,7 +13220,12 @@ function finsterOwnProfileHtml() {
   const ownUid = finsterCurrentUid();
   const own = finsterProfileByUid(ownUid) || { uid: ownUid, handle: finster.handle, displayName: finster.displayName, bio: finster.bio, city: state.worldLocation || state.homeCity };
   const posts = finsterAllPosts().filter((post) => post.ownerUid === ownUid);
-  return `<section class="finster-own-profile"><header>${finsterAvatarHtml(own, "large")}<div><h3>${escapeHtml(own.displayName || "Finster-Profil")}</h3><strong>@${escapeHtml(own.handle || "profil")}</strong></div></header><div class="finster-own-stats"><span><b>${posts.length}</b> Beiträge</span><span><b>${finster.following.length}</b> Gefolgt</span><span><b>${finster.likedPostIds.length}</b> Likes</span></div><p>${escapeHtml(own.bio || "Noch kein Profiltext.")}</p><button class="mini-button" data-finster-edit-profile>Profil bearbeiten</button><div class="finster-profile-grid">${posts.map((post) => `<button data-finster-open-post="${post.id}"><img src="${escapeHtml(post.imageUrl)}" loading="lazy" alt="Eigener Beitrag"></button>`).join("") || `<p>Du hast noch nichts gepostet.</p>`}</div></section>`;
+  return `<section class="finster-own-profile"><header>${finsterAvatarHtml(own, "large")}<div><h3>${escapeHtml(own.displayName || "Finsta-Profil")}</h3><strong>@${escapeHtml(own.handle || "profil")}</strong></div></header><div class="finster-own-stats"><span><b>${posts.length}</b> Beiträge</span><span><b>${finster.following.length}</b> Gefolgt</span><span><b>${finster.likedPostIds.length}</b> Likes</span></div><p>${escapeHtml(own.bio || "Noch kein Profiltext.")}</p><button class="mini-button" data-finster-edit-profile>Profil bearbeiten</button><div class="finster-profile-grid">${posts.map((post) => `<button data-finster-open-post="${post.id}"><img src="${escapeHtml(post.imageUrl)}" loading="lazy" alt="Eigener Beitrag"></button>`).join("") || `<p>Du hast noch nichts gepostet.</p>`}</div></section>`;
+}
+
+
+function finstaConnectionOnline() {
+  return navigator.onLine !== false && (!!firebasePhoneRuntime?.auth?.currentUser || !!window.LifeBuilderOnline?.getUser?.());
 }
 
 function finsterAppHtml() {
@@ -13291,7 +13239,8 @@ function finsterAppHtml() {
   if (finster.view === "profile") body = finsterOwnProfileHtml();
   if (finster.view === "post") body = finsterPostDetailHtml(finster.selectedPostId);
   if (finster.view === "user") body = finsterUserProfileHtml(finster.selectedUserUid);
-  return `<div class="finster-app"><div class="finster-topbar"><b>finster.kl</b><span>Firebase Live</span></div><div class="finster-content">${body}</div>${finsterNavHtml(["post","user"].includes(finster.view) ? "" : finster.view)}</div>`;
+  const online = finstaConnectionOnline();
+  return `<div class="finster-app"><div class="finster-topbar"><b>Finsta.KL</b><span class="${online ? "online" : "offline"}">${online ? "Online" : "Offline"}</span></div><div class="finster-content">${body}</div>${finsterNavHtml(["post","user"].includes(finster.view) ? "" : finster.view)}</div>`;
 }
 
 async function createFinsterAccount(shell, item) {
@@ -13314,7 +13263,7 @@ async function createFinsterAccount(shell, item) {
     const finster = ensureFinsterState();
     Object.assign(finster, { handle, displayName, bio, accountCreated: true, view: "feed" });
     save();
-    addFeed(`Finster.KL-Konto @${handle} erstellt.`);
+    addFeed(`Finsta.KL-Konto @${handle} erstellt.`);
     refreshDeviceApp("finster", item);
   } catch (error) {
     addFeed(`Finster-Konto konnte nicht erstellt werden: ${error.message || error}`);
@@ -13357,8 +13306,8 @@ async function publishFinsterPost(shell, item) {
     finsterUploadPreviewUrl = "";
     finster.view = "feed";
     save();
-    addFeed("Finster.KL-Beitrag veröffentlicht.");
-    queuePurchaseConfirmation({ kind: "use", title: "Veröffentlicht", name: "Finster.KL-Beitrag", icon: "▧" });
+    addFeed("Finsta.KL-Beitrag veröffentlicht.");
+    queuePurchaseConfirmation({ kind: "use", title: "Veröffentlicht", name: "Finsta.KL-Beitrag", icon: "▧" });
     refreshDeviceApp("finster", item);
   } catch (error) {
     if (status) status.textContent = `Fehler: ${error.message || error}`;
@@ -13453,7 +13402,7 @@ async function deleteFinsterPost(postId, item) {
     const fb = await ensureFinsterRealtime();
     await fb.deleteDoc(fb.doc(fb.db, "finsterPosts", postId));
     if (post.storagePath) await fb.deleteObject(fb.ref(fb.storage, post.storagePath)).catch(() => {});
-    addFeed("Finster.KL-Beitrag gelöscht.");
+    addFeed("Finsta.KL-Beitrag gelöscht.");
     refreshDeviceApp("finster", item);
   } catch (error) {
     addFeed(`Beitrag konnte nicht gelöscht werden: ${error.message || error}`);
@@ -13525,8 +13474,13 @@ function bindFinsterDeviceActions(shell, item) {
   if (finsterContent && !finsterContent.dataset.finsterScrollBound) {
     finsterContent.dataset.finsterScrollBound = "1";
     finsterContent.addEventListener("touchmove", () => {}, { passive: true });
+    finsterContent.addEventListener("wheel", (event) => {
+      if (Math.abs(event.deltaY) < 1 || finsterContent.scrollHeight <= finsterContent.clientHeight + 1) return;
+      finsterContent.scrollTop += event.deltaY;
+      if (event.cancelable) event.preventDefault();
+    }, { passive: false });
   }
-  ensureFinsterRealtime().catch((error) => addFeed(`Finster.KL Firebase: ${error.message || error}`));
+  ensureFinsterRealtime().catch((error) => addFeed(`Finsta.KL Firebase: ${error.message || error}`));
   shell.querySelector("[data-finster-create-account]")?.addEventListener("click", () => createFinsterAccount(shell, item));
   shell.querySelectorAll("[data-finster-view]").forEach((button) => button.addEventListener("click", () => {
     const finster = ensureFinsterState();
@@ -13602,7 +13556,7 @@ const phoneAppStoreCatalog = [
   },
   {
     id: "finster",
-    label: "finster.kl",
+    label: "Finsta.KL",
     icon: "f",
     minTier: 1,
     status: "available",
@@ -13672,7 +13626,7 @@ function phoneAppStoreHtml(item) {
           `;
         }).join("")}
       </div>
-      <p class="device-hint">Finder.KL und finster.kl erscheinen nach dem Download als eigene Apps unten im Handy. Die Casino-App bleibt bis zum nächsten Ausbau gesperrt.</p>
+      <p class="device-hint">Finder.KL und Finsta.KL erscheinen nach dem Download als eigene Apps unten im Handy. Die Casino-App bleibt bis zum nächsten Ausbau gesperrt.</p>
     </div>
   `;
 }
@@ -13732,7 +13686,7 @@ function deviceAppsFor(item) {
     apps.push({ id: "finder", min: 3, data: true, layoutClass: "device-downloaded-app", label: "Finder.KL", icon: "♥", text: "Free, Plus, Gold oder Platinum: Profile entdecken, Match-Likes senden, chatten, reisen und Beziehungen aufbauen." });
   }
   if (phoneDevice && isPhoneAppInstalled("finster")) {
-    apps.push({ id: "finster", min: 1, data: true, layoutClass: "device-downloaded-app", label: "finster.kl", icon: "f", text: "Bilder posten, Live-Feed ansehen, liken, kommentieren und anderen LifeBuilder-Spielern schreiben." });
+    apps.push({ id: "finster", min: 1, data: true, layoutClass: "device-downloaded-app", label: "Finsta.KL", icon: "f", text: "Bilder posten, Live-Feed ansehen, liken, kommentieren und anderen LifeBuilder-Spielern schreiben." });
   }
   return apps.map((app) => {
     const missingTier = tier < app.min;
@@ -13949,7 +13903,7 @@ function openDeviceInterface(item, activeApp = "home", activeUse = true) {
   els.dialogTitle.textContent = item;
   els.dialogText.textContent = "";
   const shell = document.createElement("div");
-  shell.className = `device-shell ${isPhone ? "device-phone" : "device-tablet"} device-tier-${tier}`;
+  shell.className = `device-shell ${isPhone ? "device-phone" : "device-tablet"} device-tier-${tier} device-active-${selected.id}`;
   shell.innerHTML = `
     <div class="device-frame">
       <div class="device-status">
@@ -30691,6 +30645,58 @@ window.addEventListener("orientationchange", () => {
 });
 document.documentElement.style.setProperty("--mobile-vh", `${window.innerHeight * 0.01}px`);
 
+
+/* Einheitliche Mausrad-Navigation: leitet das Rad nur an den nächsten tatsächlich
+   scrollbaren Bereich weiter. Canvas-Spiele, Slider und die Inventar-Mengenwahl
+   behalten ihre eigenen Handler. */
+if (!window.__lifeBuilderDesktopWheelRouterInstalled) {
+  window.__lifeBuilderDesktopWheelRouterInstalled = true;
+  document.addEventListener("wheel", (event) => {
+    if (event.defaultPrevented || event.ctrlKey || Math.abs(event.deltaY) < 1) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target || target.closest('canvas, input[type="range"], [data-inventory-drag-amount], .inventory-drag-amount-indicator')) return;
+
+    let node = target;
+    while (node && node !== document.body && node !== document.documentElement) {
+      const style = getComputedStyle(node);
+      const scrollable = /(auto|scroll|overlay)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 2;
+      if (scrollable) {
+        const canMove = event.deltaY > 0
+          ? node.scrollTop + node.clientHeight < node.scrollHeight - 1
+          : node.scrollTop > 0;
+        if (canMove) {
+          node.scrollTop += event.deltaY;
+          if (event.cancelable) event.preventDefault();
+          return;
+        }
+      }
+      node = node.parentElement;
+    }
+
+    if (document.documentElement.classList.contains("online-mod-open")) return;
+    const page = document.scrollingElement || document.documentElement;
+    const canMovePage = event.deltaY > 0
+      ? page.scrollTop + innerHeight < page.scrollHeight - 1
+      : page.scrollTop > 0;
+    if (canMovePage) {
+      page.scrollTop += event.deltaY;
+      if (event.cancelable) event.preventDefault();
+    }
+  }, { passive: false });
+}
+
+if (!window.__lifeBuilderFinstaConnectionListeners) {
+  window.__lifeBuilderFinstaConnectionListeners = true;
+  const refreshFinstaConnection = () => {
+    if (els.dialog?.open && els.dialog.querySelector(".device-active-finster")) {
+      const item = els.dialogTitle?.textContent || phoneItems().find((name) => state.items?.includes(name)) || "Smartphone";
+      refreshDeviceApp("finster", item);
+    }
+  };
+  window.addEventListener("online", refreshFinstaConnection);
+  window.addEventListener("offline", refreshFinstaConnection);
+}
+
 els.openSlotsBtn?.addEventListener("click", () => setSetupView("slots"));
 els.openSettingsBtn?.addEventListener("click", () => setSetupView("settings"));
 els.openSupportTicketBtn?.addEventListener("click", () => {
@@ -30701,11 +30707,6 @@ els.gameSettingsBtn?.addEventListener("click", openSettingsOverlay);
 document.querySelectorAll("[data-setup-back]").forEach((button) => button.addEventListener("click", closeSettingsOverlay));
 document.querySelectorAll("[data-slots-back]").forEach((button) => button.addEventListener("click", () => setSetupView("slots")));
 
-els.musicVariant?.addEventListener("change", () => {
-  settings.musicVariant = "lifebuilder-longmix";
-  saveSettings();
-  if (settings.musicEnabled && settings.musicSource === "sample") startMenuMusic();
-});
 els.customMusicLink?.addEventListener("change", () => {
   settings.customMusicLink = els.customMusicLink.value.trim();
   saveSettings();
@@ -30745,7 +30746,6 @@ els.graphicsQuality?.addEventListener("change", () => {
     }
   });
 });
-els.testMusicBtn?.addEventListener("click", startMenuMusic);
 els.changeCharacterBtn?.addEventListener("click", () => {
   if (state) save();
   els.setup.classList.remove("hidden");
@@ -31394,7 +31394,7 @@ render();
   phoneAppStoreHtml = function dailyAppsPhoneAppStoreHtml(item) {
     return dailyBasePhoneAppStoreHtml(item).replace(
       /<p class="device-hint">Finder\.KL[\s\S]*?<\/p>/,
-      `<p class="device-hint">Finder.KL, finster.kl, Event, Tägliche Geschenke und Tägliche Quests schließen nach dem Download direkt hinter dem App Store an. Die Casino-App bleibt bis zum nächsten Ausbau gesperrt.</p>`
+      `<p class="device-hint">Finder.KL, Finsta.KL, Event, Tägliche Geschenke und Tägliche Quests schließen nach dem Download direkt hinter dem App Store an. Die Casino-App bleibt bis zum nächsten Ausbau gesperrt.</p>`
     );
   };
 

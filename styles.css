@@ -2357,7 +2357,7 @@ body.gfx-ultra .casino-table {
 }
 
 .device-phone .device-app-grid .device-downloaded-app {
-  /* Finder.KL, finster.kl und weitere Downloads bleiben unter den System-Apps. */
+  /* Finder.KL, Finsta.KL und weitere Downloads bleiben unter den System-Apps. */
   position: relative;
 }
 
@@ -9088,7 +9088,7 @@ body.business-map-open { overflow: hidden; }
 }
 
 
-/* finster.kl, Tankstellen-Kiosk und Arbeits-Skillbaum · Version 2026-07-20 */
+/* Finsta.KL, Tankstellen-Kiosk und Arbeits-Skillbaum · Version 2026-07-20 */
 .device-app-grid button[data-device-app="finster"] span,
 .app-store-icon.app-finster {
   background: linear-gradient(145deg, #111, #4f2c74 55%, #d84f88);
@@ -14219,7 +14219,7 @@ html, body, .dashboard, .tab-panel, #detailDialog {
 }
 
 
-/* Gesamtfix Scroll, Finster.KL, Dashboard und Kleidung · Version 2026-07-23.2 */
+/* Gesamtfix Scroll, Finsta.KL, Dashboard und Kleidung · Version 2026-07-23.2 */
 html:not(.life-overlay-locked),
 body:not(.life-overlay-locked) {
   overflow-y: auto !important;
@@ -14817,5 +14817,119 @@ dialog.character-dialog[open] .character-hub-content {
   }
   #detailDialog.character-dialog.character-overview-mode .character-person-figure {
     min-height: 155px !important;
+  }
+}
+
+
+/* Einstellungen, Mausrad, mobile Statuswerte und Finsta.KL · 2026-07-23 */
+.finster-topbar span.online { color:#7ee0a6; }
+.finster-topbar span.offline { color:#ff8d88; }
+
+.device-shell.device-active-finster .device-screen,
+.device-shell.device-active-finster .device-screen.finster-host-screen {
+  display:grid !important;
+  grid-template-rows:minmax(0,1fr) !important;
+  min-height:0 !important;
+  overflow:hidden !important;
+  padding:0 !important;
+  touch-action:pan-y !important;
+}
+.device-shell.device-active-finster .device-wallpaper,
+.device-shell.device-active-finster .device-app-grid,
+.device-shell.device-active-finster .device-app-view > h3,
+.device-shell.device-active-finster .device-app-view > p,
+.device-shell.device-active-finster .device-app-view > .device-hint {
+  display:none !important;
+}
+.device-shell.device-active-finster .device-app-view {
+  display:block !important;
+  width:100% !important;
+  height:100% !important;
+  min-height:0 !important;
+  overflow:hidden !important;
+  padding:0 !important;
+}
+.device-shell.device-active-finster .device-app-view > .finster-app {
+  width:100% !important;
+  height:100% !important;
+  min-height:0 !important;
+  max-height:none !important;
+  margin:0 !important;
+  border:0 !important;
+  border-radius:0 !important;
+}
+.device-shell.device-active-finster .finster-content {
+  min-height:0 !important;
+  overflow-y:auto !important;
+  overflow-x:hidden !important;
+  touch-action:pan-y !important;
+  overscroll-behavior-y:contain !important;
+  -webkit-overflow-scrolling:touch !important;
+}
+
+@media (max-width:700px) {
+  .meters > .meter:nth-child(-n+3) {
+    justify-items:center !important;
+    text-align:center !important;
+  }
+  .meters > .meter:nth-child(-n+3) > span {
+    width:100% !important;
+    text-align:center !important;
+  }
+  .meters > .meter:nth-child(-n+3) progress {
+    width:100% !important;
+    margin-inline:auto !important;
+  }
+
+  #settingsView {
+    width:100% !important;
+    max-width:100% !important;
+    min-height:100dvh !important;
+    box-sizing:border-box !important;
+    padding:calc(12px + env(safe-area-inset-top,0px)) 12px calc(18px + env(safe-area-inset-bottom,0px)) !important;
+    overflow-y:auto !important;
+    -webkit-overflow-scrolling:touch !important;
+  }
+  #settingsView .setup-head {
+    position:sticky !important;
+    top:0 !important;
+    z-index:5 !important;
+    padding:6px 0 10px !important;
+    background:linear-gradient(180deg,rgba(6,18,14,.98) 75%,rgba(6,18,14,0)) !important;
+  }
+  #settingsView .settings-panel {
+    display:grid !important;
+    grid-template-columns:1fr !important;
+    gap:12px !important;
+    width:100% !important;
+    min-width:0 !important;
+    box-sizing:border-box !important;
+    padding:14px !important;
+  }
+  #settingsView .settings-panel label,
+  #settingsView .settings-wide {
+    grid-column:1 !important;
+    width:100% !important;
+    min-width:0 !important;
+    box-sizing:border-box !important;
+  }
+  #settingsView input:not([type="range"]),
+  #settingsView select,
+  #settingsView button {
+    min-height:46px !important;
+    width:100% !important;
+    max-width:100% !important;
+    box-sizing:border-box !important;
+    font-size:16px !important;
+  }
+  #settingsView .settings-music-actions {
+    display:grid !important;
+    grid-template-columns:1fr !important;
+    gap:8px !important;
+  }
+  #settingsView .custom-music-player,
+  #settingsView .custom-music-player iframe {
+    width:100% !important;
+    max-width:100% !important;
   }
 }

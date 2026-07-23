@@ -384,3 +384,27 @@ html.online-mod-open, html.online-mod-open body { overflow: hidden !important; o
   .online-mod-page-head p{display:none}
   .online-mod-id-overview{grid-template-columns:1fr 1fr}
 }
+
+
+/* Sitzung, Charakterstatus und Verbindungsanzeige · 2026-07-23 */
+.online-mod-sidebar-footer { align-items: center; }
+.online-mod-sidebar-footer small { display: none !important; }
+.online-mod-sidebar-footer.offline .online-mod-db-dot { background:#ff6b67 !important; box-shadow:0 0 12px rgba(255,107,103,.62) !important; }
+.online-mod-sidebar-footer.offline b { color:#ff9b98 !important; }
+.online-mod-session-card .online-mod-actions { margin-top:auto; }
+.online-mod-player-row-meta i.mod { color:#8cc8ff; background:rgba(70,145,220,.16); border:1px solid rgba(120,190,255,.28); border-radius:999px; padding:4px 7px; font-style:normal; font-size:.63rem; font-weight:1000; }
+.online-mod-risk.mod { color:#91ccff; border-color:rgba(120,190,255,.38); background:rgba(70,145,220,.13); }
+.online-mod-change-reason { display:grid; gap:6px; margin:10px 0 4px; padding:12px; border:1px solid rgba(99,222,165,.24); border-radius:14px; background:rgba(14,46,34,.72); }
+.online-mod-change-reason span { color:#80e7b4; font-size:.69rem; font-weight:1000; letter-spacing:.06em; text-transform:uppercase; }
+.online-mod-change-reason input { width:100%; box-sizing:border-box; min-height:42px; }
+.online-mod-change-reason small { color:var(--online-mod-muted,#91a89d); font-size:.67rem; }
+.online-mod-actions.vertical { display:grid; grid-template-columns:1fr; gap:8px; margin-top:12px; }
+.online-mod-trust-events { display:grid; gap:7px; max-height:270px; overflow:auto; margin-top:10px; padding-right:3px; }
+.online-mod-trust-events article { display:grid; gap:3px; padding:9px; border:1px solid rgba(255,255,255,.08); border-radius:10px; background:rgba(0,0,0,.18); }
+.online-mod-trust-events article b { font-size:.72rem; }
+.online-mod-trust-events article span { font-size:.69rem; line-height:1.35; }
+.online-mod-trust-events article small { color:#8da59a; font-size:.61rem; }
+@media (max-width:760px) {
+  .online-mod-change-reason { margin-inline:0; }
+  .online-mod-change-reason input { font-size:16px; }
+}

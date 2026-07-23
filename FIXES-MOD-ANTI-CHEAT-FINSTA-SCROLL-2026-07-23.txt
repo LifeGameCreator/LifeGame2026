@@ -1,0 +1,26 @@
+LifeBuilder 2026 – GitHub-Pages-Update
+Stand: 23.07.2026
+
+Enthaltene Änderungen:
+- Online-Mod-Menü: Rechte/Audit-Details bleiben ausschließlich in der Owner-Ansicht.
+- Admin und alle niedrigeren Rollen sehen im Sitzungsbereich nur „Rolle neu laden“ und „Sitzung schließen“.
+- Status unten links zeigt nur noch Punkt + Online/Offline.
+- Spieler erhalten nach Änderungen durch das Mod-Menü den serverseitigen Status „Mod-Charakter“.
+- Jede Spieleränderung verlangt einen Grund bzw. Supportfall.
+- Admin/Owner können die Änderungsgründe und Statushistorie prüfen.
+- Ab Test-Moderator kann ein Spieler mit Grund als „Hack-Charakter“ markiert werden.
+- Nur der Owner kann eine normale Mod-Markierung entfernen.
+- Einstellungen für iPhone überarbeitet; Testbeispielmusik vollständig entfernt.
+- Musik ist nur noch über einen YouTube-Link möglich.
+- Mausrad-Scrollen für PC-Hauptansicht und scrollbare Fenster repariert, ohne Canvas- und Inventar-Radfunktionen zu überschreiben.
+- Hunger, Energie und Durst sind auf dem Handy mittig ausgerichtet.
+- Finsta.KL korrekt geschrieben, Online/Offline statt Firebase Live.
+- Finsta.KL nutzt auf PC und Handy die vollständige App-Fläche und ist wieder per Touch/Mausrad scrollbar.
+- Cache-Versionen in index.html wurden erhöht.
+
+Veröffentlichung:
+Den gesamten Inhalt dieses Ordners in das GitHub-Pages-Repository hochladen und vorhandene Dateien ersetzen.
+Danach die Seite einmal mit Strg + F5 laden.
+
+Wichtig:
+Für Mod-/Hack-Klassifizierung und die serverseitige Geld-/Level-/Inventarprüfung muss zusätzlich das passende Firebase-Paket veröffentlicht werden.
