@@ -2,7 +2,7 @@
   "use strict";
 
   const AM_APP_ID = "aergermensch-kl";
-  const AM_VERSION = "2026-07-23-battle-hub-1";
+  const AM_VERSION = "2026-07-23-separate-apps-persistence-2";
   const AM_DATABASE_ID = "gamekl";
   const AM_COLLECTION = "angerMenschGames";
   const AM_MAX_LOG = 18;
@@ -1141,21 +1141,15 @@
     const online = amRuntime.onlineDoc?.gameState;
     const active = online || local;
     return `<div class="am-app-home">
-      <section class="am-app-hero"><span>KL</span><div><p>VIER SPIELE · BOT · ONLINE</p><h4>ÄrgerMensch.KL Battle</h4><small>ÄrgerMensch.KL, Grundstück-Kampf, Paket-Chaos und Reaktions-Battle in einer App.</small></div></section>
-      ${active ? `<button class="am-resume-card" data-am-app="resume"><span>▶</span><div><b>${active.online ? `ÄrgerMensch online · Raum ${amEscape(amRuntime.onlineId)}` : "ÄrgerMensch-Botpartie fortsetzen"}</b><small>${active.status === "finished" ? `${amEscape(active.winnerName)} hat gewonnen.` : `${amEscape(active.players[active.turnIndex]?.name)} ist am Zug.`}</small></div></button>` : ""}
-      <div class="am-battle-hub-title"><h4>Spiel auswählen</h4><small>2–4 SPIELER</small></div>
-      <div class="am-battle-game-grid">
-        <div class="am-battle-game-card" style="--battle:#62e6ff"><span>ÄM</span><div><b>ÄrgerMensch.KL</b><small>Klassische Laufregeln, taktische Bots, Point-Shop und Online-Raumcodes.</small></div><i>⌄</i></div>
-        <div class="am-mode-grid">
-          <button data-am-app="local-setup"><span>🤖</span><b>ÄrgerMensch gegen Bots</b><small>1 vs 1 bis vier Spieler.</small></button>
-          <button data-am-app="online"><span>🌐</span><b>ÄrgerMensch online</b><small>Öffentlich oder privat.</small></button>
-          <button data-am-app="rules"><span>?</span><b>Regeln & Points</b><small>Alle Extras erklärt.</small></button>
-        </div>
-        <button class="am-battle-game-card" style="--battle:#45e6b0" data-am-battle-game="territory"><span>▦</span><div><b>Grundstück-Kampf</b><small>Gebiete erobern, Gegner einfrieren und Felder sprengen.</small></div><i>›</i></button>
-        <button class="am-battle-game-card" style="--battle:#ffbf4b" data-am-battle-game="packages"><span>▣</span><div><b>Paket-Chaos</b><small>Logistik, Expressfristen, zerbrechliche Ware und Störkarten.</small></div><i>›</i></button>
-        <button class="am-battle-game-card" style="--battle:#b876ff" data-am-battle-game="reaction"><span>⚡</span><div><b>Reaktions-Battle</b><small>Tippen, wischen, halten, vergleichen und Leben verteidigen.</small></div><i>›</i></button>
+      <section class="am-app-hero"><span>ÄM</span><div><p>BRETTSPIEL · BOT · ONLINE</p><h4>ÄrgerMensch.KL</h4><small>Das taktische 2–4-Spieler-Brettspiel mit Points, Extras, öffentlichen Räumen und Privatcodes.</small></div></section>
+      ${active ? `<button class="am-resume-card" data-am-app="resume"><span>▶</span><div><b>${active.online ? `Online-Partie · Raum ${amEscape(amRuntime.onlineId)}` : "Botpartie fortsetzen"}</b><small>${active.status === "finished" ? `${amEscape(active.winnerName)} hat gewonnen.` : `${amEscape(active.players[active.turnIndex]?.name)} ist am Zug.`}</small></div></button>` : ""}
+      <div class="am-battle-hub-title"><h4>Spielmodus</h4><small>2–4 SPIELER</small></div>
+      <div class="am-mode-grid am-mode-grid-standalone">
+        <button data-am-app="local-setup"><span>🤖</span><b>Gegen Bots</b><small>1 vs 1 bis vier Spieler mit taktischen Bots.</small></button>
+        <button data-am-app="online"><span>🌐</span><b>Online spielen</b><small>Öffentlich sichtbar oder privat mit Raumcode.</small></button>
+        <button data-am-app="rules"><span>?</span><b>Regeln & Point-Shop</b><small>Alle Regeln, Points und Extras erklärt.</small></button>
       </div>
-      <div class="am-feature-strip"><span>Bot-Modus</span><span>Online-Lobbys</span><span>Privatcodes</span><span>Best-of-3/5</span><span>PC & Handy</span></div>
+      <div class="am-feature-strip"><span>Bot-Modus</span><span>Online-Lobbys</span><span>Privatcodes</span><span>Point-Shop</span><span>PC & Handy</span></div>
     </div>`;
   }
 
@@ -1435,43 +1429,125 @@
     });
   }
 
-  // App in den LifeBuilder-App-Store einfügen.
-  if (!phoneAppStoreCatalog.some((app) => app.id === AM_APP_ID)) {
-    phoneAppStoreCatalog.push({
+  const BATTLE_STANDALONE_APPS = [
+    {
+      id: "grundstueck-kampf",
+      gameType: "territory",
+      label: "Grundstück-Kampf",
+      icon: "▦",
+      accent: "#45e6b0",
+      eyebrow: "GEBIET · TAKTIK · TEMPO",
+      description: "Erobere ein quadratisches Spielfeld, verteidige Gebiete und setze Schutz, Frost, Bomben und Doppeleroberung taktisch ein."
+    },
+    {
+      id: "paket-chaos",
+      gameType: "packages",
+      label: "Paket-Chaos",
+      icon: "▣",
+      accent: "#ffbf4b",
+      eyebrow: "LOGISTIK · EXPRESS · CHAOS",
+      description: "Sortiere Pakete gleichzeitig nach Farbe und Zielort, schütze zerbrechliche Ware und störe deine Gegner mit Sonderkarten."
+    },
+    {
+      id: "reaktions-battle",
+      gameType: "reaction",
+      label: "Reaktions-Battle",
+      icon: "⚡",
+      accent: "#b876ff",
+      eyebrow: "REAKTION · FOKUS · DUELL",
+      description: "Tippen, wischen, halten und vergleichen: Wer falsch oder zu langsam reagiert, verliert ein Leben."
+    }
+  ];
+
+  function standaloneBattleDefinition(appId) {
+    return BATTLE_STANDALONE_APPS.find((entry) => entry.id === appId) || null;
+  }
+
+  function battleStandaloneAppHtml(appId) {
+    const app = standaloneBattleDefinition(appId);
+    if (!app) return "";
+    return `<div class="standalone-battle-app" style="--standalone-accent:${app.accent}">
+      <section class="standalone-battle-hero">
+        <span>${app.icon}</span>
+        <div><p>${app.eyebrow}</p><h4>${amEscape(app.label)}</h4><small>${amEscape(app.description)}</small></div>
+      </section>
+      <div class="standalone-battle-actions">
+        <button data-standalone-battle-local="${app.gameType}"><span>🤖</span><div><b>Gegen Bots</b><small>2, 3 oder 4 Spieler · Best-of-1/3/5</small></div><i>›</i></button>
+        <button data-standalone-battle-online="${app.gameType}"><span>🌐</span><div><b>Online spielen</b><small>Öffentliche Räume oder privat mit sechsstelligem Code</small></div><i>›</i></button>
+      </div>
+      <div class="standalone-battle-info"><span>Touch</span><span>Maus</span><span>Tastatur</span><span>Privatcode</span></div>
+      <p>Dieses Spiel ist eine eigenständige App und bleibt nach dem Neuladen installiert.</p>
+    </div>`;
+  }
+
+  // Jede Multiplayer-App wird als eigener Download im Life App Store geführt.
+  const storeApps = [
+    {
       id: AM_APP_ID,
       label: "ÄrgerMensch.KL",
       icon: "ÄM",
       minTier: 1,
       status: "available",
-      description: "Vier Spiele in einer App: ÄrgerMensch.KL, Grundstück-Kampf, Paket-Chaos und Reaktions-Battle – mit Bots, Online-Lobbys und Privatcodes."
-    });
-  }
+      description: "Taktisches Brettspiel für 2–4 Spieler mit Bots, Online-Lobbys, Privatcodes, Points und Extras."
+    },
+    ...BATTLE_STANDALONE_APPS.map((app) => ({
+      id: app.id,
+      label: app.label,
+      icon: app.icon,
+      minTier: 1,
+      status: "available",
+      description: `${app.description} Gegen Bots oder online für 2–4 Spieler.`
+    }))
+  ];
+  storeApps.forEach((entry) => {
+    const existing = phoneAppStoreCatalog.find((app) => app.id === entry.id);
+    if (existing) Object.assign(existing, entry);
+    else phoneAppStoreCatalog.push(entry);
+  });
 
   const amBasePhoneAppStoreHtml = phoneAppStoreHtml;
   phoneAppStoreHtml = function amPhoneAppStoreHtml(item) {
     return amBasePhoneAppStoreHtml(item).replace(
       /<p class="device-hint">[\s\S]*?<\/p>\s*<\/div>\s*$/,
-      `<p class="device-hint">Heruntergeladene Apps wie ÄrgerMensch.KL erscheinen direkt hinter dem App Store. Online-Partien benötigen eine aktive Firebase-Anmeldung und eine SIM-Karte.</p></div>`
+      `<p class="device-hint">ÄrgerMensch.KL, Grundstück-Kampf, Paket-Chaos und Reaktions-Battle werden einzeln installiert. Installationen bleiben nach dem Neuladen erhalten.</p></div>`
     );
   };
 
   const amBaseDeviceAppsFor = deviceAppsFor;
   deviceAppsFor = function amDeviceAppsFor(item) {
     const apps = amBaseDeviceAppsFor(item);
-    if (!phoneItems().includes(item) || !isPhoneAppInstalled(AM_APP_ID) || apps.some((app) => app.id === AM_APP_ID)) return apps;
+    if (!phoneItems().includes(item)) return apps;
     const tier = deviceTier(item);
     const missingTier = tier < 1;
     const missingSim = !hasPhoneSim();
-    apps.push({
-      id: AM_APP_ID,
-      min: 1,
-      data: true,
-      label: "ÄrgerMensch.KL",
-      icon: "KL",
-      text: "Vier Multiplayer-Spiele in einer App: Brettspiel, Gebietskampf, Logistik und Reaktionsduell – gegen Bots oder online.",
-      layoutClass: "device-downloaded-app am-app-icon",
-      locked: missingTier,
-      lockText: missingTier ? "Benötigt mindestens ein Einsteiger-Smartphone." : missingSim ? "Bot-Spiele funktionieren ohne SIM. Für Online-Lobbys wird eine SIM-Karte benötigt." : ""
+
+    if (isPhoneAppInstalled(AM_APP_ID) && !apps.some((app) => app.id === AM_APP_ID)) {
+      apps.push({
+        id: AM_APP_ID,
+        min: 1,
+        data: true,
+        label: "ÄrgerMensch.KL",
+        icon: "ÄM",
+        text: "Taktisches Brettspiel mit Point-Shop – gegen Bots oder online für zwei bis vier Spieler.",
+        layoutClass: "device-downloaded-app am-app-icon",
+        locked: missingTier,
+        lockText: missingTier ? "Benötigt mindestens ein Einsteiger-Smartphone." : missingSim ? "Bot-Spiele funktionieren ohne SIM. Für Online-Lobbys wird eine SIM-Karte benötigt." : ""
+      });
+    }
+
+    BATTLE_STANDALONE_APPS.forEach((entry) => {
+      if (!isPhoneAppInstalled(entry.id) || apps.some((app) => app.id === entry.id)) return;
+      apps.push({
+        id: entry.id,
+        min: 1,
+        data: true,
+        label: entry.label,
+        icon: entry.icon,
+        text: entry.description,
+        layoutClass: `device-downloaded-app standalone-battle-icon standalone-battle-icon-${entry.gameType}`,
+        locked: missingTier,
+        lockText: missingTier ? "Benötigt mindestens ein Einsteiger-Smartphone." : missingSim ? "Bot-Spiele funktionieren ohne SIM. Für Online-Lobbys wird eine SIM-Karte benötigt." : ""
+      });
     });
     return apps;
   };
@@ -1479,22 +1555,38 @@
   const amBaseDeviceAppActions = deviceAppActions;
   deviceAppActions = function amDeviceAppActions(appId, item) {
     if (appId === AM_APP_ID) return amAppHtml();
+    if (standaloneBattleDefinition(appId)) return battleStandaloneAppHtml(appId);
     return amBaseDeviceAppActions(appId, item);
   };
 
   const amBaseOpenDeviceAppDirect = openDeviceAppDirect;
   openDeviceAppDirect = function amOpenDeviceAppDirect(item, appId) {
     if (appId === AM_APP_ID) return openDeviceInterface(item, AM_APP_ID, false);
+    const battleApp = standaloneBattleDefinition(appId);
+    if (battleApp) {
+      document.querySelector("#detailDialog")?.close?.();
+      return window.LifeBuilderBattleHub?.openSingle?.(battleApp.gameType, "home");
+    }
     return amBaseOpenDeviceAppDirect(item, appId);
   };
+
+  function bindStandaloneBattleApp(shell) {
+    shell?.querySelectorAll("[data-standalone-battle-local]").forEach((button) => button.addEventListener("click", () => {
+      document.querySelector("#detailDialog")?.close?.();
+      window.LifeBuilderBattleHub?.openSingle?.(button.dataset.standaloneBattleLocal, "local");
+    }));
+    shell?.querySelectorAll("[data-standalone-battle-online]").forEach((button) => button.addEventListener("click", () => {
+      document.querySelector("#detailDialog")?.close?.();
+      window.LifeBuilderBattleHub?.openSingle?.(button.dataset.standaloneBattleOnline, "online");
+    }));
+  }
 
   const amBaseOpenDeviceInterface = openDeviceInterface;
   openDeviceInterface = function amOpenDeviceInterface(item, activeApp = "home", activeUse = true) {
     const result = amBaseOpenDeviceInterface(item, activeApp, activeUse);
-    if (activeApp === AM_APP_ID) {
-      const shell = document.querySelector("#detailDialog .device-shell:last-of-type") || document.querySelector("#detailDialog .device-shell");
-      amBindApp(shell);
-    }
+    const shell = document.querySelector("#detailDialog .device-shell:last-of-type") || document.querySelector("#detailDialog .device-shell");
+    if (activeApp === AM_APP_ID) amBindApp(shell);
+    if (standaloneBattleDefinition(activeApp)) bindStandaloneBattleApp(shell);
     return result;
   };
 

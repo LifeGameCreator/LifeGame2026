@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const BH_VERSION = "2026-07-23-battle-hub-1";
+  const BH_VERSION = "2026-07-23-separate-apps-persistence-2";
   const BH_DATABASE_ID = "gamekl";
   const BH_COLLECTION = "lifeBuilderBattleGames";
   const BH_TICK_MS = 750;
@@ -48,6 +48,7 @@
   const rt = {
     gameType: "territory",
     view: "launcher",
+    standalone: false,
     overlay: null,
     local: null,
     room: null,
@@ -896,7 +897,24 @@
 
   function launcherHtml() {
     const meta = gameMeta();
-    return `<section class="bh-shell bh-launcher" style="--accent:${meta.accent}"><header class="bh-header"><button data-bh-close>×</button><div><p>ÄRGERMENSCH.KL · BATTLE HUB</p><h2>Vier Spiele. Ein Download.</h2></div><div class="bh-live-pill">2–4 Spieler</div></header><div class="bh-launch-hero"><div><span>KL</span><p>BOT · ONLINE · PRIVATCODE</p><h1>LifeBuilder Battle</h1><small>Alle Spiele sind für Touchscreen, Maus und Tastatur optimiert.</small></div></div><div class="bh-launch-grid">${gameCard("territory")}${gameCard("packages")}${gameCard("reaction")}</div><button class="bh-return-am" data-bh-close>Zurück zu ÄrgerMensch.KL</button></section>`;
+    return `<section class="bh-shell bh-launcher" style="--accent:${meta.accent}"><header class="bh-header"><button data-bh-close>×</button><div><p>LIFEBUILDER · BATTLE APPS</p><h2>Drei eigenständige Spiele</h2></div><div class="bh-live-pill">2–4 Spieler</div></header><div class="bh-launch-hero"><div><span>KL</span><p>BOT · ONLINE · PRIVATCODE</p><h1>LifeBuilder Battle</h1><small>Jedes Spiel kann im Life App Store einzeln installiert werden.</small></div></div><div class="bh-launch-grid">${gameCard("territory")}${gameCard("packages")}${gameCard("reaction")}</div><button class="bh-return-am" data-bh-close>Battle Hub schließen</button></section>`;
+  }
+
+  function singleLauncherHtml() {
+    const meta = gameMeta(rt.gameType);
+    return `<section class="bh-shell bh-launcher bh-single-launcher" style="--accent:${meta.accent}">
+      <header class="bh-header"><button data-bh-close>×</button><div><p>EIGENSTÄNDIGE LIFE APP</p><h2>${meta.title}</h2></div><div class="bh-live-pill">2–4 Spieler</div></header>
+      <div class="bh-single-hero"><span>${meta.icon}</span><div><p>${meta.short}</p><h1>${meta.title}</h1><small>${meta.description}</small></div></div>
+      <div class="bh-single-actions">
+        <button data-bh-local-setup="${rt.gameType}"><span>🤖</span><div><b>Gegen Bots</b><small>2, 3 oder 4 Spieler · Best-of-1/3/5</small></div><i>›</i></button>
+        <button data-bh-online-menu="${rt.gameType}"><span>🌐</span><div><b>Online spielen</b><small>Öffentlich sichtbar oder privat mit Raumcode</small></div><i>›</i></button>
+      </div>
+      <div class="bh-single-tags"><span>Handy</span><span>PC</span><span>Touch</span><span>Tastatur</span></div>
+    </section>`;
+  }
+
+  function defaultHomeView() {
+    return rt.standalone ? "single" : "launcher";
   }
 
   function setupHtml(online = false) {
@@ -930,6 +948,7 @@
     else if (rt.view === "lobby" && rt.room) overlay.innerHTML = lobbyHtml();
     else if (rt.view === "local-setup") overlay.innerHTML = setupHtml(false);
     else if (rt.view === "online") overlay.innerHTML = setupHtml(true);
+    else if (rt.view === "single") overlay.innerHTML = singleLauncherHtml();
     else overlay.innerHTML = launcherHtml();
     bindOverlay(overlay);
     if (game?.status === "seriesOver") maybeAwardReward(game);
@@ -947,10 +966,22 @@
 
   function open(type = "territory") {
     rt.gameType = BH_GAMES[type] ? type : "territory";
+    rt.standalone = false;
     rt.view = "launcher";
     const overlay = ensureOverlay();
     overlay.classList.add("show");
     document.body.classList.add("bh-open");
+    render();
+  }
+
+  function openSingle(type = "territory", target = "home") {
+    rt.gameType = BH_GAMES[type] ? type : "territory";
+    rt.standalone = true;
+    rt.view = target === "local" ? "local-setup" : target === "online" ? "online" : "single";
+    const overlay = ensureOverlay();
+    overlay.classList.add("show");
+    document.body.classList.add("bh-open");
+    if (rt.view === "online") listenPublicRooms().catch((error) => toast(error.message || error));
     render();
   }
 
@@ -1146,7 +1177,7 @@
     rt.roomUnsub = null;
     rt.room = null;
     rt.roomId = "";
-    rt.view = "launcher";
+    rt.view = defaultHomeView();
     stopTicker();
     if (refresh) render();
   }
@@ -1223,7 +1254,7 @@
 
   function bindOverlay(shell) {
     shell.querySelectorAll("[data-bh-close]").forEach((button) => button.addEventListener("click", close));
-    shell.querySelector("[data-bh-home]")?.addEventListener("click", () => { rt.view = "launcher"; render(); });
+    shell.querySelector("[data-bh-home]")?.addEventListener("click", () => { rt.view = defaultHomeView(); render(); });
     shell.querySelectorAll("[data-bh-local-setup]").forEach((button) => button.addEventListener("click", () => { rt.gameType = button.dataset.bhLocalSetup; rt.view = "local-setup"; render(); }));
     shell.querySelectorAll("[data-bh-online-menu]").forEach((button) => button.addEventListener("click", () => { rt.gameType = button.dataset.bhOnlineMenu; rt.view = "online"; listenPublicRooms().catch((error) => toast(error.message || error)); render(); }));
     shell.querySelector("[data-bh-start-local]")?.addEventListener("click", () => startLocal(shell));
@@ -1234,8 +1265,8 @@
     shell.querySelector("[data-bh-start-online]")?.addEventListener("click", () => startOnline(shell).catch((error) => toast(error.message || error)));
     shell.querySelectorAll("[data-bh-leave-room]").forEach((button) => button.addEventListener("click", leaveRoom));
     shell.querySelector("[data-bh-copy-code]")?.addEventListener("click", async () => { try { await navigator.clipboard.writeText(rt.roomId); toast("Raumcode kopiert."); } catch { toast(`Raumcode: ${rt.roomId}`); } });
-    shell.querySelector("[data-bh-back-game]")?.addEventListener("click", () => { rt.view = rt.roomId ? "lobby" : "launcher"; if (!rt.roomId) stopTicker(); render(); });
-    shell.querySelector("[data-bh-close-game]")?.addEventListener("click", () => { if (rt.roomId) disconnectRoom(false); rt.local = null; rt.view = "launcher"; stopTicker(); render(); });
+    shell.querySelector("[data-bh-back-game]")?.addEventListener("click", () => { rt.view = rt.roomId ? "lobby" : defaultHomeView(); if (!rt.roomId) stopTicker(); render(); });
+    shell.querySelector("[data-bh-close-game]")?.addEventListener("click", () => { if (rt.roomId) disconnectRoom(false); rt.local = null; rt.view = defaultHomeView(); stopTicker(); render(); });
     shell.querySelector("[data-bh-next-round]")?.addEventListener("click", () => nextRound().catch((error) => toast(error.message || error)));
     shell.querySelector("[data-bh-rematch]")?.addEventListener("click", () => rematch().catch((error) => toast(error.message || error)));
 
@@ -1326,7 +1357,7 @@
     }
   });
 
-  window.LifeBuilderBattleHub = { open, close, version: BH_VERSION };
+  window.LifeBuilderBattleHub = { open, openSingle, close, version: BH_VERSION };
   window.addEventListener("beforeunload", () => {
     rt.roomUnsub?.();
     rt.publicUnsub?.();

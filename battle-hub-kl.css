@@ -493,3 +493,34 @@ body.bh-open { overflow: hidden !important; }
 @media (prefers-reduced-motion: reduce) {
   .bh-overlay *, .bh-overlay *::before, .bh-overlay *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .001ms !important; }
 }
+
+/* Startansicht einer einzeln installierten Battle-App */
+.bh-single-launcher { min-height: min(760px, calc(100vh - 28px)); }
+.bh-single-hero { position: relative; overflow: hidden; display: grid; grid-template-columns: 105px 1fr; align-items: center; gap: 22px; min-height: 260px; padding: 34px; border-bottom: 1px solid rgba(255,255,255,.08); background: radial-gradient(circle at 12% 20%, color-mix(in srgb, var(--accent) 27%, transparent), transparent 36%), linear-gradient(145deg, #0d1d31, #07101d); }
+.bh-single-hero::after { content: ""; position: absolute; right: -80px; bottom: -120px; width: 330px; height: 330px; border: 48px solid color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 50%; }
+.bh-single-hero > span { position: relative; z-index: 1; display: grid; place-items: center; width: 102px; height: 102px; border: 1px solid color-mix(in srgb, var(--accent) 60%, white 8%); border-radius: 30px; background: color-mix(in srgb, var(--accent) 20%, #081422); color: var(--accent); font-size: 3rem; font-weight: 950; box-shadow: 0 0 42px color-mix(in srgb, var(--accent) 25%, transparent); }
+.bh-single-hero div { position: relative; z-index: 1; max-width: 760px; }
+.bh-single-hero p { margin: 0 0 5px; color: var(--accent); font-size: .72rem; font-weight: 950; letter-spacing: .14em; text-transform: uppercase; }
+.bh-single-hero h1 { margin: 0 0 8px; font-size: clamp(2rem, 5vw, 4.5rem); line-height: .96; }
+.bh-single-hero small { display: block; max-width: 680px; color: #a5b7ca; font-size: .95rem; line-height: 1.5; }
+.bh-single-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 22px; }
+.bh-single-actions > button { display: grid; grid-template-columns: 62px 1fr 26px; align-items: center; gap: 14px; min-height: 122px; padding: 18px; border: 1px solid rgba(255,255,255,.09); border-radius: 22px; background: linear-gradient(145deg, rgba(255,255,255,.065), rgba(255,255,255,.025)); color: #effaff; text-align: left; box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 16px 38px rgba(0,0,0,.18); }
+.bh-single-actions > button:hover { border-color: color-mix(in srgb, var(--accent) 58%, transparent); transform: translateY(-2px); }
+.bh-single-actions > button > span { display: grid; place-items: center; width: 60px; height: 60px; border-radius: 18px; background: color-mix(in srgb, var(--accent) 14%, #101c2d); font-size: 1.7rem; }
+.bh-single-actions b, .bh-single-actions small { display: block; }
+.bh-single-actions b { margin-bottom: 5px; font-size: 1.05rem; }
+.bh-single-actions small { color: #92a7bd; line-height: 1.4; }
+.bh-single-actions i { color: var(--accent); font-size: 1.8rem; font-style: normal; }
+.bh-single-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; padding: 0 20px 24px; }
+.bh-single-tags span { padding: 7px 12px; border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--accent) 8%, transparent); color: #a9bdd0; font-size: .68rem; font-weight: 850; }
+
+@media (max-width: 760px) {
+  .bh-single-hero { grid-template-columns: 68px 1fr; gap: 14px; min-height: 220px; padding: 22px 15px; }
+  .bh-single-hero > span { width: 66px; height: 66px; border-radius: 21px; font-size: 2rem; }
+  .bh-single-hero h1 { font-size: 2.35rem; }
+  .bh-single-hero small { font-size: .78rem; }
+  .bh-single-actions { grid-template-columns: 1fr; gap: 10px; padding: 12px 10px; }
+  .bh-single-actions > button { min-height: 92px; grid-template-columns: 48px 1fr 20px; padding: 13px; border-radius: 18px; }
+  .bh-single-actions > button > span { width: 46px; height: 46px; border-radius: 14px; font-size: 1.25rem; }
+  .bh-single-tags { padding-bottom: 18px; }
+}

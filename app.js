@@ -2,6 +2,7 @@ const STORAGE_KEY = "lifebuilder-2026-save";
 const SAVE_SLOTS_KEY = "lifebuilder-2026-slots";
 const ACTIVE_SLOT_KEY = "lifebuilder-2026-active-slot";
 const SETTINGS_KEY = "lifebuilder-2026-settings";
+const INSTALLED_PHONE_APPS_STORAGE_PREFIX = "lifebuilder-2026-installed-phone-apps-v2";
 const WAR_UNIT_LIMIT = 40;
 const WAR_TANK_LIMIT = 30;
 
@@ -2059,7 +2060,11 @@ function migrateState(save) {
   }
   save.phoneEditingNoteId ||= "";
   save.installedPhoneApps = Array.isArray(save.installedPhoneApps)
-    ? [...new Set(save.installedPhoneApps.filter((id) => ["finder", "finster", "event", "dailygifts", "dailyquests", "ringpack-neon", "smspack-classic"].includes(id)))]
+    ? [...new Set(save.installedPhoneApps.filter((id) => [
+        "finder", "finster", "event", "dailygifts", "dailyquests",
+        "ringpack-neon", "smspack-classic",
+        "aergermensch-kl", "grundstueck-kampf", "paket-chaos", "reaktions-battle"
+      ].includes(id)))]
     : [];
   save.finder = normalizeFinderSave(save.finder, save);
   save.starterHome ||= { city: save.homeCity || "Essen", type: "Einraumwohnung", rooms: ["Eingang", "Wohn-/Schlafraum", "Küche", "Bad"], rentable: false };
@@ -14349,10 +14354,34 @@ const phoneAppStoreCatalog = [
   }
 ];
 
+function installedPhoneAppsStorageKey() {
+  const slot = Math.max(0, Math.min(3, Number(typeof selectedSlot !== "undefined" ? selectedSlot : activeSlot || 0)));
+  return `${INSTALLED_PHONE_APPS_STORAGE_PREFIX}:${slot}`;
+}
+
+function readInstalledPhoneAppsBackup() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(installedPhoneAppsStorageKey()) || "[]");
+    return Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string" && id) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistInstalledPhoneAppsBackup(appIds = state?.installedPhoneApps || []) {
+  try {
+    localStorage.setItem(installedPhoneAppsStorageKey(), JSON.stringify([...new Set(appIds)]));
+  } catch {
+    // Der Spielstand bleibt weiterhin die Hauptquelle, falls localStorage blockiert ist.
+  }
+}
+
 function installedPhoneApps() {
-  state.installedPhoneApps = Array.isArray(state.installedPhoneApps)
-    ? [...new Set(state.installedPhoneApps.filter((id) => phoneAppStoreCatalog.some((app) => app.id === id && app.status === "available")))]
-    : [];
+  const fromSave = Array.isArray(state.installedPhoneApps) ? state.installedPhoneApps : [];
+  const fromBackup = readInstalledPhoneAppsBackup();
+  state.installedPhoneApps = [...new Set([...fromSave, ...fromBackup])]
+    .filter((id) => phoneAppStoreCatalog.some((app) => app.id === id && app.status === "available"));
+  persistInstalledPhoneAppsBackup(state.installedPhoneApps);
   return state.installedPhoneApps;
 }
 
@@ -14414,6 +14443,7 @@ function installPhoneApp(appId, item) {
   if (deviceTier(item) < app.minTier) return addFeed(`${app.label} benötigt ein Pro-Smartphone.`);
   if (isPhoneAppInstalled(appId)) return;
   state.installedPhoneApps.push(appId);
+  persistInstalledPhoneAppsBackup(state.installedPhoneApps);
   const typeLabel = app.kind === "tonepack" ? "Tonpaket" : "App";
   addFeed(`${app.label} wurde installiert.`);
   queuePurchaseConfirmation({ kind: "use", title: `${typeLabel} installiert`, name: app.label, icon: app.kind === "tonepack" ? "♫" : "⬇️" });
@@ -14425,6 +14455,7 @@ function uninstallPhoneApp(appId, item) {
   const app = phoneAppStoreCatalog.find((entry) => entry.id === appId);
   if (!app || !isPhoneAppInstalled(appId)) return;
   state.installedPhoneApps = installedPhoneApps().filter((id) => id !== appId);
+  persistInstalledPhoneAppsBackup(state.installedPhoneApps);
   if (appId === "finster") stopFinsterRealtime();
   if (appId === "ringpack-neon" && PHONE_RINGTONE_DEFINITIONS[state.phoneRingtone]?.pack === appId) state.phoneRingtone = "classic";
   if (appId === "smspack-classic" && PHONE_SMS_TONE_DEFINITIONS[state.phoneSmsTone]?.pack === appId) state.phoneSmsTone = "ping";

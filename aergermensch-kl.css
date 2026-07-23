@@ -327,3 +327,37 @@ body.am-game-open { overflow: hidden; }
   .am-extra-card > span { width: 24px; height: 24px; }
   .am-extra-card small { display: none; }
 }
+
+/* Eigenständige Battle-Apps im Life App Store */
+.standalone-battle-app { display: grid; gap: 12px; color: #eef8ff; }
+.standalone-battle-hero { position: relative; overflow: hidden; display: grid; grid-template-columns: 68px 1fr; align-items: center; gap: 13px; min-height: 145px; padding: 18px; border: 1px solid color-mix(in srgb, var(--standalone-accent) 42%, transparent); border-radius: 22px; background: radial-gradient(circle at 12% 12%, color-mix(in srgb, var(--standalone-accent) 27%, transparent), transparent 44%), linear-gradient(145deg, rgba(11,25,43,.98), rgba(5,12,24,.98)); box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 16px 35px rgba(0,0,0,.25); }
+.standalone-battle-hero::after { content: ""; position: absolute; right: -48px; bottom: -64px; width: 180px; height: 180px; border: 26px solid color-mix(in srgb, var(--standalone-accent) 12%, transparent); border-radius: 50%; }
+.standalone-battle-hero > span { position: relative; z-index: 1; display: grid; place-items: center; width: 64px; height: 64px; border: 1px solid color-mix(in srgb, var(--standalone-accent) 56%, white 10%); border-radius: 20px; background: color-mix(in srgb, var(--standalone-accent) 21%, #07111f); color: var(--standalone-accent); font-size: 1.75rem; font-weight: 950; box-shadow: 0 0 26px color-mix(in srgb, var(--standalone-accent) 23%, transparent); }
+.standalone-battle-hero div { position: relative; z-index: 1; }
+.standalone-battle-hero p { margin: 0 0 3px; color: var(--standalone-accent); font-size: .62rem; font-weight: 900; letter-spacing: .12em; }
+.standalone-battle-hero h4 { margin: 0 0 6px; font-size: 1.35rem; }
+.standalone-battle-hero small { display: block; color: #9eb1c5; line-height: 1.45; }
+.standalone-battle-actions { display: grid; gap: 8px; }
+.standalone-battle-actions > button { display: grid; grid-template-columns: 44px 1fr 20px; align-items: center; gap: 10px; min-height: 76px; padding: 11px; border: 1px solid rgba(255,255,255,.09); border-radius: 17px; background: linear-gradient(135deg, rgba(255,255,255,.065), rgba(255,255,255,.025)); color: #effaff; text-align: left; box-shadow: inset 0 1px 0 rgba(255,255,255,.04); }
+.standalone-battle-actions > button:hover { border-color: color-mix(in srgb, var(--standalone-accent) 52%, transparent); transform: translateY(-1px); }
+.standalone-battle-actions > button > span { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 13px; background: color-mix(in srgb, var(--standalone-accent) 15%, #101c2c); font-size: 1.15rem; }
+.standalone-battle-actions b, .standalone-battle-actions small { display: block; }
+.standalone-battle-actions b { margin-bottom: 3px; }
+.standalone-battle-actions small { color: #8fa4ba; line-height: 1.3; }
+.standalone-battle-actions i { color: var(--standalone-accent); font-size: 1.25rem; font-style: normal; }
+.standalone-battle-info { display: flex; flex-wrap: wrap; gap: 6px; }
+.standalone-battle-info span { padding: 6px 9px; border: 1px solid color-mix(in srgb, var(--standalone-accent) 28%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--standalone-accent) 8%, transparent); color: #b8cadd; font-size: .62rem; font-weight: 800; }
+.standalone-battle-app > p { margin: 0; color: #8298ae; font-size: .68rem; line-height: 1.45; }
+.device-app-grid button.standalone-battle-icon-territory > span { background: linear-gradient(145deg, #153b32, #1d7258); color: #81ffce; }
+.device-app-grid button.standalone-battle-icon-packages > span { background: linear-gradient(145deg, #4a3510, #9a6514); color: #ffe19b; }
+.device-app-grid button.standalone-battle-icon-reaction > span { background: linear-gradient(145deg, #34204c, #7144a0); color: #e3bbff; }
+.am-mode-grid-standalone > button:first-child { grid-column: auto; }
+
+@media (max-width: 430px) {
+  .standalone-battle-hero { grid-template-columns: 54px 1fr; min-height: 132px; padding: 14px; border-radius: 18px; }
+  .standalone-battle-hero > span { width: 52px; height: 52px; border-radius: 16px; font-size: 1.4rem; }
+  .standalone-battle-hero h4 { font-size: 1.12rem; }
+  .standalone-battle-hero small { font-size: .68rem; }
+  .standalone-battle-actions > button { min-height: 70px; grid-template-columns: 39px 1fr 16px; padding: 9px; }
+  .standalone-battle-actions > button > span { width: 38px; height: 38px; }
+}
