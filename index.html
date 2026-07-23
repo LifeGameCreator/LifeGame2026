@@ -15,12 +15,12 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>LifeBuilder 2026</title>
-    <link rel="manifest" href="manifest.webmanifest?v=20260723-finder-autologin-stabil-4">
-    <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/apple-touch-icon.png?v=20260723-finder-autologin-stabil-4">
-    <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png?v=20260723-finder-autologin-stabil-4">
-    <link rel="icon" type="image/png" sizes="16x16" href="assets/icons/favicon-16.png?v=20260723-finder-autologin-stabil-4">
-    <link rel="stylesheet" href="styles.css?v=20260723-finder-autologin-stabil-4">
-    <link rel="stylesheet" href="online-mod-menu.css?v=20260723-finder-autologin-stabil-4">
+    <link rel="manifest" href="manifest.webmanifest?v=20260723-startbutton-login-hotfix-5">
+    <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/apple-touch-icon.png?v=20260723-startbutton-login-hotfix-5">
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png?v=20260723-startbutton-login-hotfix-5">
+    <link rel="icon" type="image/png" sizes="16x16" href="assets/icons/favicon-16.png?v=20260723-startbutton-login-hotfix-5">
+    <link rel="stylesheet" href="styles.css?v=20260723-startbutton-login-hotfix-5">
+    <link rel="stylesheet" href="online-mod-menu.css?v=20260723-startbutton-login-hotfix-5">
 </head>
   <body>
     <div id="app" class="app-shell">
@@ -313,15 +313,66 @@
       </dialog>
     </div>
 
-  <script src="app.js?v=20260723-finder-autologin-stabil-4"></script>
-  <script src="online-events.js?v=20260723-finder-autologin-stabil-4"></script>
-  <script src="support-tickets.js?v=20260723-finder-autologin-stabil-4"></script>
-  <script src="online-mod-menu.js?v=20260723-finder-autologin-stabil-4"></script>
+  <script src="app.js?v=20260723-startbutton-login-hotfix-5"></script>
+  <script src="online-events.js?v=20260723-startbutton-login-hotfix-5"></script>
+  <script src="support-tickets.js?v=20260723-startbutton-login-hotfix-5"></script>
+  <script src="online-mod-menu.js?v=20260723-startbutton-login-hotfix-5"></script>
   <script>
     (() => {
       const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
       document.documentElement.classList.toggle('standalone-app', standalone);
     })();
   </script>
+  <script>
+    // Kritischer Startbildschirm-Fallback: Diese beiden Buttons funktionieren
+    // auch dann zuverlässig, wenn Safari einen vorherigen Touch als Zoomgeste wertet
+    // oder ein optionales Online-Modul beim Laden ausfällt.
+    (() => {
+      const startButton = document.getElementById('openSlotsBtn');
+      const supportButton = document.getElementById('openSupportTicketBtn');
+
+      const openSlotsSafely = (event) => {
+        event?.preventDefault?.();
+        event?.stopImmediatePropagation?.();
+        try {
+          if (typeof window.setSetupView === 'function') {
+            window.setSetupView('slots');
+            return;
+          }
+          document.getElementById('startHero')?.classList.add('hidden');
+          document.querySelector('.start-actions')?.classList.add('hidden');
+          document.getElementById('slotView')?.classList.remove('hidden');
+          if (typeof window.renderSaveSlots === 'function') window.renderSaveSlots();
+        } catch (error) {
+          console.error('Startbildschirm konnte die Spielstände nicht öffnen', error);
+          alert('Die Spieldateien konnten nicht vollständig geladen werden. Bitte die Seite einmal komplett neu laden.');
+        }
+      };
+
+      const openSupportSafely = (event) => {
+        event?.preventDefault?.();
+        event?.stopImmediatePropagation?.();
+        try {
+          if (window.LifeBuilderSupport?.open) {
+            window.LifeBuilderSupport.open();
+            return;
+          }
+          if (window.LifeBuilderOnline?.showLogin) {
+            window.LifeBuilderOnline.showLogin();
+            return;
+          }
+          alert('Das Support-Modul lädt noch. Bitte die Seite einmal komplett neu laden.');
+        } catch (error) {
+          console.error('Support-Ticket konnte nicht geöffnet werden', error);
+        }
+      };
+
+      startButton?.addEventListener('click', openSlotsSafely, { capture: true });
+      startButton?.addEventListener('touchend', openSlotsSafely, { capture: true, passive: false });
+      supportButton?.addEventListener('click', openSupportSafely, { capture: true });
+      supportButton?.addEventListener('touchend', openSupportSafely, { capture: true, passive: false });
+    })();
+  </script>
+
 </body>
 </html>

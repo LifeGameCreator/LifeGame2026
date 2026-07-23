@@ -1,5 +1,5 @@
 (() => {
-  const ONLINE_VERSION = "2026-07-23-finder-autologin-stabil-1";
+  const ONLINE_VERSION = "2026-07-23-startbutton-login-hotfix-1";
   const FIRESTORE_DATABASE_ID = "gamekl";
   const AUDIT_STORAGE_PREFIX = "lifebuilder-2026-online-audit:";
   const HEARTBEAT_MS = 25000;

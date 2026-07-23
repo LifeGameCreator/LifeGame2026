@@ -14605,3 +14605,27 @@ dialog.character-dialog[open] .character-hub-content {
   .finder-account-row { grid-template-columns: 1fr; }
   .finder-source-badge { font-size: .6rem; }
 }
+
+
+/* Startbildschirm-Touch-Hotfix · 2026-07-23 */
+#setupScreen {
+  position: relative;
+  isolation: isolate;
+  pointer-events: auto !important;
+}
+#setupScreen .start-actions {
+  position: relative;
+  z-index: 5000;
+  pointer-events: auto !important;
+}
+#setupScreen .start-actions button {
+  position: relative;
+  z-index: 5001;
+  pointer-events: auto !important;
+  touch-action: manipulation !important;
+  -webkit-tap-highlight-color: rgba(113, 239, 189, .18);
+}
+#setupScreen #startHero,
+#setupScreen #startHero * {
+  pointer-events: none !important;
+}

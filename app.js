@@ -30736,6 +30736,12 @@ els.casinoWithdrawBtn?.addEventListener("click", () => casinoWithdraw());
 // Mobile-App-Verhalten: kein horizontaler Seitensprung, kein Doppeltipp-Zoom, Pinch-Zoom nur im Viewport-Limit.
 let lastMobileTouchEnd = 0;
 document.addEventListener("touchend", (event) => {
+  // Interaktive Elemente niemals blockieren. Das verhindert auf iPhone/Safari,
+  // dass ein normaler Button-Tipp als vermeintlicher Doppel-Tipp verschluckt wird.
+  if (event.target.closest?.("button,a,input,select,textarea,label,[role='button']")) {
+    lastMobileTouchEnd = 0;
+    return;
+  }
   const now = Date.now();
   if (now - lastMobileTouchEnd <= 320 && event.cancelable) event.preventDefault();
   lastMobileTouchEnd = now;
@@ -31708,8 +31714,14 @@ function stabilizeMobileCharacterScroll(section = "") {
   });
   let lastTouchEnd = 0;
   document.addEventListener("touchend", (event) => {
+    // Buttons, Links und Formularfelder dürfen auf Touch-Geräten nie durch den
+    // Zoomschutz blockiert werden.
+    if (event.target.closest?.("button,a,input,select,textarea,label,[role='button']")) {
+      lastTouchEnd = 0;
+      return;
+    }
     const now = Date.now();
-    if (now - lastTouchEnd < 320) event.preventDefault();
+    if (now - lastTouchEnd < 320 && event.cancelable) event.preventDefault();
     lastTouchEnd = now;
   }, { passive: false });
   document.addEventListener("dblclick", (event) => event.preventDefault(), { passive: false });
