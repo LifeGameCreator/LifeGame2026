@@ -14217,3 +14217,199 @@ html, body, .dashboard, .tab-panel, #detailDialog {
   outline: 2px solid #6ee3a8;
   outline-offset: 2px;
 }
+
+
+/* Gesamtfix Scroll, Finster.KL, Dashboard und Kleidung · Version 2026-07-23.2 */
+html:not(.life-overlay-locked),
+body:not(.life-overlay-locked) {
+  overflow-y: auto !important;
+  min-height: 100%;
+}
+.game-screen,
+.dashboard,
+.tab-panel {
+  overflow: visible;
+}
+
+#detailDialog[open] {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y !important;
+  scrollbar-gutter: stable;
+}
+#detailDialog[open]:not(.device-dialog) {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+#detailDialog[open] > .profile-info-scroll,
+#detailDialog[open] > .life-info-panel,
+#detailDialog[open] > .mood-info-panel,
+#detailDialog[open] > .work-helper-hub,
+#detailDialog[open] > .work-info-dashboard,
+#detailDialog[open] > .logistics-game {
+  max-height: none !important;
+  overflow: visible !important;
+  touch-action: pan-y !important;
+}
+dialog.logistics-dialog[open],
+dialog.character-dialog[open],
+dialog.wardrobe-dialog[open] {
+  overflow-y: auto !important;
+  touch-action: pan-y !important;
+}
+dialog.logistics-dialog[open] .logistics-game,
+dialog.logistics-dialog[open] [data-logistics-root],
+dialog.character-dialog[open] .character-hub,
+dialog.character-dialog[open] .character-hub-content {
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+#detailDialog > #closeDialog,
+#detailDialog > .character-floating-info {
+  width: 48px !important;
+  height: 48px !important;
+  min-width: 48px !important;
+  min-height: 48px !important;
+  padding: 0 !important;
+  line-height: 1 !important;
+}
+#detailDialog > .character-floating-info {
+  right: 70px !important;
+}
+
+.device-screen:has(> .device-app-view .finster-app),
+.device-screen.finster-host-screen {
+  overflow: hidden !important;
+  padding: 0 !important;
+  touch-action: none !important;
+}
+.device-app-view:has(> .finster-app) {
+  display: block;
+  height: 100%;
+  min-height: 0;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+.device-app-view > .finster-app {
+  width: 100%;
+  height: 100%;
+  min-height: 0 !important;
+  max-height: none !important;
+  margin: 0 !important;
+  border-radius: 22px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+.finster-topbar,
+.finster-nav {
+  position: relative;
+  z-index: 5;
+  flex: 0 0 auto;
+}
+.finster-content {
+  min-height: 0 !important;
+  height: auto;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  touch-action: pan-y !important;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  scroll-padding-top: 8px;
+  scroll-padding-bottom: 12px;
+}
+.finster-nav {
+  position: sticky;
+  bottom: 0;
+  min-height: 50px;
+  padding-bottom: max(2px, env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -8px 24px rgba(0,0,0,.42);
+}
+.finster-empty {
+  min-height: 240px;
+  align-content: center;
+}
+
+@media (max-width: 700px) {
+  .meters .meter > span {
+    width: 100%;
+    font-size: clamp(.78rem, 3.65vw, .96rem) !important;
+    line-height: 1.05 !important;
+    letter-spacing: -.025em;
+    text-align: left;
+  }
+  .meters .meter {
+    padding-inline: 7px !important;
+  }
+  .meters .meter progress {
+    width: 100%;
+  }
+  #detailDialog[open] {
+    inset: max(6px, env(safe-area-inset-top)) 7px max(6px, env(safe-area-inset-bottom)) 7px !important;
+    padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+  #detailDialog > #closeDialog,
+  #detailDialog > .character-floating-info {
+    width: 46px !important;
+    height: 46px !important;
+    min-width: 46px !important;
+    min-height: 46px !important;
+  }
+  #detailDialog > .character-floating-info {
+    right: 62px !important;
+  }
+  .device-app-view > .finster-app {
+    border-radius: 18px;
+  }
+}
+
+.avatar-svg .cloth,
+.avatar-svg .jacket,
+.avatar-svg .shoe {
+  stroke-width: 1.6px !important;
+  stroke: rgba(5,8,7,.22) !important;
+  stroke-linejoin: round;
+}
+.avatar-svg .jacket {
+  stroke-width: 1.8px !important;
+}
+
+@media (min-width: 701px) {
+  #detailDialog[open]:not(.device-dialog) {
+    max-height: calc(100dvh - 28px) !important;
+    overflow-y: auto !important;
+  }
+  dialog.logistics-dialog[open] {
+    max-height: calc(100dvh - 22px) !important;
+  }
+}
+
+
+/* Feinschliff Lebenskarte und vollständig abgedeckte Avatar-Kleidung · 2026-07-23.3 */
+.profile-info-card.life > div:first-child {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "label label"
+    "state value";
+  align-items: end;
+  gap: 4px 12px;
+  min-width: 0;
+}
+.profile-info-card.life > div:first-child > small { grid-area: label; }
+.profile-info-card.life > div:first-child > strong {
+  grid-area: state;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.profile-info-card.life > div:first-child > b {
+  grid-area: value;
+  color: #fff;
+  font-size: clamp(1.25rem, 5vw, 1.65rem);
+  line-height: 1;
+  white-space: nowrap;
+}
+.avatar-svg .cloth,
+.avatar-svg .jacket,
+.avatar-svg .shoe {
+  paint-order: stroke fill;
+}

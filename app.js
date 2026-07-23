@@ -5079,11 +5079,11 @@ function avatarHtml(size = "", previewOutfit = null) {
   const hasAccessory = !!outfit.accessory;
   const tattooMarks = tattooMarksHtml(appearance.tattoos || []);
   const topLayer = hasTop ? (isTank ? `
-    <path d="M78 112 C84 96 93 91 101 88 L106 106 L114 106 L119 88 C130 91 139 97 144 112 C143 133 140 160 137 181 C126 190 93 190 82 181 C79 160 76 133 78 112Z" fill="${top}" class="cloth"/>
-    <path d="M101 89 L106 106 L114 106 L119 89" fill="none" stroke="rgba(0,0,0,.32)" stroke-width="3" stroke-linecap="round"/>
+    <path d="M75 116 C81 100 91 95 99 92 L104 110 L116 110 L121 92 C132 95 142 101 147 116 C146 137 143 166 140 190 C127 198 92 198 79 190 C76 166 73 137 75 116Z" fill="${top}" class="cloth"/>
+    <path d="M100 91 L105 108 L115 108 L120 91" fill="none" stroke="rgba(0,0,0,.32)" stroke-width="3" stroke-linecap="round"/>
   ` : `
-    <path d="M73 106 C84 94 96 89 110 89 C124 89 136 94 147 106 L159 143 C155 149 149 150 143 144 L137 181 C126 189 94 189 83 181 L77 144 C71 150 65 149 61 143Z" fill="${top}" class="cloth"/>
-    <path d="M99 91 C104 104 116 104 121 91" fill="none" stroke="rgba(255,255,255,.34)" stroke-width="3"/>
+    <path d="M70 110 C82 98 96 93 110 93 C124 93 138 98 150 110 L164 148 C159 156 151 157 143 149 L140 190 C127 198 93 198 80 190 L77 149 C69 157 61 156 56 148Z" fill="${top}" class="cloth"/>
+    <path d="M98 93 C103 106 117 106 122 93" fill="none" stroke="rgba(255,255,255,.34)" stroke-width="3"/>
   `) : "";
   const topDetailLayer = hasTop ? `
     ${topText.includes("street print") ? `<rect x="91" y="124" width="38" height="29" rx="5" fill="rgba(8,12,10,.62)"/><text x="110" y="144" text-anchor="middle" fill="rgba(255,255,255,.9)" font-size="13" font-weight="1000">KL</text>` : ""}
@@ -5092,7 +5092,7 @@ function avatarHtml(size = "", previewOutfit = null) {
     ${isPullover ? `<path d="M82 174 C96 180 124 180 138 174" fill="none" stroke="rgba(0,0,0,.25)" stroke-width="4"/>` : ""}
   ` : "";
   const jacketLayer = hasJacket ? `
-    <path d="M65 103 C82 87 96 82 110 82 C126 82 141 87 158 103 L172 151 C165 159 154 158 149 148 L145 191 C131 204 89 204 75 191 L71 148 C66 158 55 159 48 151Z" fill="${jacket}" class="jacket"/>
+    <path d="M62 106 C80 90 96 85 110 85 C126 85 143 90 161 106 L177 154 C169 164 155 163 148 151 L148 196 C132 211 88 211 72 196 L72 151 C65 163 51 164 43 154Z" fill="${jacket}" class="jacket"/>
     <path d="M110 86 L110 197" stroke="rgba(255,255,255,.48)" stroke-width="3"/>
     <path d="M84 96 C94 118 100 150 101 191 M136 96 C126 118 120 150 119 191" fill="none" stroke="rgba(0,0,0,.28)" stroke-width="3"/>
     ${jacketText.includes("winter") ? `<path d="M78 89 C94 76 126 76 142 89" fill="none" stroke="rgba(245,245,245,.55)" stroke-width="9" stroke-linecap="round"/>` : ""}
@@ -5101,9 +5101,9 @@ function avatarHtml(size = "", previewOutfit = null) {
     ${jacketText.includes("strick") ? `<circle cx="110" cy="119" r="2.3" fill="rgba(245,245,235,.7)"/><circle cx="110" cy="139" r="2.3" fill="rgba(245,245,235,.7)"/><circle cx="110" cy="159" r="2.3" fill="rgba(245,245,235,.7)"/>` : ""}
   ` : "";
   const pantsLayer = hasPants ? (isShorts ? `
-    <path d="M78 187 C90 196 130 196 142 187 L139 233 L116 233 L112 201 L108 201 L104 233 L81 233Z" fill="${pants}" class="cloth"/>
+    <path d="M75 183 C89 198 131 198 145 183 L142 236 L115 236 L112 201 L108 201 L105 236 L78 236Z" fill="${pants}" class="cloth"/>
   ` : `
-    <path d="M78 187 C90 196 130 196 142 187 L139 319 L116 319 L112 207 L108 207 L104 319 L81 319Z" fill="${pants}" class="cloth"/>
+    <path d="M75 183 C89 198 131 198 145 183 L142 321 L115 321 L112 205 L108 205 L105 321 L78 321Z" fill="${pants}" class="cloth"/>
     <path d="M110 205 L110 318" stroke="rgba(255,255,255,.18)" stroke-width="2"/>
   `) : "";
   const underwearLayer = hasUnderwear ? `
@@ -5114,8 +5114,8 @@ function avatarHtml(size = "", previewOutfit = null) {
     <path d="M116 288 L138 288 L138 320 L116 320Z" fill="${socks}" opacity=".96"/>
   ` : "";
   const shoesLayer = outfit.shoes ? `
-    <path d="M72 318 C84 314 101 315 109 321 L108 334 L67 334 C66 327 68 322 72 318Z" fill="${shoes}" class="shoe"/>
-    <path d="M148 318 C136 314 119 315 111 321 L112 334 L153 334 C154 327 152 322 148 318Z" fill="${shoes}" class="shoe"/>
+    <path d="M69 317 C83 312 101 313 111 321 L110 336 L62 336 C61 327 65 321 69 317Z" fill="${shoes}" class="shoe"/>
+    <path d="M151 317 C137 312 119 313 109 321 L110 336 L158 336 C159 327 155 321 151 317Z" fill="${shoes}" class="shoe"/>
   ` : "";
   const hatLayer = hasHat ? `
     <path d="M72 43 C84 26 134 26 149 43 L148 56 C130 50 91 50 72 56Z" fill="${hat}" class="hat"/>
@@ -12639,13 +12639,63 @@ function finsterDefaultState() {
   return { view: "feed", handle: "", displayName: "", bio: "", accountCreated: false, selectedPostId: "", selectedUserUid: "", activeConversationUid: "", likedPostIds: [], following: [], aiLikes: {}, aiComments: {}, aiMessages: {} };
 }
 
+/* finster.kl moderation: real-player feed and local profanity masking.
+   The original sentence structure remains, only blocked words are replaced with asterisks. */
+const finsterBlockedWordStems = [
+  "arschloch","arsch","arschgeige","arschkriecher","arschficker","arschfotze",
+  "wichser","wichs","wixer","wixxer","fick","ficken","gefickt","ficker","fickdich",
+  "fotze","votze","muschi","möse","moese","schlampe","hure","hurensohn","hurentochter",
+  "bastard","miststück","miststueck","drecksau","drecksschwein","schwein","sau",
+  "idiot","idioten","vollidiot","trottel","depp","spast","spasti","spastiker",
+  "behindert","mongo","mongoloid","opfer","lappen","loser","versager",
+  "kacke","scheiße","scheisse","scheiss","shit","bullshit","mistkerl","dreckskerl",
+  "pimmel","schwanz","penis","titten","brüste","brueste","nutte","prostituierte",
+  "verpiss","verrecke","haltdeinmaul","fresse","maul",
+  "neger","nigger","kanake","zigeuner","judensau","schwuchtel","transe",
+  "missgeburt","fehlgeburt","krüppel","krueppel"
+];
+const finsterBlockedPhrases = [
+  "halt die fresse","halt dein maul","sohn einer hure","du hurensohn","fick dich",
+  "verpiss dich","leck mich","leck meinen","geh sterben","bring dich um"
+];
+
+function finsterNormalizeForFilter(value) {
+  return String(value || "")
+    .toLocaleLowerCase("de-DE")
+    .replace(/[013457@$!]/g, (char) => ({ "0":"o","1":"i","3":"e","4":"a","5":"s","7":"t","@":"a","$":"s","!":"i" }[char] || char))
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function finsterMaskToken(token) {
+  return Array.from(String(token || "")).map((char) => /[\p{L}\p{N}]/u.test(char) ? "*" : char).join("");
+}
+
+function censorFinsterText(value, maxLength = 1000) {
+  const source = String(value || "").trim().slice(0, maxLength);
+  if (!source) return "";
+  let result = source;
+  for (const phrase of finsterBlockedPhrases) {
+    const pattern = phrase.trim().split(/\s+/).map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
+    result = result.replace(new RegExp(`\\b${pattern}\\b`, "giu"), (match) => finsterMaskToken(match));
+  }
+  result = result.replace(/[\p{L}\p{N}_-]+/gu, (token) => {
+    const normalized = finsterNormalizeForFilter(token).replace(/[_-]+/g, "");
+    const blocked = finsterBlockedWordStems.some((stem) => normalized === stem || normalized.startsWith(stem));
+    return blocked ? finsterMaskToken(token) : token;
+  });
+  return result;
+}
+
 function ensureFinsterState() {
   state.finster = { ...finsterDefaultState(), ...(state.finster || {}) };
   state.finster.likedPostIds = Array.isArray(state.finster.likedPostIds) ? state.finster.likedPostIds : [];
   state.finster.following = Array.isArray(state.finster.following) ? state.finster.following : [];
-  state.finster.aiLikes ||= {};
-  state.finster.aiComments ||= {};
-  state.finster.aiMessages ||= {};
+  // Alte lokale KI-/Bot-Zustände aus früheren Versionen werden nicht mehr verwendet.
+  if (String(state.finster.selectedUserUid || "").startsWith("ai-finster-")) state.finster.selectedUserUid = "";
+  if (String(state.finster.activeConversationUid || "").startsWith("ai-finster-")) state.finster.activeConversationUid = "";
+  state.finster.aiLikes = {};
+  state.finster.aiComments = {};
+  state.finster.aiMessages = {};
   return state.finster;
 }
 
@@ -12665,30 +12715,18 @@ function finsterCurrentUid() {
 }
 
 function finsterAiPosts() {
-  return Array.from({ length: 24 }, (_, index) => {
-    const profile = finsterAiProfiles[index % finsterAiProfiles.length];
-    return {
-      id: `ai-post-${index + 1}`,
-      ownerUid: profile.uid,
-      handle: profile.handle,
-      displayName: profile.displayName,
-      caption: finsterAiCaptions[index % finsterAiCaptions.length],
-      imageUrl: `assets/finster/scene-${String(index + 1).padStart(2, "0")}.svg`,
-      createdAtMs: Date.now() - (index + 1) * 47 * 60 * 1000,
-      likeCount: 18 + ((index * 37) % 640),
-      commentCount: 2 + ((index * 11) % 46),
-      ai: true
-    };
-  });
+  // Deaktiviert: finster.kl zeigt ausschließlich Beiträge echter Online-Spieler.
+  return [];
 }
 
 function finsterAllPosts() {
-  return [...finsterPostsCache, ...finsterAiPosts()].sort((a, b) => Number(b.createdAtMs || 0) - Number(a.createdAtMs || 0));
+  // Nur echte Online-Beiträge. Keine automatisch erzeugten KI-/Bot-Posts mehr im Feed.
+  return [...finsterPostsCache].sort((a, b) => Number(b.createdAtMs || 0) - Number(a.createdAtMs || 0));
 }
 
 function finsterProfileByUid(uid) {
   if (!uid) return null;
-  return finsterUsersCache.find((entry) => entry.uid === uid) || finsterAiProfiles.find((entry) => entry.uid === uid) || null;
+  return finsterUsersCache.find((entry) => entry.uid === uid) || null;
 }
 
 function finsterTimeText(timestamp) {
@@ -12801,7 +12839,7 @@ function finsterPostCardHtml(post) {
       <button data-finster-message-user="${post.ownerUid}" ${post.ownerUid === finsterCurrentUid() ? "disabled" : ""}>➤</button>
     </div>
     <strong class="finster-like-count">${Number(post.likeCount || 0) + localLikes} Likes</strong>
-    <p><b>@${escapeHtml(post.handle || profile.handle || "finster")}</b> ${escapeHtml(post.caption || "")}</p>
+    <p><b>@${escapeHtml(post.handle || profile.handle || "finster")}</b> ${escapeHtml(censorFinsterText(post.caption || "", 1000))}</p>
     <button class="finster-comments-link" data-finster-open-post="${post.id}">${Number(post.commentCount || 0) + localComments} Kommentare ansehen</button>
   </article>`;
 }
@@ -12813,7 +12851,7 @@ function finsterFeedHtml() {
 
 function finsterExploreHtml() {
   const own = finsterCurrentUid();
-  const profiles = [...finsterUsersCache.filter((profile) => profile.uid !== own), ...finsterAiProfiles];
+  const profiles = finsterUsersCache.filter((profile) => profile.uid !== own);
   return `<section class="finster-explore"><div class="finster-search"><span>⌕</span><input data-finster-search placeholder="Accounts oder Orte suchen"></div><div class="finster-user-grid" data-finster-user-grid>${profiles.map((profile) => `<article data-finster-user-card="${escapeHtml(`${profile.handle} ${profile.displayName} ${profile.city || ""}`.toLowerCase())}">${finsterAvatarHtml(profile)}<div><strong>${escapeHtml(profile.displayName)}</strong><small>@${escapeHtml(profile.handle)} · ${escapeHtml(profile.city || "LifeBuilder")}</small><p>${escapeHtml(profile.bio || "Finster.KL-Profil")}</p></div><button class="mini-button" data-finster-open-user="${profile.uid}">Profil</button></article>`).join("")}</div></section>`;
 }
 
@@ -12836,7 +12874,7 @@ function finsterPostDetailHtml(postId) {
   const post = finsterAllPosts().find((entry) => entry.id === postId);
   if (!post) return `<div class="finster-empty"><b>Beitrag nicht gefunden</b><button class="mini-button" data-finster-view="feed">Zurück zum Feed</button></div>`;
   const comments = finsterCommentsFor(postId);
-  return `<section class="finster-post-detail"><button class="mini-button" data-finster-view="feed">← Feed</button>${finsterPostCardHtml(post)}<div class="finster-comment-list">${comments.length ? comments.map((comment) => `<article>${finsterAvatarHtml(comment, "tiny")}<p><b>@${escapeHtml(comment.handle || "spieler")}</b> ${escapeHtml(comment.text || "")}<small>${finsterTimeText(comment.createdAtMs)}</small></p></article>`).join("") : `<p>Noch keine Kommentare.</p>`}</div><div class="finster-comment-compose"><input data-finster-comment-input maxlength="500" placeholder="Kommentar schreiben..."><button data-finster-comment-send="${postId}">Senden</button></div></section>`;
+  return `<section class="finster-post-detail"><button class="mini-button" data-finster-view="feed">← Feed</button>${finsterPostCardHtml(post)}<div class="finster-comment-list">${comments.length ? comments.map((comment) => `<article>${finsterAvatarHtml(comment, "tiny")}<p><b>@${escapeHtml(comment.handle || "spieler")}</b> ${escapeHtml(censorFinsterText(comment.text || "", 500))}<small>${finsterTimeText(comment.createdAtMs)}</small></p></article>`).join("") : `<p>Noch keine Kommentare.</p>`}</div><div class="finster-comment-compose"><input data-finster-comment-input maxlength="500" placeholder="Kommentar schreiben..."><button data-finster-comment-send="${postId}">Senden</button></div></section>`;
 }
 
 function finsterUserProfileHtml(uid) {
@@ -12859,11 +12897,11 @@ function finsterMessagesHtml() {
   const activeUid = finster.activeConversationUid;
   const own = finsterCurrentUid();
   const realPartners = [...new Set(finsterMessagesCache.flatMap((message) => message.participantUids || []).filter((uid) => uid && uid !== own))].map(finsterProfileByUid).filter(Boolean);
-  const partners = [...realPartners, ...finsterAiProfiles.slice(0, 6)];
+  const partners = realPartners;
   if (activeUid) {
     const profile = finsterProfileByUid(activeUid);
     const messages = finsterConversationMessages(activeUid);
-    return `<section class="finster-chat"><header><button data-finster-close-chat>←</button>${finsterAvatarHtml(profile, "small")}<div><strong>${escapeHtml(profile?.displayName || "Chat")}</strong><small>@${escapeHtml(profile?.handle || "finster")}</small></div></header><div class="finster-chat-thread" data-finster-chat-thread>${messages.map((message) => `<p class="${message.senderUid === own || message.from === "me" ? "mine" : "theirs"}"><span>${escapeHtml(message.text || "")}</span><small>${finsterTimeText(message.createdAtMs || message.at)}</small></p>`).join("") || `<p class="system"><span>Noch keine Nachrichten. Schreib Hallo.</span></p>`}</div><div class="finster-chat-compose"><textarea data-finster-message-input maxlength="800" placeholder="Nachricht..."></textarea><button data-finster-send-message="${activeUid}">Senden</button></div></section>`;
+    return `<section class="finster-chat"><header><button data-finster-close-chat>←</button>${finsterAvatarHtml(profile, "small")}<div><strong>${escapeHtml(profile?.displayName || "Chat")}</strong><small>@${escapeHtml(profile?.handle || "finster")}</small></div></header><div class="finster-chat-thread" data-finster-chat-thread>${messages.map((message) => `<p class="${message.senderUid === own || message.from === "me" ? "mine" : "theirs"}"><span>${escapeHtml(censorFinsterText(message.text || "", 800))}</span><small>${finsterTimeText(message.createdAtMs || message.at)}</small></p>`).join("") || `<p class="system"><span>Noch keine Nachrichten. Schreib Hallo.</span></p>`}</div><div class="finster-chat-compose"><textarea data-finster-message-input maxlength="800" placeholder="Nachricht..."></textarea><button data-finster-send-message="${activeUid}">Senden</button></div></section>`;
   }
   return `<section class="finster-inbox"><h3>Nachrichten</h3>${partners.map((profile) => `<button data-finster-message-user="${profile.uid}">${finsterAvatarHtml(profile, "small")}<div><strong>${escapeHtml(profile.displayName)}</strong><small>@${escapeHtml(profile.handle)}</small></div><span>›</span></button>`).join("") || `<div class="finster-empty"><p>Noch keine Chats. Öffne ein Profil und schreibe eine Nachricht.</p></div>`}</section>`;
 }
@@ -12892,8 +12930,8 @@ function finsterAppHtml() {
 
 async function createFinsterAccount(shell, item) {
   const handle = String(shell.querySelector("[data-finster-handle]")?.value || "").trim().toLowerCase().replace(/[^a-z0-9._-]/g, "").slice(0, 24);
-  const displayName = String(shell.querySelector("[data-finster-display-name]")?.value || "").trim().slice(0, 40);
-  const bio = String(shell.querySelector("[data-finster-bio]")?.value || "").trim().slice(0, 180);
+  const displayName = censorFinsterText(shell.querySelector("[data-finster-display-name]")?.value || "", 40);
+  const bio = censorFinsterText(shell.querySelector("[data-finster-bio]")?.value || "", 180);
   if (handle.length < 3) return addFeed("Der Finster-Benutzername braucht mindestens drei Zeichen.");
   if (!displayName) return addFeed("Bitte einen Anzeigenamen eingeben.");
   try {
@@ -12931,7 +12969,7 @@ function selectFinsterFile(file, shell) {
 
 async function publishFinsterPost(shell, item) {
   const file = finsterUploadFile;
-  const caption = String(shell.querySelector("[data-finster-caption]")?.value || "").trim().slice(0, 1000);
+  const caption = censorFinsterText(shell.querySelector("[data-finster-caption]")?.value || "", 1000);
   const status = shell.querySelector("[data-finster-upload-status]");
   if (!file) return addFeed("Wähle zuerst ein Bild.");
   try {
@@ -13015,7 +13053,7 @@ async function loadFinsterComments(postId, item) {
 }
 
 async function sendFinsterComment(postId, textValue, item) {
-  const clean = String(textValue || "").trim().slice(0, 500);
+  const clean = censorFinsterText(textValue, 500);
   if (!clean) return;
   const finster = ensureFinsterState();
   if (postId.startsWith("ai-post-")) {
@@ -13066,7 +13104,7 @@ function finsterAiReply(profile, text) {
 }
 
 async function sendFinsterMessage(uid, textValue, item) {
-  const clean = String(textValue || "").trim().slice(0, 800);
+  const clean = censorFinsterText(textValue, 800);
   const profile = finsterProfileByUid(uid);
   if (!clean || !profile) return;
   const finster = ensureFinsterState();
@@ -13096,9 +13134,9 @@ async function sendFinsterMessage(uid, textValue, item) {
 
 async function updateFinsterProfile(shell, item) {
   const finster = ensureFinsterState();
-  const displayName = prompt("Anzeigename", finster.displayName || state.firstName || "")?.trim().slice(0, 40);
+  const displayName = censorFinsterText(prompt("Anzeigename", finster.displayName || state.firstName || "") || "", 40);
   if (!displayName) return;
-  const bio = prompt("Profiltext", finster.bio || "")?.trim().slice(0, 180) ?? finster.bio;
+  const bio = censorFinsterText(prompt("Profiltext", finster.bio || "") ?? finster.bio, 180);
   try {
     const fb = await ensureFinsterRealtime();
     await fb.updateDoc(fb.doc(fb.db, "finsterUsers", fb.auth.currentUser.uid), { displayName, bio, city: state.worldLocation || state.homeCity, updatedAtMs: Date.now() });
@@ -13112,6 +13150,16 @@ async function updateFinsterProfile(shell, item) {
 }
 
 function bindFinsterDeviceActions(shell, item) {
+  const finsterHostScreen = shell?.closest?.(".device-screen") || shell?.querySelector?.(".device-screen");
+  if (finsterHostScreen) {
+    finsterHostScreen.classList.add("finster-host-screen");
+    finsterHostScreen.scrollTop = 0;
+  }
+  const finsterContent = shell?.querySelector?.(".finster-content");
+  if (finsterContent && !finsterContent.dataset.finsterScrollBound) {
+    finsterContent.dataset.finsterScrollBound = "1";
+    finsterContent.addEventListener("touchmove", () => {}, { passive: true });
+  }
   ensureFinsterRealtime().catch((error) => addFeed(`Finster.KL Firebase: ${error.message || error}`));
   shell.querySelector("[data-finster-create-account]")?.addEventListener("click", () => createFinsterAccount(shell, item));
   shell.querySelectorAll("[data-finster-view]").forEach((button) => button.addEventListener("click", () => {
@@ -15330,7 +15378,7 @@ function smsThreadHtml() {
       <div class="sms-bubbles">
         ${messages.length ? messages.map((message) => `
           <div class="sms-bubble ${normalizePhoneNumber(message.from) === own ? "mine" : "theirs"}">
-            <span>${escapeHtml(message.text || "")}</span>
+            <span>${escapeHtml(censorFinsterText(message.text || "", 800))}</span>
           </div>
         `).join("") : `<p class="device-hint">Noch keine SMS in diesem Chat.</p>`}
       </div>
@@ -31287,9 +31335,12 @@ function stabilizeMobileCharacterScroll(section = "") {
   document.addEventListener("touchmove", (event) => {
     if (!overlayIsOpen()) return;
     const allowed = event.target.closest?.(
-      ".character-hub-content,.wardrobe-list,.device-screen,.device-app-view,.casino-world-panel-scroll,.market-list,.dialog-scroll,.iconman-menu,.racer-options-panel,.snake-game-shell,.snake-canvas,.racer-track"
+      "dialog[open],.character-hub-content,.wardrobe-list,.device-screen,.device-app-view,.casino-world-panel-scroll,.market-list,.dialog-scroll,.profile-info-scroll,.mood-info-panel,.work-helper-hub,.work-info-dashboard,.logistics-game,.iconman-menu,.racer-options-panel,.snake-game-shell,.snake-canvas,.racer-track"
     );
     if (!allowed) event.preventDefault();
   }, { passive: false, capture: true });
+  document.addEventListener("close", () => setTimeout(syncOverlayLock, 0), true);
+  document.addEventListener("cancel", () => setTimeout(syncOverlayLock, 0), true);
+  window.addEventListener("pageshow", () => setTimeout(syncOverlayLock, 0));
   window.addEventListener("orientationchange", () => setTimeout(syncOverlayLock, 100));
 })();
