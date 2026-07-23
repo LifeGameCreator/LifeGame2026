@@ -276,6 +276,10 @@ html.online-mod-open, html.online-mod-open body { overflow: hidden !important; o
 .online-mod-staff-row select { min-height:40px;padding:7px 9px;border:1px solid var(--mod-line);border-radius:10px;background:#06120d;color:#fff; }
 .online-mod-staff-row .check { display:flex;align-items:center;gap:6px;color:var(--mod-muted);font-size:.68rem; }
 .online-mod-staff-row .check input { width:18px;height:18px; }
+.online-mod-staff-actions { display:flex;gap:7px;flex-wrap:wrap; }
+.online-mod-staff-actions button { white-space:nowrap; }
+.online-mod-staff-pin-result { grid-column:1/-1; }
+.online-mod-staff-pin-result em { color:var(--mod-muted);font-size:.62rem;font-style:normal; }
 .online-mod-invite-row { display:grid;grid-template-columns:34px minmax(0,1fr);gap:9px;padding:10px 0;border-bottom:1px solid var(--mod-line-soft); }
 .online-mod-invite-row>span { width:32px;height:32px;display:grid;place-items:center;border-radius:9px;background:rgba(255,255,255,.045); }
 .online-mod-invite-row b,.online-mod-invite-row small,.online-mod-invite-row em { display:block; }

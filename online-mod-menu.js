@@ -852,7 +852,7 @@
     try {
       const response = await callFunction("listStaffMembers", {});
       const members = response.members || [];
-      content().querySelector("[data-staff-list]").innerHTML = members.length ? members.map((member) => `<form data-staff-member="${esc(member.uid)}" class="online-mod-staff-row"><div class="online-mod-avatar small">${esc((member.roleLabel || member.role || "T").slice(0, 1))}</div><div><b>${esc(member.roleLabel || member.role)}</b><small>${esc(member.uid)}</small></div><select name="role">${ROLE_ORDER.filter((role) => role !== "owner").map((role) => `<option value="${role}" ${member.role === role ? "selected" : ""}>${ROLE_LABELS[role]}</option>`).join("")}</select><label class="check"><input type="checkbox" name="active" ${member.active ? "checked" : ""}> Aktiv</label><button type="submit" ${member.isOwner ? "disabled" : ""}>Speichern</button></form>`).join("") : `<div class="online-mod-empty-state"><p>Noch keine Teammitglieder.</p></div>`;
+      content().querySelector("[data-staff-list]").innerHTML = members.length ? members.map((member) => `<form data-staff-member="${esc(member.uid)}" class="online-mod-staff-row"><div class="online-mod-avatar small">${esc((member.roleLabel || member.role || "T").slice(0, 1))}</div><div><b>${esc(member.roleLabel || member.role)}</b><small>${esc(member.uid)}</small></div><select name="role" ${member.isOwner ? "disabled" : ""}>${member.isOwner ? `<option value="owner" selected>Owner</option>` : ROLE_ORDER.filter((role) => role !== "owner").map((role) => `<option value="${role}" ${member.role === role ? "selected" : ""}>${ROLE_LABELS[role]}</option>`).join("")}</select><label class="check"><input type="checkbox" name="active" ${member.active ? "checked" : ""} ${member.isOwner ? "disabled" : ""}> Aktiv</label><div class="online-mod-staff-actions"><button type="submit" ${member.isOwner ? "disabled" : ""}>Speichern</button>${member.isOwner ? "" : `<button type="button" data-reset-staff-pin="${esc(member.uid)}">KL-Code neu</button>`}</div><div class="online-mod-secret online-mod-staff-pin-result" data-staff-pin-result="${esc(member.uid)}" hidden></div></form>`).join("") : `<div class="online-mod-empty-state"><p>Noch keine Teammitglieder.</p></div>`;
     } catch (error) {
       content().querySelector("[data-staff-list]").innerHTML = `<p class="online-mod-message error">${esc(error.message)}</p>`;
     }
@@ -930,6 +930,30 @@
         toast(error.message, "error");
       } finally {
         resetOwnerPinButton.disabled = false;
+      }
+      return;
+    }
+
+    const resetStaffPinButton = event.target.closest("[data-reset-staff-pin]");
+    if (resetStaffPinButton) {
+      const targetUid = resetStaffPinButton.dataset.resetStaffPin;
+      if (!confirm("Neuen KL-Sitzungscode für dieses Mitglied erzeugen? Der bisherige Code und eine laufende Sitzung werden sofort ungültig.")) return;
+      const box = content().querySelector(`[data-staff-pin-result="${CSS.escape(targetUid)}"]`);
+      resetStaffPinButton.disabled = true;
+      try {
+        const response = await callFunction("resetStaffSessionPin", { targetUid });
+        if (!response.sessionPin) throw new Error("Firebase hat keinen Sitzungscode zurückgegeben.");
+        if (box) {
+          box.hidden = false;
+          box.innerHTML = `<small>Neuer persönlicher Sitzungscode für ${esc(response.roleLabel || "Mitglied")}</small><code>${esc(response.sessionPin)}</code><button type="button" data-copy-id="${esc(response.sessionPin)}">Code kopieren</button><em>Nur einmal sichtbar – jetzt sicher weitergeben.</em>`;
+        }
+        await copyText(response.sessionPin);
+        toast("Neuer KL-Code erstellt und kopiert.");
+      } catch (error) {
+        if (box) { box.hidden = false; box.innerHTML = `<small class="error">${esc(error.message)}</small>`; }
+        toast(error.message, "error");
+      } finally {
+        resetStaffPinButton.disabled = false;
       }
       return;
     }
