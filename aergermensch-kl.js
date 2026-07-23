@@ -2,7 +2,7 @@
   "use strict";
 
   const AM_APP_ID = "aergermensch-kl";
-  const AM_VERSION = "2026-07-23-aergermensch-kl-1";
+  const AM_VERSION = "2026-07-23-battle-hub-1";
   const AM_DATABASE_ID = "gamekl";
   const AM_COLLECTION = "angerMenschGames";
   const AM_MAX_LOG = 18;
@@ -1141,14 +1141,21 @@
     const online = amRuntime.onlineDoc?.gameState;
     const active = online || local;
     return `<div class="am-app-home">
-      <section class="am-app-hero"><span>ÄM</span><div><p>KLASSIK · TAKTIK · POINTS</p><h4>ÄrgerMensch.KL</h4><small>Das moderne Brettspiel für 2, 3 oder 4 Spieler.</small></div></section>
-      ${active ? `<button class="am-resume-card" data-am-app="resume"><span>▶</span><div><b>${active.online ? `Online-Raum ${amEscape(amRuntime.onlineId)}` : "Bot-Partie fortsetzen"}</b><small>${active.status === "finished" ? `${amEscape(active.winnerName)} hat gewonnen.` : `${amEscape(active.players[active.turnIndex]?.name)} ist am Zug.`}</small></div></button>` : ""}
-      <div class="am-mode-grid">
-        <button data-am-app="local-setup"><span>🤖</span><b>Gegen Bots</b><small>1 gegen 1 bis vier Spieler. Strategische Bots nutzen Regeln und Extras.</small></button>
-        <button data-am-app="online"><span>🌐</span><b>Online spielen</b><small>Öffentliche Räume, private Räume und Beitritt mit sechsstelligen Codes.</small></button>
-        <button data-am-app="rules"><span>?</span><b>Regeln & Points</b><small>Klassische Laufregeln plus taktischer Point-Shop.</small></button>
+      <section class="am-app-hero"><span>KL</span><div><p>VIER SPIELE · BOT · ONLINE</p><h4>ÄrgerMensch.KL Battle</h4><small>ÄrgerMensch.KL, Grundstück-Kampf, Paket-Chaos und Reaktions-Battle in einer App.</small></div></section>
+      ${active ? `<button class="am-resume-card" data-am-app="resume"><span>▶</span><div><b>${active.online ? `ÄrgerMensch online · Raum ${amEscape(amRuntime.onlineId)}` : "ÄrgerMensch-Botpartie fortsetzen"}</b><small>${active.status === "finished" ? `${amEscape(active.winnerName)} hat gewonnen.` : `${amEscape(active.players[active.turnIndex]?.name)} ist am Zug.`}</small></div></button>` : ""}
+      <div class="am-battle-hub-title"><h4>Spiel auswählen</h4><small>2–4 SPIELER</small></div>
+      <div class="am-battle-game-grid">
+        <div class="am-battle-game-card" style="--battle:#62e6ff"><span>ÄM</span><div><b>ÄrgerMensch.KL</b><small>Klassische Laufregeln, taktische Bots, Point-Shop und Online-Raumcodes.</small></div><i>⌄</i></div>
+        <div class="am-mode-grid">
+          <button data-am-app="local-setup"><span>🤖</span><b>ÄrgerMensch gegen Bots</b><small>1 vs 1 bis vier Spieler.</small></button>
+          <button data-am-app="online"><span>🌐</span><b>ÄrgerMensch online</b><small>Öffentlich oder privat.</small></button>
+          <button data-am-app="rules"><span>?</span><b>Regeln & Points</b><small>Alle Extras erklärt.</small></button>
+        </div>
+        <button class="am-battle-game-card" style="--battle:#45e6b0" data-am-battle-game="territory"><span>▦</span><div><b>Grundstück-Kampf</b><small>Gebiete erobern, Gegner einfrieren und Felder sprengen.</small></div><i>›</i></button>
+        <button class="am-battle-game-card" style="--battle:#ffbf4b" data-am-battle-game="packages"><span>▣</span><div><b>Paket-Chaos</b><small>Logistik, Expressfristen, zerbrechliche Ware und Störkarten.</small></div><i>›</i></button>
+        <button class="am-battle-game-card" style="--battle:#b876ff" data-am-battle-game="reaction"><span>⚡</span><div><b>Reaktions-Battle</b><small>Tippen, wischen, halten, vergleichen und Leben verteidigen.</small></div><i>›</i></button>
       </div>
-      <div class="am-feature-strip"><span>2–4 Spieler</span><span>4 Figuren</span><span>8 Extras</span><span>Live-Lobbys</span></div>
+      <div class="am-feature-strip"><span>Bot-Modus</span><span>Online-Lobbys</span><span>Privatcodes</span><span>Best-of-3/5</span><span>PC & Handy</span></div>
     </div>`;
   }
 
@@ -1409,6 +1416,10 @@
       if (action === "online") amListenPublicRooms().catch((error) => amToast(error.message || error));
       amRefreshApp();
     }));
+    shell.querySelectorAll("[data-am-battle-game]").forEach((button) => button.addEventListener("click", () => {
+      if (window.LifeBuilderBattleHub?.open) window.LifeBuilderBattleHub.open(button.dataset.amBattleGame);
+      else amToast("Battle Hub wird noch geladen. Bitte die App kurz schließen und erneut öffnen.");
+    }));
     shell.querySelector("[data-am-start-local]")?.addEventListener("click", () => amStartLocal(shell));
     shell.querySelector("[data-am-create-room]")?.addEventListener("click", () => amCreateRoom(shell).catch((error) => amToast(error.message || error)));
     shell.querySelector("[data-am-join-code]")?.addEventListener("click", () => amJoinRoom(shell.querySelector("[data-am-room-code]")?.value).catch((error) => amToast(error.message || error)));
@@ -1432,7 +1443,7 @@
       icon: "ÄM",
       minTier: 1,
       status: "available",
-      description: "Modernes Mensch-ärgere-dich-nicht mit 2–4 Spielern, Strategie-Bots, Online-Lobbys, Raumcodes und Point-Shop."
+      description: "Vier Spiele in einer App: ÄrgerMensch.KL, Grundstück-Kampf, Paket-Chaos und Reaktions-Battle – mit Bots, Online-Lobbys und Privatcodes."
     });
   }
 
@@ -1456,8 +1467,8 @@
       min: 1,
       data: true,
       label: "ÄrgerMensch.KL",
-      icon: "ÄM",
-      text: "Klassisches Laufspiel im modernen Neon-Board. Spiele gegen strategische Bots oder online in öffentlichen und privaten Räumen.",
+      icon: "KL",
+      text: "Vier Multiplayer-Spiele in einer App: Brettspiel, Gebietskampf, Logistik und Reaktionsduell – gegen Bots oder online.",
       layoutClass: "device-downloaded-app am-app-icon",
       locked: missingTier,
       lockText: missingTier ? "Benötigt mindestens ein Einsteiger-Smartphone." : missingSim ? "Bot-Spiele funktionieren ohne SIM. Für Online-Lobbys wird eine SIM-Karte benötigt." : ""
