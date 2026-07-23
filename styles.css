@@ -14607,7 +14607,7 @@ dialog.character-dialog[open] .character-hub-content {
 }
 
 
-/* Startbildschirm-Touch-Hotfix · 2026-07-23 */
+/* Startbildschirm-Touch-Fix ohne Capture-Fallback · 2026-07-23 */
 #setupScreen {
   position: relative;
   isolation: isolate;
