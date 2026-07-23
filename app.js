@@ -244,7 +244,7 @@ const shopMarketCatalog = {
     { name: "Ultra Smartphone", price: 1499, item: "Ultra Smartphone", text: "Luxusklasse mit maximaler Performance und Statuswert." },
     { name: "Powerbank", price: 39, item: "Powerbank", text: "Lädt dein Handy unterwegs wieder auf 100 Prozent." }
   ],
-  phoneCredit: phoneCreditCards.map(phoneCreditCardItem),
+  phoneCredit: phoneCreditCards.filter((card) => card.credit <= 1000).map(phoneCreditCardItem),
   computer: [
     { name: "Laptop gebraucht", price: 420, item: "Laptop gebraucht", text: "Gut für Bewerbungen, Online-Business und digitale Jobs." },
     { name: "Office Laptop", price: 790, item: "Office Laptop", text: "Solider Arbeitslaptop für Gewerbe und Verwaltung. Schaltet den Erfolg Office-Arbeitsplatz frei." },
@@ -386,6 +386,7 @@ const clothingModelDefinitions = [
   { category: "outerwear", name: "Collegejacke Street", slot: "jacket", price: 119, colors: ["Schwarz", "Blau", "Rot", "Grün", "Violett"] },
   { category: "outerwear", name: "Bomberjacke Street", slot: "jacket", price: 139, colors: ["Schwarz", "Grau", "Blau", "Grün", "Braun"] },
   { category: "outerwear", name: "Pufferjacke", slot: "jacket", price: 179, colors: ["Schwarz", "Weiß", "Grau", "Blau", "Rot", "Grün", "Violett"] },
+  { category: "outerwear", name: "Jeansjacke", slot: "jacket", price: 89, colors: ["Schwarz", "Grau", "Blau", "Hellblau", "Weiß"] },
   { category: "pants", name: "Baggy Jeans", slot: "pants", price: 79, colors: ["Schwarz", "Grau", "Blau", "Hellblau", "Weiß"] },
   { category: "pants", name: "Cargo Hose Street", slot: "pants", price: 75, colors: ["Schwarz", "Grau", "Grün", "Beige", "Braun"] },
   { category: "pants", name: "Jogginghose Slim", slot: "pants", price: 49, colors: ["Schwarz", "Grau", "Blau", "Rot", "Grün"] },
@@ -401,7 +402,9 @@ const clothingModelDefinitions = [
   { category: "accessories", name: "Panzerkette", slot: "accessory", price: 129, colors: ["Gold", "Silber"] },
   { category: "accessories", name: "Königskette", slot: "accessory", price: 249, colors: ["Gold", "Silber"] },
   { category: "accessories", name: "Dollar-Anhängerkette", slot: "accessory", price: 399, colors: ["Gold", "Silber"] },
-  { category: "accessories", name: "Boss-Anhängerkette", slot: "accessory", price: 549, colors: ["Gold", "Silber"] }
+  { category: "accessories", name: "Boss-Anhängerkette", slot: "accessory", price: 549, colors: ["Gold", "Silber"] },
+  { category: "accessories", name: "Schal Classic", slot: "accessory", price: 29, colors: ["Schwarz", "Weiß", "Grau", "Blau", "Hellblau", "Rot", "Grün", "Beige", "Braun", "Violett", "Rosa", "Gelb"] },
+  { category: "accessories", name: "Cap Street", slot: "hat", price: 35, colors: ["Schwarz", "Weiß", "Grau", "Blau", "Hellblau", "Rot", "Grün", "Beige", "Braun", "Violett"] }
 ];
 
 clothingModelDefinitions.forEach((model) => {
@@ -1010,8 +1013,8 @@ const FINDER_PLAN_ORDER = ["free", "plus", "gold", "platinum"];
 const FINDER_MATCH_XP = 0;
 const FINDER_MEET_XP = 5;
 
-const finderWomenNames = ["Lea", "Mia", "Emma", "Lina", "Sophie", "Nora", "Amelie", "Clara", "Jana", "Luisa", "Mara", "Alina", "Sarah", "Elena", "Laura", "Nina", "Zoe", "Lena", "Emilia", "Hannah", "Aylin", "Chiara", "Selina", "Marie", "Isabel", "Julia", "Anna", "Maja", "Vanessa", "Kim"];
-const finderMenNames = ["Leon", "Noah", "Elias", "Finn", "Jonas", "Luca", "Paul", "Ben", "Felix", "David", "Max", "Tom", "Julian", "Nico", "Tim", "Daniel", "Chris", "Alex", "Moritz", "Fabian", "Marcel", "Kevin", "Simon", "Tobias", "Robin", "Jan", "Dennis", "Liam", "Milan", "Samuel"];
+const finderWomenNames = ["Lea", "Mia", "Emma", "Lina", "Sophie", "Nora", "Amelie", "Clara", "Jana", "Luisa", "Mara", "Alina", "Sarah", "Elena", "Laura", "Nina", "Zoe", "Lena", "Emilia", "Hannah", "Aylin", "Chiara", "Selina", "Marie", "Isabel", "Julia", "Anna", "Maja", "Vanessa", "Kim", "Theresa", "Melina", "Pia", "Antonia", "Franziska", "Michelle", "Ronja", "Sina", "Carolin", "Johanna"];
+const finderMenNames = ["Leon", "Noah", "Elias", "Finn", "Jonas", "Luca", "Paul", "Ben", "Felix", "David", "Max", "Tom", "Julian", "Nico", "Tim", "Daniel", "Chris", "Alex", "Moritz", "Fabian", "Marcel", "Kevin", "Simon", "Tobias", "Robin", "Jan", "Dennis", "Liam", "Milan", "Samuel", "Marvin", "Sebastian", "Florian", "Patrick", "Nils", "Marco", "Oliver", "Philipp", "Eric", "Matthias"];
 const finderJobs = ["Pflegefachkraft", "Elektroniker/in", "Bauzeichner/in", "Verkäufer/in", "Webdesigner/in", "Student/in", "Koch/Köchin", "Mechatroniker/in", "Fotograf/in", "Erzieher/in", "Bürokraft", "Fitnesstrainer/in", "Reiseberater/in", "Handwerker/in", "Selbstständig"];
 const finderInterests = ["Reisen", "Kochen", "Sport", "Gaming", "Autos", "Musik", "Tiere", "Filme", "Natur", "Fotografie", "Fitness", "Konzerte", "Handwerk", "Cafés", "Fußball", "Bücher", "Tanzen", "Technik", "Strand", "Städtetrips"];
 const finderIntentions = ["eine feste Beziehung", "jemanden zum Kennenlernen", "gemeinsame Abenteuer", "ehrliche Gespräche", "etwas Langfristiges"];
@@ -1034,6 +1037,7 @@ function buildFinderProfiles() {
     const dealbreaker = finderDealbreakers[(index * 5 + 2) % finderDealbreakers.length];
     return {
       id: `finder-${gender}-${index + 1}`,
+      source: "bot",
       name,
       gender,
       age,
@@ -1062,6 +1066,141 @@ function buildFinderProfiles() {
 }
 
 const finderProfiles = buildFinderProfiles();
+let finderOnlineProfiles = [];
+let finderOnlineOwnProfile = null;
+let finderOnlineLoadState = "idle";
+let finderOnlineLastLoadedAt = 0;
+
+function finderOnlineProfileFromData(uid, data = {}) {
+  const gender = data.gender === "female" ? "female" : "male";
+  const interests = Array.isArray(data.interests) && data.interests.length
+    ? data.interests.slice(0, 5).map(String)
+    : ["Freizeit", "Musik", "Reisen"];
+  return {
+    id: `online-${uid}`,
+    source: "player",
+    onlineUid: uid,
+    name: String(data.displayName || "Online-Spieler").slice(0, 40),
+    gender,
+    age: Math.max(18, Math.min(99, Number(data.age || 18))),
+    city: String(data.city || "Deutschland").slice(0, 50),
+    job: String(data.job || "LifeBuilder-Spieler/in").slice(0, 60),
+    interests,
+    intention: String(data.intention || "jemanden zum Kennenlernen").slice(0, 100),
+    bio: String(data.bio || "Ich bin ein echter LifeBuilder-Spieler.").slice(0, 240),
+    aboutLong: String(data.aboutLong || data.bio || "Echtes Spielerprofil aus Finder.KL.").slice(0, 500),
+    values: Array.isArray(data.values) ? data.values.slice(0, 3).map(String) : ["Ehrlichkeit", "Respekt"],
+    lifestyle: String(data.lifestyle || "individuell").slice(0, 100),
+    dealbreaker: String(data.dealbreaker || "Respektlosigkeit").slice(0, 100),
+    dateTaste: finderDateTastes.includes(data.dateTaste) ? data.dateTaste : "cafe",
+    prompt: String(data.prompt || "Schreib mir etwas Persönliches statt nur Hallo.").slice(0, 180),
+    colors: String(data.color || (gender === "female" ? "#c66b88" : "#3c7f9f")),
+    hair: String(data.hair || "#2a1811"),
+    skin: String(data.skin || "#dca17a"),
+    online: data.online === true,
+    createdAtMs: Number(data.createdAtMs || 0),
+    updatedAtMs: Number(data.updatedAtMs || 0),
+    lastSeenAtMs: Number(data.lastSeenAtMs || 0)
+  };
+}
+
+function finderAllProfiles() {
+  return [...finderProfiles, ...finderOnlineProfiles];
+}
+
+async function loadFinderOnlineProfiles(force = false, item = null) {
+  if (finderOnlineLoadState === "loading") return;
+  if (!force && finderOnlineLoadState === "ready" && Date.now() - finderOnlineLastLoadedAt < 45000) return;
+  finderOnlineLoadState = "loading";
+  try {
+    const fb = await loadFirebasePhoneRuntime();
+    const uid = fb.auth.currentUser?.uid || "";
+    const ownRef = uid ? fb.doc(fb.db, "finderProfiles", uid) : null;
+    const [ownSnap, onlineSnap] = await Promise.all([
+      ownRef ? fb.getDoc(ownRef) : Promise.resolve(null),
+      fb.getDocs(fb.query(fb.collection(fb.db, "finderProfiles"), fb.where("online", "==", true), fb.limit(50)))
+    ]);
+    finderOnlineOwnProfile = ownSnap?.exists() ? finderOnlineProfileFromData(uid, ownSnap.data()) : null;
+    finderOnlineProfiles = onlineSnap.docs
+      .filter((docSnap) => docSnap.id !== uid)
+      .map((docSnap) => finderOnlineProfileFromData(docSnap.id, docSnap.data()))
+      .filter((profile) => profile.age >= 18);
+    finderOnlineLoadState = "ready";
+    finderOnlineLastLoadedAt = Date.now();
+    const finder = ensureFinderState();
+    finder.onlineProfileRegistered = !!finderOnlineOwnProfile;
+    finder.onlineVisible = !!finderOnlineOwnProfile?.online;
+    save();
+  } catch (error) {
+    finderOnlineLoadState = "error";
+    console.warn("Finder online profiles failed", error);
+    addFeed(`Finder.KL Online konnte nicht aktualisiert werden: ${error.message || error}`);
+  }
+  if (item && els.dialog?.open && els.dialog.querySelector('.finder-app')) refreshDeviceApp("finder", item);
+}
+
+async function saveFinderOnlineProfile(form, item) {
+  try {
+    const fb = await loadFirebasePhoneRuntime();
+    const uid = fb.auth.currentUser?.uid;
+    if (!uid) throw new Error("Bitte zuerst mit deinem LifeBuilder-Account anmelden.");
+    const data = new FormData(form);
+    const displayName = String(data.get("displayName") || `${state.firstName || "Spieler"} ${state.lastName || ""}`).trim().slice(0, 40);
+    const profile = {
+      uid,
+      displayName,
+      gender: data.get("gender") === "female" ? "female" : "male",
+      age: Math.max(18, Math.min(99, Math.round(Number(data.get("age") || age() || 18)))),
+      city: String(data.get("city") || state.worldLocation || state.homeCity || "Deutschland").trim().slice(0, 50),
+      job: String(data.get("job") || state.job || "LifeBuilder-Spieler/in").trim().slice(0, 60),
+      bio: String(data.get("bio") || "Ich bin ein echter LifeBuilder-Spieler.").trim().slice(0, 240),
+      interests: String(data.get("interests") || "Freizeit, Musik, Reisen").split(",").map((entry) => entry.trim()).filter(Boolean).slice(0, 5),
+      intention: String(data.get("intention") || "jemanden zum Kennenlernen").trim().slice(0, 100),
+      online: data.get("online") === "on",
+      createdAtMs: finderOnlineOwnProfile?.createdAtMs ? Number(finderOnlineOwnProfile.createdAtMs) : Date.now(),
+      updatedAtMs: Date.now(),
+      lastSeenAtMs: Date.now()
+    };
+    await fb.setDoc(fb.doc(fb.db, "finderProfiles", uid), profile, { merge: true });
+    const finder = ensureFinderState();
+    finder.onlineProfileRegistered = true;
+    finder.onlineVisible = profile.online;
+    save();
+    addFeed(`Finder.KL-Profil gespeichert und ${profile.online ? "online" : "offline"} gestellt.`);
+    await loadFinderOnlineProfiles(true, item);
+  } catch (error) {
+    addFeed(`Finder.KL-Profil konnte nicht gespeichert werden: ${error.message || error}`);
+  }
+}
+
+async function setFinderOnlinePresence(enabled, item) {
+  try {
+    const fb = await loadFirebasePhoneRuntime();
+    const uid = fb.auth.currentUser?.uid;
+    if (!uid || !finderOnlineOwnProfile) throw new Error("Erstelle zuerst dein Finder.KL-Profil.");
+    await fb.updateDoc(fb.doc(fb.db, "finderProfiles", uid), { online: !!enabled, updatedAtMs: Date.now(), lastSeenAtMs: Date.now() });
+    ensureFinderState().onlineVisible = !!enabled;
+    save();
+    addFeed(`Finder.KL: Du bist jetzt ${enabled ? "online" : "offline"}.`);
+    await loadFinderOnlineProfiles(true, item);
+  } catch (error) {
+    addFeed(`Online-Status konnte nicht geändert werden: ${error.message || error}`);
+  }
+}
+
+async function finderOnlineLike(profile) {
+  const fb = await loadFirebasePhoneRuntime();
+  const uid = fb.auth.currentUser?.uid;
+  const targetUid = profile?.onlineUid;
+  if (!uid || !targetUid || uid === targetUid) return false;
+  await fb.setDoc(fb.doc(fb.db, "finderLikes", uid, "targets", targetUid), {
+    fromUid: uid,
+    toUid: targetUid,
+    createdAtMs: Date.now()
+  });
+  const mutual = await fb.getDoc(fb.doc(fb.db, "finderLikes", targetUid, "targets", uid));
+  return mutual.exists();
+}
 
 const finderDateCategories = [
   { id: "walk", name: "Spazieren gehen", prices: [0, 0, 0, 0, 0], relation: [2, 2, 3, 3, 4], labels: ["Stadtpark", "Uferweg", "Aussichtspunkt", "Sonnenuntergang", "Große Entdeckungstour"] },
@@ -1298,6 +1437,8 @@ let iconManTimer = null;
 let adminUnlocked = isDeveloperModeEnabled();
 let activeShopMarketKey = "";
 let activeClothingCategory = "";
+let activeClothingModelName = "";
+let activePurchaseReturnContext = null;
 let casinoRefreshTimer = null;
 let renderedCasinoContext = "";
 const casinoScrollMemory = new Map();
@@ -3533,6 +3674,116 @@ function stateHasItemNamed(name) {
   return (state.items || []).some((item) => itemMatchesName(item, name));
 }
 
+function purchaseChainKeyForItem(item) {
+  const name = item?.item || item?.name || "";
+  if (purchaseChains.smartphone.some((entry) => itemMatchesName(name, entry))) return "smartphone";
+  if (purchaseChains.computer.some((entry) => itemMatchesName(name, entry))) return "computer";
+  if (purchaseChains.backpacks.some((entry) => itemMatchesName(name, entry))) return "backpacks";
+  return "";
+}
+
+function purchaseChainIndex(chainKey, name) {
+  return (purchaseChains[chainKey] || []).findIndex((entry) => itemMatchesName(name, entry));
+}
+
+function ownedPurchaseChainItems(chainKey, excludeName = "") {
+  const chain = purchaseChains[chainKey] || [];
+  return (state.items || []).filter((owned) => chain.some((entry) => itemMatchesName(owned, entry)) && !itemMatchesName(owned, excludeName));
+}
+
+function bestOwnedPurchaseChainIndex(chainKey) {
+  return ownedPurchaseChainItems(chainKey).reduce((best, owned) => Math.max(best, purchaseChainIndex(chainKey, owned)), -1);
+}
+
+function removeOwnedItemEverywhere(name) {
+  let removed = 0;
+  state.items = (state.items || []).filter((entry) => {
+    if (itemMatchesName(entry, name)) { removed += 1; return false; }
+    return true;
+  });
+  if (state.inventorySlots) {
+    state.inventorySlots = state.inventorySlots.map((entry) => itemMatchesName(entry, name) ? null : entry);
+  }
+  return removed;
+}
+
+function currentShopScrollContext(marketKey = activeShopMarketKey) {
+  if (!els.dialog?.open) return null;
+  const list = els.dialog.querySelector('.clothing-variant-list, .clothing-model-list, .market-list');
+  return {
+    marketKey: marketKey || "",
+    categoryId: activeClothingCategory || "",
+    modelName: activeClothingModelName || "",
+    dialogScroll: Number(els.dialog.scrollTop || 0),
+    listScroll: Number(list?.scrollTop || 0)
+  };
+}
+
+function restoreShopScrollContext(context) {
+  if (!context) return;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const list = els.dialog?.querySelector('.clothing-variant-list, .clothing-model-list, .market-list');
+    if (els.dialog) els.dialog.scrollTop = Number(context.dialogScroll || 0);
+    if (list) list.scrollTop = Number(context.listScroll || 0);
+  }));
+}
+
+function reopenShopContext(context = activePurchaseReturnContext) {
+  if (!context?.marketKey) {
+    els.dialog?.close();
+    return;
+  }
+  const marketItem = shopItems.find((entry) => entry.market === context.marketKey)
+    || { name: "Markt", text: "Weitere Angebote.", market: context.marketKey };
+  if (context.marketKey === "clothing" && context.categoryId && context.modelName) {
+    const variants = shopMarketCatalog.clothing.filter((entry) => clothingCategoryForItem(entry) === context.categoryId && clothingModelName(entry) === context.modelName);
+    openClothingVariantPicker(marketItem, context.categoryId, context.modelName, variants);
+  } else if (context.marketKey === "clothing" && context.categoryId) {
+    openClothingCategory(marketItem, context.categoryId);
+  } else {
+    openShopMarket(marketItem);
+  }
+  restoreShopScrollContext(context);
+}
+
+function deviceReplacementCandidates(item) {
+  const chainKey = purchaseChainKeyForItem(item);
+  if (!['smartphone', 'computer'].includes(chainKey)) return [];
+  const targetName = item.item || item.name;
+  const targetIndex = purchaseChainIndex(chainKey, targetName);
+  return [...new Set(ownedPurchaseChainItems(chainKey, targetName).filter((owned) => purchaseChainIndex(chainKey, owned) < targetIndex))];
+}
+
+function openDeviceReplacementDialog(item, oldItems, returnContext) {
+  if (!oldItems?.length) return reopenShopContext(returnContext);
+  clearDialogDynamic();
+  els.dialog.classList.add('purchase-dialog', 'device-replacement-dialog');
+  const total = oldItems.reduce((sum, name) => sum + Math.max(1, inventorySellValue(name)), 0);
+  els.dialogTitle.textContent = "Altes Gerät ersetzen?";
+  els.dialogText.textContent = `${item.name} ist jetzt dein neues Hauptgerät. Möchtest du ${oldItems.join(', ')} direkt verkaufen?`;
+  const box = document.createElement('div');
+  box.className = 'replacement-device-card';
+  box.innerHTML = `<strong>${oldItems.length} altes Gerät${oldItems.length === 1 ? '' : 'e'}</strong><span>Verkaufserlös: ${euro.format(total)}</span>`;
+  const sell = document.createElement('button');
+  sell.className = 'primary-button';
+  sell.textContent = `Verkaufen ${euro.format(total)}`;
+  sell.onclick = () => {
+    oldItems.forEach(removeOwnedItemEverywhere);
+    payoutFromTreasury(total);
+    recordIncome('sales', total);
+    addFeed(`${oldItems.join(', ')} automatisch verkauft. ${euro.format(total)} erhalten.`);
+    save();
+    render();
+    reopenShopContext(returnContext);
+  };
+  const keep = document.createElement('button');
+  keep.className = 'mini-button';
+  keep.textContent = 'Behalten';
+  keep.onclick = () => reopenShopContext(returnContext);
+  els.dialog.append(box, sell, keep);
+  if (!els.dialog.open) els.dialog.showModal();
+}
+
 let itemRegistryCache = null;
 
 const ITEM_ID_DISPLAY_KEY = "lifebuilder-2026-item-id-display";
@@ -4364,6 +4615,7 @@ function openCharacterHub(section = "overview") {
   clearDialogDynamic();
   els.dialog.classList.add("character-dialog");
   els.dialog.classList.toggle("inventory-dialog", section === "inventory");
+  els.dialog.classList.toggle("character-overview-mode", section === "overview");
   els.dialogTitle.textContent = section === "inventory" ? "Charakter & Inventar" : "Charakter anpassen";
   els.dialogText.textContent = "";
   els.dialog.querySelectorAll("[data-character-floating-info]").forEach((button) => button.remove());
@@ -5117,10 +5369,14 @@ function avatarHtml(size = "", previewOutfit = null) {
     <path d="M69 317 C83 312 101 313 111 321 L110 336 L62 336 C61 327 65 321 69 317Z" fill="${shoes}" class="shoe"/>
     <path d="M151 317 C137 312 119 313 109 321 L110 336 L158 336 C159 327 155 321 151 317Z" fill="${shoes}" class="shoe"/>
   ` : "";
-  const hatLayer = hasHat ? `
+  const hatLayer = hasHat ? (hatText.includes("cap") || hatText.includes("käppi") ? `
+    <path d="M72 47 C77 25 94 13 113 13 C132 13 147 25 150 47 L147 58 C128 52 91 52 73 59Z" fill="${hat}" class="hat" stroke="rgba(255,255,255,.2)" stroke-width="2.4"/>
+    <path d="M132 53 C151 51 171 56 184 66 C166 75 145 70 127 60Z" fill="${hat}" class="hat-brim" stroke="rgba(0,0,0,.35)" stroke-width="2.6" stroke-linejoin="round"/>
+    <path d="M82 44 C96 35 127 35 141 44" fill="none" stroke="rgba(255,255,255,.25)" stroke-width="3.2" stroke-linecap="round"/>
+    <circle cx="113" cy="15" r="3.4" fill="${hat}" stroke="rgba(255,255,255,.18)" stroke-width="1.2"/>
+  ` : `
     <path d="M72 43 C84 26 134 26 149 43 L148 56 C130 50 91 50 72 56Z" fill="${hat}" class="hat"/>
-    <path d="M141 49 C158 49 169 55 173 61 C158 63 145 61 135 56Z" fill="${hat}"/>
-  ` : "";
+  `) : "";
   const bandanaLayer = hasBandana ? `
     <path d="M74 42 C87 31 132 31 147 43 L146 56 C125 51 94 51 74 57Z" fill="${bandana}" class="hat"/>
     <path d="M143 50 L165 59 L146 68Z" fill="${bandana}"/>
@@ -7721,7 +7977,10 @@ function openShopMarket(marketItem) {
   els.dialogText.textContent = marketItem.text;
   const list = document.createElement("div");
   list.className = "market-list";
-  list.innerHTML = entries.map((item, index) => {
+  const marketHint = marketItem.market === "phoneCredit"
+    ? `<article class="item-card market-info-card"><div><h3>Online nur bis 1.000 €</h3><p>Größere Sim.KL-Guthabenkarten bekommst du ausschließlich im Supermarkt, am Bahnhof oder an der Tankstelle.</p></div><button disabled>Hinweis</button></article>`
+    : "";
+  list.innerHTML = marketHint + entries.map((item, index) => {
     const missingNeed = item.needItem && !(isWorkshopTuningItem(item) ? vehicleCount() > 0 : state.items.includes(item.needItem));
     const progression = shopProgressionStatus(item, marketItem.market);
     const owned = !item.repeatable && (progression.owned || (item.item && !item.wear && (stateHasItemNamed(item.item) || (item.backpackSlots && (state.backpackSlots || 0) >= item.backpackSlots))));
@@ -7752,8 +8011,10 @@ function clothingCategoryForItem(item) {
   const name = String(item.name || item.item || "").toLowerCase();
   if (/boxer|unterwäsche/.test(name)) return "underwear";
   if (/schuh|sneaker|boot|socke/.test(name)) return "shoes";
+  // Jacken müssen vor dem allgemeinen Begriff „Jeans“ geprüft werden,
+  // damit eine Jeansjacke nicht versehentlich im Hosen-Markt erscheint.
+  if (/pullover|hoodie|jacke|strick|mantel|weste/.test(name)) return "outerwear";
   if (/hose|jeans|short|chino/.test(name)) return "pants";
-  if (/pullover|hoodie|jacke|strick/.test(name)) return "outerwear";
   if (/t-shirt|tanktop|hemd|longsleeve|polo|anzug/.test(name)) return "tops";
   return "accessories";
 }
@@ -7822,6 +8083,7 @@ function openClothingMarket(marketItem) {
 function openClothingCategory(marketItem, categoryId) {
   activeShopMarketKey = "clothing";
   activeClothingCategory = categoryId;
+  activeClothingModelName = "";
   const category = clothingCategoryDefinitions.find((entry) => entry.id === categoryId) || clothingCategoryDefinitions[0];
   const entries = shopMarketCatalog.clothing.filter((item) => clothingCategoryForItem(item) === category.id);
   const groups = [...entries.reduce((map, item) => {
@@ -7860,6 +8122,9 @@ function openClothingCategory(marketItem, categoryId) {
 }
 
 function openClothingVariantPicker(marketItem, categoryId, modelName, variants) {
+  activeShopMarketKey = "clothing";
+  activeClothingCategory = categoryId;
+  activeClothingModelName = modelName;
   clearDialogDynamic();
   els.dialogTitle.textContent = modelName;
   els.dialogText.textContent = "Wähle deine Farbe. Die Vorschau zeigt den Farbton, gekauft wird nur die ausgewählte Variante.";
@@ -7905,7 +8170,7 @@ function clearDialogDynamic() {
     deviceInfoTimer = null;
   }
   setDialogBack(null);
-  els.dialog.classList.remove("device-dialog", "character-dialog", "inventory-dialog", "logistics-dialog", "player-shop-dialog", "wardrobe-dialog", "intro-dialog");
+  els.dialog.classList.remove("device-dialog", "character-dialog", "inventory-dialog", "logistics-dialog", "player-shop-dialog", "wardrobe-dialog", "intro-dialog", "purchase-dialog", "device-replacement-dialog", "character-overview-mode");
   els.dialogText?.classList.remove("purchase-error");
   const staticNodes = new Set([
     els.dialogTitle,
@@ -7930,6 +8195,7 @@ function closeCharacterDialogLayers() {
 
 function openShopPaymentDialog(item, marketKey = activeShopMarketKey) {
   if (item?.property?.id === "custom-home-1") return openCustomHomeBuildDialog(item);
+  activePurchaseReturnContext = currentShopScrollContext(marketKey);
   const purchaseMarketKey = marketKey || "";
   const progression = shopProgressionStatus(item, purchaseMarketKey);
   if (progression.locked) return showPurchaseFailure(progression.text || "Dieses Angebot ist noch gesperrt.");
@@ -7939,7 +8205,14 @@ function openShopPaymentDialog(item, marketKey = activeShopMarketKey) {
   if (isVehicleShopItem(item) && vehicleCount() >= vehicleCapacity()) return showPurchaseFailure("Du brauchst erst eine Garage, bevor du noch ein Fahrzeug kaufen kannst.");
   if (item.needItem && !(isWorkshopTuningItem(item) ? vehicleCount() > 0 : state.items.includes(item.needItem))) return showPurchaseFailure("Dafür fehlt dir der passende Besitz.");
   if (item.needProperty && !hasProperty(item.needProperty)) return showPurchaseFailure("Dafür brauchst du zuerst das passende Grundstück.");
+  const chainKey = purchaseChainKeyForItem(item);
+  const targetChainIndex = chainKey ? purchaseChainIndex(chainKey, item.item || item.name) : -1;
+  const bestOwnedIndex = chainKey ? bestOwnedPurchaseChainIndex(chainKey) : -1;
+  if (chainKey && bestOwnedIndex >= targetChainIndex && !stateHasItemNamed(item.item || item.name)) {
+    return showPurchaseFailure(chainKey === "backpacks" ? "Du besitzt bereits einen gleich großen oder besseren Rucksack." : "Du besitzt bereits ein gleichwertiges oder besseres Gerät.");
+  }
   clearDialogDynamic();
+  els.dialog.classList.add("purchase-dialog");
   els.dialogTitle.textContent = item.name;
   els.dialogText.classList.remove("purchase-error");
   const bulk = !!item.effect || !!item.repeatable;
@@ -7972,7 +8245,10 @@ function openShopPaymentDialog(item, marketKey = activeShopMarketKey) {
   const close = document.createElement("button");
   close.className = "mini-button";
   close.textContent = "Abbrechen";
-  close.onclick = () => els.dialog.close();
+  close.onclick = () => {
+    if (activePurchaseReturnContext?.marketKey) reopenShopContext(activePurchaseReturnContext);
+    else els.dialog.close();
+  };
   if (bulk) els.dialog.append(quantity);
   els.dialog.append(cash, cardBtn, close);
   updateButtons();
@@ -7992,12 +8268,17 @@ function completeShopPurchase(item, method, quantity = 1, purchaseMarketKey = ac
   const total = item.price * count;
   const isClothing = !!item.wear;
   const isBackpack = !!item.backpackSlots;
+  const chainKey = purchaseChainKeyForItem(item);
+  const oldDeviceItems = deviceReplacementCandidates(item);
+  const returnContext = activePurchaseReturnContext ? { ...activePurchaseReturnContext } : null;
   if (isBackpack && stateHasItemNamed(item.item)) return showPurchaseFailure(`${item.name} besitzt du bereits.`);
   if (item.item && !item.repeatable && !isClothing && !isBackpack && stateHasItemNamed(item.item)) return showPurchaseFailure(`${item.name} besitzt du bereits.`);
   if (item.property && hasProperty(item.property.id)) return showPurchaseFailure(`${item.name} besitzt du bereits.`);
   if (isVehicleShopItem(item) && vehicleCount() >= vehicleCapacity()) return showPurchaseFailure("Du brauchst erst eine Garage, bevor du noch ein Fahrzeug kaufen kannst.");
   if (item.needProperty && !hasProperty(item.needProperty)) return showPurchaseFailure("Dafür brauchst du zuerst das passende Grundstück.");
-  if ((item.effect || isStorableShopItem(item)) && inventoryUsed() + count > inventoryCapacity()) {
+  const oldBackpackItems = isBackpack ? ownedPurchaseChainItems("backpacks", item.item || item.name) : [];
+  const replacementSlots = oldDeviceItems.length + oldBackpackItems.length;
+  if ((item.effect || isStorableShopItem(item)) && inventoryUsed() + count - replacementSlots > inventoryCapacity()) {
     return showPurchaseFailure(`Inventar voll: ${inventoryUsed()}/${inventoryCapacity()}. Kaufe zuerst einen größeren Rucksack oder verkaufe einen Gegenstand.`);
   }
   if (!pay(total, false, { method, taxRate: shopTaxRate(item, marketKey) })) {
@@ -8009,7 +8290,10 @@ function completeShopPurchase(item, method, quantity = 1, purchaseMarketKey = ac
     addConsumable(item, count);
   }
   if (item.backpackSlots) {
-    state.backpackSlots = Math.max(state.backpackSlots || 0, item.backpackSlots);
+    // Ein neuer Rucksack ersetzt den alten vollständig. Es bleibt immer genau
+    // ein aktiver Rucksack im Inventar, ohne zusätzlichen Verkaufserlös.
+    purchaseChains.backpacks.forEach((name) => removeOwnedItemEverywhere(name));
+    state.backpackSlots = Number(item.backpackSlots || 0);
     if (item.item && !state.items.includes(item.item)) state.items.push(item.item);
   }
   if (item.item && !isClothing && !isBackpack) {
@@ -8040,10 +8324,10 @@ function completeShopPurchase(item, method, quantity = 1, purchaseMarketKey = ac
   addFeed(`${item.name}${count > 1 ? ` (${count}x)` : ""} gekauft (${method === "cash" ? "bar" : "Karte"}).`, { purchase: { name: item.name, quantity: count, total, method } });
   save();
   render();
-  if (marketKey && shopMarketCatalog[marketKey]) {
-    const marketItem = shopItems.find((entry) => entry.market === marketKey) || { name: "Markt", text: "Weitere Angebote.", market: marketKey };
-    if (marketKey === "clothing" && activeClothingCategory) openClothingCategory(marketItem, activeClothingCategory);
-    else openShopMarket(marketItem);
+  if (oldDeviceItems.length) {
+    openDeviceReplacementDialog(item, oldDeviceItems, returnContext);
+  } else if (returnContext?.marketKey) {
+    reopenShopContext(returnContext);
   } else {
     els.dialog.close();
   }
@@ -11632,7 +11916,7 @@ function finderPlanRank(planId = ensureFinderState().plan) {
 }
 
 function finderProfileById(id) {
-  return finderProfiles.find((profile) => profile.id === id) || null;
+  return finderAllProfiles().find((profile) => profile.id === id) || null;
 }
 
 function finderRelationshipPartner() {
@@ -11868,7 +12152,20 @@ function finderFreeCooldownDays() {
 
 function finderProfilesForPreference() {
   const finder = ensureFinderState();
-  return finderProfiles.filter((profile) => profile.gender === finder.preference);
+  const bots = finderProfiles.filter((profile) => profile.gender === finder.preference);
+  const players = finderOnlineProfiles.filter((profile) => profile.gender === finder.preference && profile.online);
+  if (!players.length) return bots;
+  // Zuerst erscheinen immer wieder Bots. Nach jeweils drei Bots wird ein
+  // echter Online-Spieler eingemischt, damit Spielerprofile nicht sofort,
+  // aber zuverlässig innerhalb der täglichen Auswahl auftauchen.
+  const mixed = [];
+  let playerIndex = 0;
+  bots.forEach((bot, index) => {
+    mixed.push(bot);
+    if ((index + 1) % 3 === 0 && playerIndex < players.length) mixed.push(players[playerIndex++]);
+  });
+  while (playerIndex < players.length) mixed.push(players[playerIndex++]);
+  return mixed;
 }
 
 function finderCurrentProfile() {
@@ -11976,6 +12273,7 @@ function finderDiscoverHtml() {
     ${cooldown ? `<div class="finder-cooldown-note"><b>Free-Matchpause</b><span>Noch ${cooldown} Schlaf-Tag${cooldown === 1 ? "" : "e"}, bis ein neues Match entstehen kann.</span></div>` : ""}
     ${profile ? `<div class="finder-swipe-stage">
       <article class="finder-profile-card" data-finder-swipe-card data-profile-id="${profile.id}">
+        <span class="finder-source-badge ${profile.source === "player" ? "player" : "bot"}">${profile.source === "player" ? "PLAYER · ONLINE" : "BOT"}</span>
         ${finderProfileAvatarHtml(profile, "hero")}
         <div class="finder-profile-teaser">
           <p>${escapeHtml(profile.bio)}</p>
@@ -12021,9 +12319,43 @@ function finderLikesHtml() {
   }).join("")}</div>`;
 }
 
+function finderOnlineSettingsHtml() {
+  const profile = finderOnlineOwnProfile;
+  const finder = ensureFinderState();
+  if (finderOnlineLoadState === "loading") return `<div class="finder-settings-card finder-online-card"><h4>Online-Profil</h4><p>Online-Spieler werden geladen …</p></div>`;
+  const current = profile || {
+    name: `${state.firstName || "Spieler"} ${state.lastName || ""}`.trim(),
+    gender: state.gender === "female" ? "female" : "male",
+    age: Math.max(18, age()),
+    city: state.worldLocation || state.homeCity || "Deutschland",
+    job: state.job || "LifeBuilder-Spieler/in",
+    bio: "Ich bin ein echter LifeBuilder-Spieler.",
+    interests: ["Freizeit", "Musik", "Reisen"],
+    online: finder.onlineVisible !== false
+  };
+  return `<div class="finder-settings-card finder-online-card">
+    <header><div><small>ECHTE SPIELER</small><h4>${profile ? "Dein Finder.KL-Profil" : "Bei Finder.KL anmelden"}</h4></div><span class="finder-online-state ${current.online ? "online" : "offline"}">${current.online ? "ONLINE" : "OFFLINE"}</span></header>
+    <p>Du verwendest automatisch deinen angemeldeten LifeBuilder-Firebase-Account. Es ist keine zweite E-Mail-Anmeldung nötig.</p>
+    <form data-finder-online-profile-form class="finder-online-form">
+      <label>Name<input name="displayName" maxlength="40" required value="${escapeHtml(current.name || "")}"></label>
+      <label>Alter<input name="age" type="number" min="18" max="99" required value="${Math.max(18, Number(current.age || 18))}"></label>
+      <label>Geschlecht<select name="gender"><option value="male" ${current.gender === "male" ? "selected" : ""}>Mann</option><option value="female" ${current.gender === "female" ? "selected" : ""}>Frau</option></select></label>
+      <label>Wohnort<input name="city" maxlength="50" value="${escapeHtml(current.city || "")}"></label>
+      <label>Beruf<input name="job" maxlength="60" value="${escapeHtml(current.job || "")}"></label>
+      <label class="wide">Interessen, mit Komma getrennt<input name="interests" maxlength="150" value="${escapeHtml((current.interests || []).join(", "))}"></label>
+      <label class="wide">Profiltext<textarea name="bio" maxlength="240">${escapeHtml(current.bio || "")}</textarea></label>
+      <label class="wide">Ich suche<input name="intention" maxlength="100" value="${escapeHtml(current.intention || "jemanden zum Kennenlernen")}"></label>
+      <label class="finder-online-check wide"><input name="online" type="checkbox" ${current.online ? "checked" : ""}> Profil nach dem Speichern online anzeigen</label>
+      <button class="mini-button gold wide" type="submit">${profile ? "Profil aktualisieren" : "Profil erstellen"}</button>
+    </form>
+    ${profile ? `<div class="finder-online-actions"><button class="mini-button ${current.online ? "danger" : "gold"}" data-finder-online-toggle="${current.online ? "off" : "on"}">${current.online ? "Offline stellen" : "Online stellen"}</button><button class="mini-button" data-finder-online-refresh>Spieler aktualisieren</button></div>` : ""}
+  </div>`;
+}
+
 function finderSettingsHtml() {
   const finder = ensureFinderState();
   return `${finderSummaryHtml()}
+    ${finderOnlineSettingsHtml()}
     <div class="finder-plan-grid">${FINDER_PLAN_ORDER.map((planId) => {
       const plan = FINDER_PLANS[planId];
       const current = finder.plan === planId;
@@ -12046,13 +12378,19 @@ function finderProfileDetailsHtml(profile) {
   if (!plan.profileAccess) return `${finderSummaryHtml()}<div class="finder-empty"><b>Finder.KL Gold erforderlich</b><p>Vollständige Profile lassen sich ab Gold öffnen.</p><button class="mini-button gold" data-finder-tab="settings">Tarife ansehen</button></div>`;
   const backTab = finder.activeProfileSource === "likes" ? "likes" : "discover";
   const platinum = finder.plan === "platinum";
-  return `<button class="mini-button" data-finder-tab="${backTab}">← Zurück</button><article class="finder-full-profile">${finderProfileAvatarHtml(profile, "detail")}<h4>${escapeHtml(profile.name)}, ${profile.age}</h4><p>${escapeHtml(profile.bio)}</p>${platinum ? `<section class="finder-platinum-details"><h5>Platinum-Profil</h5><p>${escapeHtml(profile.aboutLong)}</p><dl><div><dt>Lebensstil</dt><dd>${escapeHtml(profile.lifestyle)}</dd></div><div><dt>Werte</dt><dd>${escapeHtml(profile.values.join(" & "))}</dd></div><div><dt>No-Go</dt><dd>${escapeHtml(profile.dealbreaker)}</dd></div><div><dt>Lieblingsdate</dt><dd>${escapeHtml(finderDateCategories.find((entry) => entry.id === profile.dateTaste)?.name || "Überraschung")}</dd></div></dl></section>` : ""}<dl><div><dt>Wohnort</dt><dd>${escapeHtml(profile.city)}</dd></div><div><dt>Beruf</dt><dd>${escapeHtml(profile.job)}</dd></div><div><dt>Sucht</dt><dd>${escapeHtml(profile.intention)}</dd></div></dl><blockquote>${escapeHtml(profile.prompt)}</blockquote><div>${profile.interests.map((interest) => `<span>${escapeHtml(interest)}</span>`).join("")}</div></article>`;
+  return `<button class="mini-button" data-finder-tab="${backTab}">← Zurück</button><article class="finder-full-profile"><span class="finder-source-badge ${profile.source === "player" ? "player" : "bot"}">${profile.source === "player" ? "ECHTER PLAYER" : "BOT"}</span>${finderProfileAvatarHtml(profile, "detail")}<h4>${escapeHtml(profile.name)}, ${profile.age}</h4><p>${escapeHtml(profile.bio)}</p>${platinum ? `<section class="finder-platinum-details"><h5>Platinum-Profil</h5><p>${escapeHtml(profile.aboutLong)}</p><dl><div><dt>Lebensstil</dt><dd>${escapeHtml(profile.lifestyle)}</dd></div><div><dt>Werte</dt><dd>${escapeHtml(profile.values.join(" & "))}</dd></div><div><dt>No-Go</dt><dd>${escapeHtml(profile.dealbreaker)}</dd></div><div><dt>Lieblingsdate</dt><dd>${escapeHtml(finderDateCategories.find((entry) => entry.id === profile.dateTaste)?.name || "Überraschung")}</dd></div></dl></section>` : ""}<dl><div><dt>Wohnort</dt><dd>${escapeHtml(profile.city)}</dd></div><div><dt>Beruf</dt><dd>${escapeHtml(profile.job)}</dd></div><div><dt>Sucht</dt><dd>${escapeHtml(profile.intention)}</dd></div></dl><blockquote>${escapeHtml(profile.prompt)}</blockquote><div>${profile.interests.map((interest) => `<span>${escapeHtml(interest)}</span>`).join("")}</div></article>`;
 }
 
 function finderChatHtml(profile) {
   const finder = ensureFinderState();
   const chat = finderChatFor(profile.id);
   const relationship = finder.relationshipId === profile.id;
+  if (profile.source === "player") {
+    return `<button class="mini-button" data-finder-tab="matches">← Matches</button>
+      <div class="finder-chat-head">${finderProfileAvatarHtml(profile, "mini")}<div><b>${escapeHtml(profile.name)}</b><small>ECHTER PLAYER · ${profile.online ? "online" : "offline"}</small><i>Gegenseitiges Finder-Like</i></div></div>
+      <div class="finder-empty"><b>Online-Match hergestellt</b><p>Dieses Profil gehört zu einem echten LifeBuilder-Spieler. Automatische Bot-Antworten sind hier deaktiviert. Nutzt Telefon/SMS im Spiel, um wirklich miteinander zu schreiben.</p></div>
+      <div class="finder-chat-actions"><button class="mini-button danger" data-finder-unmatch="${profile.id}">Match beenden</button></div>`;
+  }
   return `<button class="mini-button" data-finder-tab="matches">← Matches</button>
     <div class="finder-chat-head">${finderProfileAvatarHtml(profile, "mini")}<div><b>${escapeHtml(profile.name)}</b><small>${chat.meetingAccepted ? `${escapeHtml(profile.city)} · Treffen möglich` : "Match"}</small><i>${relationship ? "In einer Beziehung" : `${Math.round(chat.interest)}% Verbindung`}</i></div></div>
     <div class="finder-chat-thread" data-finder-chat-thread>${chat.messages.length ? chat.messages.map((message) => `<p class="${message.from === "me" ? "me" : "them"}"><span>${escapeHtml(message.text)}</span><small>${new Date(message.at || Date.now()).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}${finderPlanRank() >= 2 && message.from === "me" ? " · gelesen" : ""}</small></p>`).join("") : `<div class="finder-empty small"><p>Schreib etwas Persönliches. Die Antworten reagieren auf Begrüßung, Interessen, Wohnort, Arbeit, Humor und Treffen.</p></div>`}</div>
@@ -12171,7 +12509,7 @@ function loseFinderMatch(profileId, item, reason = "Match beendet") {
   refreshDeviceApp("finder", item);
 }
 
-function finderSwipe(direction, item) {
+async function finderSwipe(direction, item) {
   const finder = ensureFinderState();
   const profile = finderCurrentProfile();
   if (!profile) return addFeed("Heute sind keine weiteren Finder.KL-Profile verfügbar.");
@@ -12180,22 +12518,43 @@ function finderSwipe(direction, item) {
   if (direction === "right") {
     if (!finder.liked.includes(profile.id)) finder.liked.push(profile.id);
     const plan = finderPlanConfig();
-    const compatibility = 0.48 + plan.matchBoost + Math.min(0.24, ((state.skills?.Charisma || 0) + (state.skills?.Kommunikation || 0)) * 0.012);
-    const matched = Math.random() < compatibility;
-    if (matched) {
-      const allowed = finderCanCreateMatch();
-      if (allowed.ok) {
-        if (!finder.matches.includes(profile.id)) finder.matches.unshift(profile.id);
-        finder.totalMatches += 1;
-        const chat = finderChatFor(profile.id);
-        chat.lost = false;
-        if (!chat.messages.length) chat.messages.push({ from: "them", text: `Hey ${state.firstName || "du"} 😊 Dein Profil wirkt sympathisch. Was machst du gern, wenn du frei hast?`, at: Date.now() });
-        addFeed(`Finder.KL: Match mit ${profile.name}.`);
-      } else {
-        addFeed(`${profile.name} hätte ebenfalls Interesse, aber: ${allowed.reason}`);
+    if (profile.source === "player") {
+      try {
+        const mutual = await finderOnlineLike(profile);
+        if (mutual) {
+          const allowed = finderCanCreateMatch();
+          if (allowed.ok) {
+            if (!finder.matches.includes(profile.id)) finder.matches.unshift(profile.id);
+            finder.totalMatches += 1;
+            const chat = finderChatFor(profile.id);
+            chat.lost = false;
+            if (!chat.messages.length) chat.messages.push({ from: "them", text: "Gegenseitiges Like – ihr seid jetzt ein Online-Match.", at: Date.now() });
+            addFeed(`Finder.KL: Echtes Online-Match mit ${profile.name}.`);
+          } else addFeed(`Gegenseitiges Like mit ${profile.name}, aber: ${allowed.reason}`);
+        } else {
+          addFeed(`Like an ${profile.name} gesendet. Ein Match entsteht, sobald die Person dich ebenfalls liked.`);
+        }
+      } catch (error) {
+        addFeed(`Online-Like konnte nicht gespeichert werden: ${error.message || error}`);
       }
     } else {
-      addFeed(`Du hast ${profile.name} mit einem Match-Like markiert. Noch kein Match.`);
+      const compatibility = 0.48 + plan.matchBoost + Math.min(0.24, ((state.skills?.Charisma || 0) + (state.skills?.Kommunikation || 0)) * 0.012);
+      const matched = Math.random() < compatibility;
+      if (matched) {
+        const allowed = finderCanCreateMatch();
+        if (allowed.ok) {
+          if (!finder.matches.includes(profile.id)) finder.matches.unshift(profile.id);
+          finder.totalMatches += 1;
+          const chat = finderChatFor(profile.id);
+          chat.lost = false;
+          if (!chat.messages.length) chat.messages.push({ from: "them", text: `Hey ${state.firstName || "du"} 😊 Dein Profil wirkt sympathisch. Was machst du gern, wenn du frei hast?`, at: Date.now() });
+          addFeed(`Finder.KL: Match mit ${profile.name}.`);
+        } else {
+          addFeed(`${profile.name} hätte ebenfalls Interesse, aber: ${allowed.reason}`);
+        }
+      } else {
+        addFeed(`Du hast ${profile.name} mit einem Match-Like markiert. Noch kein Match.`);
+      }
     }
   } else {
     if (!finder.passed.includes(profile.id)) finder.passed.push(profile.id);
@@ -12482,6 +12841,7 @@ function completeFinderDate(profileId, optionId) {
 
 function bindFinderDeviceActions(shell, item) {
   const finder = ensureFinderState();
+  loadFinderOnlineProfiles(false, item);
   shell.querySelectorAll("[data-finder-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       finder.view = button.dataset.finderTab || "discover";
@@ -12501,6 +12861,12 @@ function bindFinderDeviceActions(shell, item) {
       refreshDeviceApp("finder", item);
     });
   });
+  shell.querySelector("[data-finder-online-profile-form]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveFinderOnlineProfile(event.currentTarget, item);
+  });
+  shell.querySelectorAll("[data-finder-online-toggle]").forEach((button) => button.addEventListener("click", () => setFinderOnlinePresence(button.dataset.finderOnlineToggle === "on", item)));
+  shell.querySelector("[data-finder-online-refresh]")?.addEventListener("click", () => loadFinderOnlineProfiles(true, item));
   shell.querySelectorAll("[data-finder-plan]").forEach((button) => button.addEventListener("click", () => changeFinderPlan(button.dataset.finderPlan, item)));
   shell.querySelectorAll("[data-finder-favorite]").forEach((button) => button.addEventListener("click", () => finderFavoriteProfile(button.dataset.finderFavorite, item)));
   shell.querySelector("[data-finder-rewind]")?.addEventListener("click", () => finderRewindLastPass(item));

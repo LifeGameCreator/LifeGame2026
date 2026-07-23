@@ -14413,3 +14413,409 @@ dialog.character-dialog[open] .character-hub-content {
 .avatar-svg .shoe {
   paint-order: stroke fill;
 }
+
+
+/* ==========================================================================
+   LifeBuilder Shop, Kleidung & Finder Online Fix · Cache 20260723-shop-finder-3
+   ========================================================================== */
+
+/* Kaufdialoge bleiben kompakte, mittige Karten statt den gesamten Bildschirm
+   mit einer leeren Fläche zu blockieren. */
+#detailDialog.purchase-dialog[open] {
+  position: fixed !important;
+  inset: 50% auto auto 50% !important;
+  transform: translate(-50%, -50%) !important;
+  display: grid !important;
+  align-content: start !important;
+  gap: 12px !important;
+  box-sizing: border-box !important;
+  width: min(560px, calc(100vw - 28px)) !important;
+  max-width: min(560px, calc(100vw - 28px)) !important;
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: min(78dvh, 690px) !important;
+  margin: 0 !important;
+  padding: 22px !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain !important;
+  -webkit-overflow-scrolling: touch !important;
+  border-radius: 22px !important;
+}
+#detailDialog.purchase-dialog > #dialogTitle {
+  margin: 0 72px 2px 0 !important;
+  font-size: clamp(1.65rem, 6vw, 2.2rem) !important;
+  line-height: 1.08 !important;
+}
+#detailDialog.purchase-dialog > #dialogText {
+  margin: 0 !important;
+  max-width: none !important;
+  font-size: clamp(.98rem, 3.8vw, 1.16rem) !important;
+  line-height: 1.42 !important;
+}
+#detailDialog.purchase-dialog > .quantity-field {
+  display: grid !important;
+  grid-template-columns: auto minmax(88px, 1fr) !important;
+  align-items: center !important;
+  gap: 12px !important;
+  width: 100% !important;
+  margin: 0 !important;
+}
+#detailDialog.purchase-dialog > .quantity-field input {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+#detailDialog.purchase-dialog > button:not(#closeDialog):not(.dialog-back) {
+  width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+}
+#detailDialog.purchase-dialog.device-replacement-dialog {
+  max-width: 520px !important;
+}
+.replacement-device-card {
+  display: grid;
+  gap: 6px;
+  padding: 18px;
+  border: 1px solid rgba(113, 220, 173, .25);
+  border-radius: 18px;
+  background: rgba(21, 45, 36, .7);
+}
+.replacement-device-card strong { font-size: 1.12rem; }
+.replacement-device-card span { color: var(--muted, #b9c3bd); }
+
+/* Kleidungslisten: Text, Farbpunkte und Auswahlknopf erhalten getrennte,
+   stabile Bereiche und können sich nicht mehr überlagern. */
+.clothing-model-card,
+.clothing-variant-card {
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 14px !important;
+}
+.clothing-model-card > div,
+.clothing-variant-card > div {
+  min-width: 0 !important;
+}
+.clothing-model-card > button,
+.clothing-variant-card > button {
+  position: static !important;
+  align-self: center !important;
+  width: auto !important;
+  min-width: 112px !important;
+  margin: 0 !important;
+}
+.clothing-swatches {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 7px !important;
+  margin-top: 9px !important;
+}
+.clothing-swatches i {
+  flex: 0 0 24px !important;
+  width: 24px !important;
+  height: 24px !important;
+}
+
+/* Charakter-Startseite: kompletter Körper bis zu den Füßen sichtbar, ohne
+   innerhalb der Übersicht nach unten scrollen zu müssen. */
+#detailDialog.character-dialog.character-overview-mode[open] {
+  overflow: hidden !important;
+}
+#detailDialog.character-dialog.character-overview-mode .character-hub,
+#detailDialog.character-dialog.character-overview-mode .character-hub-content {
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+#detailDialog.character-dialog.character-overview-mode .character-overview-card {
+  display: grid !important;
+  grid-template-rows: auto auto minmax(0, 1fr) !important;
+  gap: 8px !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  padding: 12px !important;
+}
+#detailDialog.character-dialog.character-overview-mode .character-overview-head {
+  margin: 0 !important;
+}
+#detailDialog.character-dialog.character-overview-mode .meta-strip.compact {
+  margin: 0 !important;
+}
+#detailDialog.character-dialog.character-overview-mode .character-overview-body {
+  min-height: 0 !important;
+  height: 100% !important;
+  align-content: start !important;
+}
+#detailDialog.character-dialog.character-overview-mode .character-avatar-stack,
+#detailDialog.character-dialog.character-overview-mode .character-couple {
+  min-height: 0 !important;
+  height: 100% !important;
+}
+#detailDialog.character-dialog.character-overview-mode .character-person-card {
+  display: grid !important;
+  grid-template-rows: minmax(0, 1fr) auto auto !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  max-height: none !important;
+  overflow: hidden !important;
+}
+#detailDialog.character-dialog.character-overview-mode .character-person-figure {
+  min-height: 0 !important;
+  max-height: none !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+#detailDialog.character-dialog.character-overview-mode .character-person-figure .avatar-card,
+#detailDialog.character-dialog.character-overview-mode .character-person-figure svg {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+}
+
+/* Kleiderschrank: Vorschau bleibt fest, nur die Liste mit vorhandener Kleidung
+   scrollt. Dadurch bleibt die Figur vollständig sichtbar. */
+#detailDialog.wardrobe-dialog[open] {
+  overflow: hidden !important;
+}
+#detailDialog.wardrobe-dialog .wardrobe-closet {
+  display: grid !important;
+  grid-template-columns: minmax(250px, .82fr) minmax(300px, 1.18fr) !important;
+  gap: 16px !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+#detailDialog.wardrobe-dialog .wardrobe-preview {
+  display: grid !important;
+  grid-template-rows: minmax(0, 1fr) auto !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+#detailDialog.wardrobe-dialog .wardrobe-preview .avatar-card,
+#detailDialog.wardrobe-dialog .wardrobe-preview .avatar-svg {
+  width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+}
+#detailDialog.wardrobe-dialog .wardrobe-list {
+  min-height: 0 !important;
+  height: 100% !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior-y: contain !important;
+  -webkit-overflow-scrolling: touch !important;
+  padding-right: 4px !important;
+}
+
+/* Finder.KL Online */
+.finder-source-badge {
+  position: absolute;
+  z-index: 5;
+  top: 12px;
+  left: 12px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 5px 9px;
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 999px;
+  background: rgba(7, 13, 11, .84);
+  color: #f2c95e;
+  font-size: .68rem;
+  font-weight: 900;
+  letter-spacing: .08em;
+  box-shadow: 0 5px 16px rgba(0,0,0,.3);
+}
+.finder-source-badge.player {
+  color: #6fe0ac;
+  border-color: rgba(111,224,172,.45);
+}
+.finder-profile-card,
+.finder-full-profile {
+  position: relative;
+}
+.finder-online-card {
+  border-color: rgba(111,224,172,.35) !important;
+}
+.finder-online-card > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.finder-online-state {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(126, 136, 131, .16);
+  font-size: .72rem;
+  font-weight: 900;
+}
+.finder-online-state.online { color: #6fe0ac; background: rgba(54,188,127,.15); }
+.finder-online-state.offline { color: #adb8b2; }
+.finder-online-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.finder-online-form label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.finder-online-form .wide { grid-column: 1 / -1; }
+.finder-online-form input,
+.finder-online-form select,
+.finder-online-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+.finder-online-form textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+.finder-online-check {
+  grid-template-columns: auto minmax(0, 1fr) !important;
+  align-items: center;
+}
+.finder-online-check input { width: auto !important; }
+.finder-online-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+/* Käppi ist auf allen Avatargrößen sichtbar und wird nicht abgeschnitten. */
+.avatar-svg .hat,
+.avatar-svg .hat-brim {
+  vector-effect: non-scaling-stroke;
+}
+.character-person-figure,
+.wardrobe-preview,
+.avatar-card {
+  overflow: visible;
+}
+
+/* Mobile Feinschliff */
+@media (max-width: 700px) {
+  #detailDialog.purchase-dialog[open] {
+    inset: 50% auto auto 50% !important;
+    width: min(92vw, 520px) !important;
+    max-width: min(92vw, 520px) !important;
+    max-height: min(74dvh, 620px) !important;
+    padding: 18px 16px calc(18px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .clothing-model-card,
+  .clothing-variant-card {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 10px !important;
+  }
+  .clothing-model-card > button,
+  .clothing-variant-card > button {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  #detailDialog.character-dialog.character-overview-mode[open] {
+    padding-top: 10px !important;
+  }
+  #detailDialog.character-dialog.character-overview-mode > #dialogTitle {
+    margin-bottom: 5px !important;
+    font-size: clamp(1.35rem, 6vw, 1.75rem) !important;
+  }
+  #detailDialog.character-dialog.character-overview-mode .character-hub {
+    gap: 4px !important;
+  }
+  #detailDialog.character-dialog.character-overview-mode .character-overview-card {
+    padding: 10px !important;
+    gap: 6px !important;
+  }
+  #detailDialog.character-dialog.character-overview-mode .character-overview-head h3 {
+    font-size: 1.06rem !important;
+  }
+  #detailDialog.character-dialog.character-overview-mode .character-overview-head span {
+    font-size: .78rem !important;
+  }
+  #detailDialog.character-dialog.character-overview-mode .meta-strip.compact {
+    gap: 5px !important;
+  }
+  #detailDialog.character-dialog.character-overview-mode .meta-strip.compact span {
+    padding: 5px 7px !important;
+    font-size: .64rem !important;
+  }
+  #detailDialog.character-dialog.character-overview-mode .character-overview-nav {
+    gap: 5px !important;
+  }
+  #detailDialog.character-dialog.character-overview-mode .character-overview-nav .mini-button {
+    padding: 8px 3px !important;
+    min-height: 42px !important;
+    font-size: .63rem !important;
+  }
+  #detailDialog.character-dialog.character-overview-mode .character-overview-body {
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    gap: 6px !important;
+  }
+  #detailDialog.character-dialog.character-overview-mode .character-avatar-stack {
+    min-height: 0 !important;
+  }
+  #detailDialog.character-dialog.character-overview-mode .character-person-card {
+    min-height: 0 !important;
+    max-width: 100% !important;
+    padding: 4px !important;
+  }
+  #detailDialog.character-dialog.character-overview-mode .character-couple {
+    gap: 5px !important;
+  }
+  #detailDialog.character-dialog.character-overview-mode .character-person-figure {
+    min-height: 180px !important;
+  }
+  #detailDialog.character-dialog.character-overview-mode .health-panel {
+    display: none !important;
+  }
+
+  #detailDialog.wardrobe-dialog[open] {
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 0 !important;
+  }
+  #detailDialog.wardrobe-dialog .wardrobe-closet {
+    flex: 1 1 auto !important;
+    grid-template-columns: 1fr !important;
+    grid-template-rows: minmax(220px, 42dvh) minmax(0, 1fr) !important;
+    gap: 10px !important;
+    min-height: 0 !important;
+  }
+  #detailDialog.wardrobe-dialog .wardrobe-preview {
+    min-height: 0 !important;
+  }
+  #detailDialog.wardrobe-dialog .wardrobe-list {
+    min-height: 120px !important;
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .finder-online-form {
+    grid-template-columns: 1fr;
+  }
+  .finder-online-form .wide { grid-column: auto; }
+  .finder-online-card > header {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 390px) {
+  #detailDialog.character-dialog.character-overview-mode .character-overview-nav {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+  #detailDialog.character-dialog.character-overview-mode .character-person-figure {
+    min-height: 155px !important;
+  }
+}

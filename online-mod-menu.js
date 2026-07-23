@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const VERSION = "2026-07-23-online-modmenu-pro-2";
+  const VERSION = "2026-07-23-online-modmenu-session-fix-1";
   const DB_ID = "gamekl";
   const REGION = "europe-west3";
   const SESSION_KEY = "lifebuilder-2026-online-mod-session";
@@ -553,6 +553,7 @@
           </article>
           <article class="online-mod-card"><div class="online-mod-card-title"><span>▦</span><div><small>INSTALLIERT</small><h3>Apps auf dem Gerät</h3></div></div><div class="online-mod-chip-list">${apps.length ? apps.map((app) => `<span>${esc(app)}</span>`).join("") : "<span>Keine App-Daten</span>"}</div></article>
           <article class="online-mod-card"><div class="online-mod-card-title"><span>◉</span><div><small>FINSTER.KL</small><h3>Online-Profil & Moderation</h3></div></div><div class="online-mod-data-list"><span><small>Konto</small><b>${save.finster?.accountCreated ? "Erstellt" : "Nicht erstellt"}</b></span><span><small>Benutzername</small><b>@${esc(save.finster?.handle || "–")}</b></span><span><small>Anzeigename</small><b>${esc(save.finster?.displayName || "–")}</b></span><span><small>Feed</small><b>Nur echte Spielerposts</b></span><span><small>Textfilter</small><b>Schimpfwörter maskiert</b></span></div></article>
+          <article class="online-mod-card"><div class="online-mod-card-title"><span>♥</span><div><small>FINDER.KL</small><h3>Online-Dating-Profil</h3></div></div><div class="online-mod-data-list"><span><small>App</small><b>${apps.includes("finder") ? "Installiert" : "Nicht installiert"}</b></span><span><small>Online-Profil</small><b>${save.finder?.onlineProfileRegistered ? "Erstellt" : "Nicht erstellt"}</b></span><span><small>Sichtbarkeit</small><b>${save.finder?.onlineVisible ? "Online" : "Offline"}</b></span><span><small>Tarif</small><b>${esc(save.finder?.plan || "free")}</b></span><span><small>Matches</small><b>${safeArray(save.finder?.matches).length}</b></span><span><small>Spieler/Bots</small><b>Im Feed gekennzeichnet</b></span></div></article>
         </section>`;
     }
 
@@ -860,7 +861,8 @@
   async function renderOwnerPanel() {
     content().innerHTML = `
       ${pageHead("OWNER", "Rollencodes", "Einmalige Codes erstellen und letzte Einladungen kontrollieren.")}
-      <section class="online-mod-section-grid two"><article class="online-mod-card"><div class="online-mod-card-title"><span>🔑</span><div><small>NEUER CODE</small><h3>Rolle freischalten</h3></div></div><form data-create-invite class="online-mod-form-grid"><label>Rolle<select name="role">${ROLE_ORDER.filter((role) => role !== "owner").map((role) => `<option value="${role}">${ROLE_LABELS[role]}</option>`).join("")}</select></label><label>Gültig in Stunden<input name="validHours" type="number" min="1" max="720" value="168"></label><label class="wide">Notiz<input name="note" maxlength="160"></label><button class="online-mod-primary wide" type="submit">Code erstellen</button><p class="online-mod-message wide" data-invite-message></p><div class="online-mod-secret wide" data-created-code hidden></div></form></article><article class="online-mod-card"><div class="online-mod-card-title"><span>☷</span><div><small>VERLAUF</small><h3>Letzte Codes</h3></div></div><div data-invite-list><div class="online-mod-loading"><i></i><p>Lade Codes …</p></div></div></article></section>`;
+      <section class="online-mod-section-grid two"><article class="online-mod-card"><div class="online-mod-card-title"><span>🔑</span><div><small>NEUER CODE</small><h3>Rolle freischalten</h3></div></div><form data-create-invite class="online-mod-form-grid"><label>Rolle<select name="role">${ROLE_ORDER.filter((role) => role !== "owner").map((role) => `<option value="${role}">${ROLE_LABELS[role]}</option>`).join("")}</select></label><label>Gültig in Stunden<input name="validHours" type="number" min="1" max="720" value="168"></label><label class="wide">Notiz<input name="note" maxlength="160"></label><button class="online-mod-primary wide" type="submit">Code erstellen</button><p class="online-mod-message wide" data-invite-message></p><div class="online-mod-secret wide" data-created-code hidden></div></form></article><article class="online-mod-card"><div class="online-mod-card-title"><span>☷</span><div><small>VERLAUF</small><h3>Letzte Codes</h3></div></div><div data-invite-list><div class="online-mod-loading"><i></i><p>Lade Codes …</p></div></div></article></section>
+      <section class="online-mod-card"><div class="online-mod-card-title"><span>🛡</span><div><small>OWNER-SITZUNG</small><h3>Eigenen KL-Sitzungscode erneuern</h3></div></div><p>Hier kannst du einen neuen persönlichen Sitzungscode erzeugen. Der bisherige Code wird dadurch sofort ungültig.</p><div class="online-mod-actions"><button type="button" class="online-mod-primary" data-owner-reset-session-pin>Neuen KL-Sitzungscode erstellen</button></div><p class="online-mod-message" data-owner-session-message></p><div class="online-mod-secret" data-owner-session-result hidden></div></section>`;
     await loadInvites();
   }
 
@@ -906,6 +908,31 @@
       saveBrowserSession(); renderSessionLogin("Sitzung wurde beendet."); return;
     }
     if (event.target.closest("[data-mod-refresh-players]")) return renderPlayersPanel();
+
+    const resetOwnerPinButton = event.target.closest("[data-owner-reset-session-pin]");
+    if (resetOwnerPinButton) {
+      if (!confirm("Wirklich einen neuen Owner-Sitzungscode erzeugen? Der bisherige KL-Code wird sofort ungültig.")) return;
+      const message = content().querySelector("[data-owner-session-message]");
+      const box = content().querySelector("[data-owner-session-result]");
+      resetOwnerPinButton.disabled = true;
+      try {
+        const response = await callFunction("bootstrapOwner", {});
+        if (!response.sessionPin) throw new Error("Firebase hat keinen Sitzungscode zurückgegeben.");
+        if (box) {
+          box.hidden = false;
+          box.innerHTML = `<small>Dein neuer persönlicher Sitzungscode</small><code>${esc(response.sessionPin)}</code><button type="button" data-copy-id="${esc(response.sessionPin)}">Code kopieren</button>`;
+        }
+        if (message) { message.textContent = "Neuer Sitzungscode erstellt. Bitte sicher speichern."; message.classList.remove("error"); }
+        roleData = { ...roleData, active: true, activeSessionExpiresAtMs: 4102444800000 };
+        saveBrowserSession(); updateSettingsEntry(); toast("Neuer KL-Sitzungscode erstellt.");
+      } catch (error) {
+        if (message) { message.textContent = error.message; message.classList.add("error"); }
+        toast(error.message, "error");
+      } finally {
+        resetOwnerPinButton.disabled = false;
+      }
+      return;
+    }
 
     const filterButton = event.target.closest("[data-player-filter-value]");
     if (filterButton) { playerFilter = filterButton.dataset.playerFilterValue; content().querySelectorAll("[data-player-filter-value]").forEach((button) => button.classList.toggle("active", button === filterButton)); renderPlayerList(); return; }
