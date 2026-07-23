@@ -1599,6 +1599,9 @@ function createState(formData) {
     phoneActiveContact: "",
     phoneCallStatus: "",
     phoneIncomingCalls: [],
+    phoneRingtone: "classic",
+    phoneSmsTone: "ping",
+    phoneLastNotifiedSmsAtMs: 0,
     phoneNotesList: [],
     phoneEditingNoteId: "",
     installedPhoneApps: [],
@@ -2046,6 +2049,9 @@ function migrateState(save) {
   save.phoneActiveContact ||= "";
   save.phoneCallStatus ||= "";
   save.phoneIncomingCalls ||= [];
+  save.phoneRingtone ||= "classic";
+  save.phoneSmsTone ||= "ping";
+  save.phoneLastNotifiedSmsAtMs = Math.max(0, Number(save.phoneLastNotifiedSmsAtMs || 0));
   if (!Array.isArray(save.phoneNotesList)) {
     save.phoneNotesList = (save.phoneNotes || "").trim()
       ? [{ id: `note-${Date.now()}`, text: String(save.phoneNotes).trim(), createdAt: Date.now(), updatedAt: Date.now() }]
@@ -2053,7 +2059,7 @@ function migrateState(save) {
   }
   save.phoneEditingNoteId ||= "";
   save.installedPhoneApps = Array.isArray(save.installedPhoneApps)
-    ? [...new Set(save.installedPhoneApps.filter((id) => ["finder", "finster", "event", "dailygifts", "dailyquests"].includes(id)))]
+    ? [...new Set(save.installedPhoneApps.filter((id) => ["finder", "finster", "event", "dailygifts", "dailyquests", "ringpack-neon", "smspack-classic"].includes(id)))]
     : [];
   save.finder = normalizeFinderSave(save.finder, save);
   save.starterHome ||= { city: save.homeCity || "Essen", type: "Einraumwohnung", rooms: ["Eingang", "Wohn-/Schlafraum", "Küche", "Bad"], rentable: false };
@@ -2872,11 +2878,23 @@ function bringPurchaseToastToFront(layer) {
 }
 
 function syncGlobalToastStack() {
+  const communicationLayer = document.querySelector("[data-communication-toast-layer]");
   const purchaseLayer = document.querySelector("[data-purchase-toast-layer]");
   const experienceLayer = document.querySelector("[data-experience-toast-layer]");
-  if (!experienceLayer) return;
-  experienceLayer.classList.toggle("below-purchase-toast", !!purchaseLayer?.children.length);
-  bringExperienceToastToFront(experienceLayer);
+  const communicationHeight = communicationLayer?.querySelector(".communication-toast")
+    ? Math.ceil(communicationLayer.getBoundingClientRect().height + 10)
+    : 0;
+  const purchaseHeight = purchaseLayer?.children.length
+    ? Math.ceil(purchaseLayer.getBoundingClientRect().height + 10)
+    : 0;
+  document.documentElement.style.setProperty("--communication-toast-offset", `${communicationHeight}px`);
+  document.documentElement.style.setProperty("--purchase-toast-offset", `${purchaseHeight}px`);
+  if (purchaseLayer) bringPurchaseToastToFront(purchaseLayer);
+  if (experienceLayer) {
+    experienceLayer.classList.toggle("below-purchase-toast", !!purchaseLayer?.children.length);
+    bringExperienceToastToFront(experienceLayer);
+  }
+  if (communicationLayer) bringCommunicationToastToFront(communicationLayer);
 }
 
 function hidePurchaseToastLayerWhenEmpty() {
@@ -2937,6 +2955,113 @@ function addFeed(text, options = {}) {
     const kind = purchaseSuccessKind(text);
     if (kind) queuePurchaseConfirmation({ kind, name: text, message: text });
   }
+}
+
+function communicationToastLayer() {
+  let layer = document.querySelector("[data-communication-toast-layer]");
+  if (!layer) {
+    layer = document.createElement("div");
+    layer.className = "communication-toast-layer";
+    layer.dataset.communicationToastLayer = "1";
+    layer.innerHTML = `<div data-communication-call-host></div><div data-communication-message-host></div>`;
+    layer.addEventListener("click", (event) => {
+      const answer = event.target.closest("[data-global-answer-call]");
+      if (answer) {
+        answerFirebaseCall(answer.dataset.globalAnswerCall)
+          .catch((error) => addFeed(`Anruf konnte nicht angenommen werden: ${error.message || error}`));
+        return;
+      }
+      const reject = event.target.closest("[data-global-reject-call]");
+      if (reject) {
+        rejectFirebaseCall(reject.dataset.globalRejectCall)
+          .catch((error) => addFeed(`Anruf konnte nicht abgelehnt werden: ${error.message || error}`));
+        return;
+      }
+      const sms = event.target.closest("[data-global-open-sms]");
+      if (sms) {
+        state.phoneActiveContact = normalizePhoneNumber(sms.dataset.globalOpenSms);
+        save();
+        const phone = ownedPhoneItem();
+        if (phone) openDeviceInterface(phone, "sms", false);
+        else addFeed("Für SMS brauchst du zuerst ein Handy.");
+        sms.closest(".communication-toast")?.remove();
+        syncGlobalToastStack();
+      }
+      const dismiss = event.target.closest("[data-global-dismiss-notification]");
+      if (dismiss) {
+        dismiss.closest(".communication-toast")?.remove();
+        syncGlobalToastStack();
+      }
+    });
+    document.body.appendChild(layer);
+  }
+  bringCommunicationToastToFront(layer);
+  return layer;
+}
+
+function bringCommunicationToastToFront(layer) {
+  if (!layer) return;
+  const openDialogs = Array.from(document.querySelectorAll("dialog[open]"));
+  const target = openDialogs.at(-1) || document.body;
+  if (layer.parentElement !== target) target.appendChild(layer);
+}
+
+function syncIncomingCallNotifications(calls = []) {
+  const layer = communicationToastLayer();
+  const host = layer.querySelector("[data-communication-call-host]");
+  const activeCalls = Array.isArray(calls) ? calls : [];
+  host.innerHTML = activeCalls.map((call) => `
+    <article class="communication-toast communication-call-toast" data-global-call-id="${escapeHtml(call.id)}">
+      <span class="communication-toast-icon">☎</span>
+      <div class="communication-toast-copy">
+        <small>EINGEHENDER ANRUF</small>
+        <strong>${escapeHtml(contactNameFor(call.caller))}</strong>
+        <span>${escapeHtml(prettyPhoneNumber(call.caller))}</span>
+      </div>
+      <div class="communication-toast-actions">
+        <button type="button" class="accept" data-global-answer-call="${escapeHtml(call.id)}">Annehmen</button>
+        <button type="button" class="reject" data-global-reject-call="${escapeHtml(call.id)}">Ablehnen</button>
+      </div>
+    </article>
+  `).join("");
+  if (activeCalls.length) startPhoneRingtone();
+  else stopPhoneRingtone();
+  syncGlobalToastStack();
+}
+
+function showIncomingSmsNotification(message = {}) {
+  const from = normalizePhoneNumber(message.from);
+  if (!from) return;
+  const layer = communicationToastLayer();
+  const host = layer.querySelector("[data-communication-message-host]");
+  const node = document.createElement("article");
+  node.className = "communication-toast communication-sms-toast";
+  node.dataset.globalSmsId = String(message.id || `sms-${Date.now()}`);
+  node.innerHTML = `
+    <span class="communication-toast-icon">✉</span>
+    <div class="communication-toast-copy">
+      <small>NEUE SMS</small>
+      <strong>${escapeHtml(contactNameFor(from))}</strong>
+      <span>${escapeHtml(String(message.text || "Neue Nachricht").slice(0, 100))}</span>
+    </div>
+    <div class="communication-toast-actions compact">
+      <button type="button" class="accept" data-global-open-sms="${escapeHtml(from)}">Nachricht</button>
+      <button type="button" class="neutral" data-global-dismiss-notification>×</button>
+    </div>`;
+  host.appendChild(node);
+  playPhoneSmsTone();
+  requestAnimationFrame(() => {
+    node.classList.add("show");
+    syncGlobalToastStack();
+  });
+  window.setTimeout(() => {
+    if (!node.isConnected) return;
+    node.classList.add("hide");
+    window.setTimeout(() => {
+      node.remove();
+      syncGlobalToastStack();
+    }, 260);
+  }, 6500);
 }
 
 function canAfford(price) {
@@ -3493,6 +3618,7 @@ function render() {
     els.setup.classList.add("hidden");
   }
   initSharedSystemAccountsSync();
+  ensurePhoneBackgroundRealtime().catch((error) => console.warn("Phone background realtime unavailable", error));
   els.game.classList.remove("hidden");
   checkAnnualBirthdayGift();
   updateHeaderStatusUi(true);
@@ -3800,6 +3926,8 @@ function startItemIdSessionWatcher() {
 document.addEventListener("DOMContentLoaded", () => {
   syncItemIdDisplayMode();
   startItemIdSessionWatcher();
+  document.addEventListener("pointerdown", () => phoneToneContext(), { once: true, capture: true });
+  document.addEventListener("keydown", () => phoneToneContext(), { once: true, capture: true });
 });
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) syncItemIdDisplayMode();
@@ -11244,8 +11372,142 @@ let firebasePhoneRuntimePromise = null;
 let phoneSmsUnsubscribe = null;
 let phoneSmsListeningTo = "";
 let phoneIncomingUnsubscribe = null;
+let phoneGlobalSmsUnsubscribe = null;
+let phoneGlobalSmsPrimed = false;
+let phoneBackgroundOwnerKey = "";
+let phoneBackgroundStarting = null;
 let activePhonePeer = null;
 let activeLocalPhoneStream = null;
+let activePhoneCallId = "";
+let phoneIceServersPromise = null;
+let phoneToneAudioContext = null;
+let phoneRingtoneTimer = null;
+let phoneRingtonePlaying = false;
+
+const PHONE_RINGTONE_DEFINITIONS = Object.freeze({
+  classic: { label: "Classic Ring", pattern: [[659, .17], [523, .17], [784, .26], [0, .34]] },
+  digital: { label: "Digital Pulse", pattern: [[880, .10], [880, .10], [1175, .16], [0, .34]] },
+  bell: { label: "Bell", pattern: [[988, .24], [1319, .28], [0, .42]] },
+  retro: { label: "Retro Phone", pattern: [[440, .12], [554, .12], [659, .12], [440, .18], [0, .35]] },
+  soft: { label: "Soft Wave", pattern: [[523, .20], [659, .20], [784, .24], [0, .42]] },
+  neon: { label: "Neon Call", pack: "ringpack-neon", pattern: [[1047, .10], [1319, .10], [1568, .18], [1319, .10], [0, .30]] },
+  arcade: { label: "Arcade Call", pack: "ringpack-neon", pattern: [[330, .08], [440, .08], [660, .08], [880, .18], [0, .26]] },
+  night: { label: "Night Signal", pack: "ringpack-neon", pattern: [[392, .20], [494, .20], [587, .28], [0, .45]] }
+});
+
+const PHONE_SMS_TONE_DEFINITIONS = Object.freeze({
+  ping: { label: "Ping", pattern: [[1175, .12]] },
+  ding: { label: "Ding", pattern: [[880, .10], [1320, .16]] },
+  pop: { label: "Pop", pattern: [[523, .06], [784, .10]] },
+  chime: { label: "Chime", pattern: [[659, .08], [988, .08], [1319, .14]] },
+  click: { label: "Click", pattern: [[240, .045], [420, .055]] },
+  glass: { label: "Glass", pack: "smspack-classic", pattern: [[1047, .08], [1568, .14]] },
+  sparkle: { label: "Sparkle", pack: "smspack-classic", pattern: [[1319, .06], [1760, .06], [2093, .10]] },
+  echo: { label: "Echo", pack: "smspack-classic", pattern: [[784, .08], [659, .08], [523, .12]] }
+});
+
+function phoneToneContext() {
+  const AudioCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtor) return null;
+  phoneToneAudioContext ||= new AudioCtor();
+  if (phoneToneAudioContext.state === "suspended") phoneToneAudioContext.resume().catch(() => {});
+  return phoneToneAudioContext;
+}
+
+function playPhoneTonePattern(pattern = [], volume = .15) {
+  const context = phoneToneContext();
+  if (!context) return;
+  let cursor = context.currentTime + .015;
+  pattern.forEach(([frequency, duration]) => {
+    const length = Math.max(.025, Number(duration || .08));
+    if (Number(frequency) > 0) {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(Number(frequency), cursor);
+      gain.gain.setValueAtTime(.0001, cursor);
+      gain.gain.exponentialRampToValueAtTime(Math.max(.005, volume), cursor + .012);
+      gain.gain.exponentialRampToValueAtTime(.0001, cursor + length);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(cursor);
+      oscillator.stop(cursor + length + .02);
+    }
+    cursor += length;
+  });
+}
+
+function availablePhoneRingtones() {
+  return Object.entries(PHONE_RINGTONE_DEFINITIONS).filter(([, tone]) => !tone.pack || isPhoneAppInstalled(tone.pack));
+}
+
+function availablePhoneSmsTones() {
+  return Object.entries(PHONE_SMS_TONE_DEFINITIONS).filter(([, tone]) => !tone.pack || isPhoneAppInstalled(tone.pack));
+}
+
+function normalizedPhoneRingtone() {
+  const available = new Set(availablePhoneRingtones().map(([id]) => id));
+  if (!available.has(state.phoneRingtone)) state.phoneRingtone = "classic";
+  return state.phoneRingtone;
+}
+
+function normalizedPhoneSmsTone() {
+  const available = new Set(availablePhoneSmsTones().map(([id]) => id));
+  if (!available.has(state.phoneSmsTone)) state.phoneSmsTone = "ping";
+  return state.phoneSmsTone;
+}
+
+function startPhoneRingtone() {
+  if (phoneRingtonePlaying) return;
+  phoneRingtonePlaying = true;
+  const play = () => {
+    const tone = PHONE_RINGTONE_DEFINITIONS[normalizedPhoneRingtone()] || PHONE_RINGTONE_DEFINITIONS.classic;
+    playPhoneTonePattern(tone.pattern, .13);
+  };
+  play();
+  phoneRingtoneTimer = window.setInterval(play, 2200);
+}
+
+function stopPhoneRingtone() {
+  phoneRingtonePlaying = false;
+  if (phoneRingtoneTimer) window.clearInterval(phoneRingtoneTimer);
+  phoneRingtoneTimer = null;
+}
+
+function playPhoneSmsTone() {
+  const tone = PHONE_SMS_TONE_DEFINITIONS[normalizedPhoneSmsTone()] || PHONE_SMS_TONE_DEFINITIONS.ping;
+  playPhoneTonePattern(tone.pattern, .12);
+}
+
+function phoneToneSettingsHtml() {
+  const ringtone = normalizedPhoneRingtone();
+  const smsTone = normalizedPhoneSmsTone();
+  return `<section class="phone-tone-settings">
+    <header><div><small>TÖNE</small><b>Klingelton & SMS-Ton</b></div><span>App Store erweiterbar</span></header>
+    <label>Anruf
+      <select data-phone-ringtone>${availablePhoneRingtones().map(([id, tone]) => `<option value="${id}" ${ringtone === id ? "selected" : ""}>${escapeHtml(tone.label)}</option>`).join("")}</select>
+      <button type="button" class="mini-button" data-phone-preview-ringtone>Testen</button>
+    </label>
+    <label>SMS
+      <select data-phone-sms-tone>${availablePhoneSmsTones().map(([id, tone]) => `<option value="${id}" ${smsTone === id ? "selected" : ""}>${escapeHtml(tone.label)}</option>`).join("")}</select>
+      <button type="button" class="mini-button" data-phone-preview-sms-tone>Testen</button>
+    </label>
+  </section>`;
+}
+
+async function resolvePhoneIceServers() {
+  if (phoneIceServersPromise) return phoneIceServersPromise;
+  phoneIceServersPromise = Promise.resolve().then(() => {
+    const configured = window.LifeBuilderRtcConfig?.iceServers;
+    const fallback = [
+      { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }
+    ];
+    return Array.isArray(configured) && configured.length ? configured : fallback;
+  }).catch(() => [
+    { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }
+  ]);
+  return phoneIceServersPromise;
+}
 
 function normalizePhoneNumber(value) {
   const digits = String(value || "").replace(/\D/g, "");
@@ -11559,23 +11821,91 @@ async function startSmsListener(number) {
   }, (error) => addFeed(`SMS-Verbindung getrennt: ${error.message || error}`));
 }
 
+async function startGlobalSmsListener() {
+  if (phoneGlobalSmsUnsubscribe) return;
+  const fb = await loadFirebasePhoneRuntime();
+  const registration = await registerPhoneOnline();
+  if (!registration?.ownerUid) return;
+  const queryRef = fb.query(
+    fb.collectionGroup(fb.db, "messages"),
+    fb.where("recipientUid", "==", registration.ownerUid),
+    fb.limit(50)
+  );
+  phoneGlobalSmsPrimed = false;
+  phoneGlobalSmsUnsubscribe = fb.onSnapshot(queryRef, (snapshot) => {
+    const added = snapshot.docChanges()
+      .filter((change) => change.type === "added")
+      .map((change) => ({ id: change.doc.id, ...change.doc.data() }))
+      .sort((a, b) => Number(a.createdAtMs || 0) - Number(b.createdAtMs || 0));
+    const newest = added.reduce((max, message) => Math.max(max, Number(message.createdAtMs || 0)), Number(state.phoneLastNotifiedSmsAtMs || 0));
+    if (!phoneGlobalSmsPrimed) {
+      phoneGlobalSmsPrimed = true;
+      state.phoneLastNotifiedSmsAtMs = Math.max(Number(state.phoneLastNotifiedSmsAtMs || 0), newest);
+      save();
+      return;
+    }
+    added.forEach((message) => {
+      const timestamp = Number(message.createdAtMs || 0);
+      if (timestamp <= Number(state.phoneLastNotifiedSmsAtMs || 0)) return;
+      showIncomingSmsNotification(message);
+      state.phoneLastNotifiedSmsAtMs = timestamp;
+    });
+    if (added.length) save();
+  }, (error) => {
+    console.warn("Global SMS listener failed", error);
+    phoneGlobalSmsUnsubscribe = null;
+  });
+}
+
+function resetPhoneBackgroundRealtime() {
+  phoneIncomingUnsubscribe?.();
+  phoneIncomingUnsubscribe = null;
+  phoneGlobalSmsUnsubscribe?.();
+  phoneGlobalSmsUnsubscribe = null;
+  phoneGlobalSmsPrimed = false;
+  phoneBackgroundOwnerKey = "";
+  stopPhoneRingtone();
+  syncIncomingCallNotifications([]);
+}
+
+async function ensurePhoneBackgroundRealtime() {
+  if (!state || !state.phoneSim || !ownedPhoneItem()) return;
+  if (phoneBackgroundStarting) return phoneBackgroundStarting;
+  phoneBackgroundStarting = (async () => {
+    const fb = await loadFirebasePhoneRuntime();
+    const registration = await registerPhoneOnline();
+    const key = `${registration?.ownerUid || ""}:${registration?.number || ""}:${selectedSlot}`;
+    if (!registration?.ownerUid || !registration?.number) return;
+    if (phoneBackgroundOwnerKey && phoneBackgroundOwnerKey !== key) resetPhoneBackgroundRealtime();
+    phoneBackgroundOwnerKey = key;
+    await Promise.all([startIncomingCallListener(), startGlobalSmsListener()]);
+  })().finally(() => {
+    phoneBackgroundStarting = null;
+  });
+  return phoneBackgroundStarting;
+}
+
 async function startIncomingCallListener() {
   const own = ensurePhoneIdentity();
   if (!own || phoneIncomingUnsubscribe) return;
   const fb = await loadFirebasePhoneRuntime();
   const registration = await registerPhoneOnline();
   if (!registration) return;
-  const q = fb.query(fb.collection(fb.db, "phoneCalls"), fb.where("calleeUid", "==", registration.ownerUid), fb.limit(20));
+  const q = fb.query(fb.collection(fb.db, "phoneCalls"), fb.where("calleeUid", "==", registration.ownerUid), fb.orderBy("createdAtMs", "desc"), fb.limit(20));
   phoneIncomingUnsubscribe = fb.onSnapshot(q, (snapshot) => {
     const calls = snapshot.docs
       .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
       .filter((call) => call.status === "ringing");
-    state.phoneIncomingCalls = calls.map((call) => ({ id: call.id, caller: call.caller, createdAtMs: call.createdAtMs || Date.now() }));
-    if (calls.length) {
-      state.phoneCallStatus = `Eingehender Anruf von ${contactNameFor(calls[0].caller)}.`;
-      save();
-      if (els.dialog?.open && els.dialog.querySelector(".device-shell")) refreshDeviceApp("phone");
-    }
+    const recentCalls = calls.filter((call) => Date.now() - Number(call.createdAtMs || Date.now()) < 5 * 60 * 1000);
+    state.phoneIncomingCalls = recentCalls.map((call) => ({ id: call.id, caller: call.caller, createdAtMs: call.createdAtMs || Date.now() }));
+    if (recentCalls.length) state.phoneCallStatus = `Eingehender Anruf von ${contactNameFor(recentCalls[0].caller)}.`;
+    else if (/Eingehender Anruf/.test(state.phoneCallStatus || "")) state.phoneCallStatus = "";
+    save();
+    syncIncomingCallNotifications(state.phoneIncomingCalls);
+    if (els.dialog?.open && els.dialog.querySelector(".device-shell")) refreshDeviceApp("phone");
+  }, (error) => {
+    console.warn("Incoming call listener failed", error);
+    stopPhoneRingtone();
   });
 }
 
@@ -11612,12 +11942,11 @@ async function attachRemotePhoneAudio(stream) {
   }
 }
 
-function createPhonePeer() {
+function createPhonePeer(iceServers = []) {
   const peer = new RTCPeerConnection({
-    iceServers: [
-      { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }
-    ],
-    iceCandidatePoolSize: 6
+    iceServers,
+    iceCandidatePoolSize: 8,
+    bundlePolicy: "max-bundle"
   });
   peer.ontrack = (event) => attachRemotePhoneAudio(event.streams?.[0]).catch(console.warn);
   peer.onconnectionstatechange = () => {
@@ -11674,8 +12003,8 @@ async function startFirebaseCall(rawNumber) {
   if (!navigator.mediaDevices?.getUserMedia || !window.RTCPeerConnection) {
     return addFeed("Dieser Browser unterstützt WebRTC/Mikrofon hier nicht.");
   }
-  activeLocalPhoneStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-  activePhonePeer = createPhonePeer();
+  activeLocalPhoneStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
+  activePhonePeer = createPhonePeer(await resolvePhoneIceServers());
   activeLocalPhoneStream.getTracks().forEach((track) => activePhonePeer.addTrack(track, activeLocalPhoneStream));
   const callRef = fb.doc(fb.collection(fb.db, "phoneCalls"));
   const callerCandidates = fb.collection(callRef, "callerCandidates");
@@ -11704,6 +12033,7 @@ async function startFirebaseCall(rawNumber) {
     createdAt: fb.serverTimestamp()
   });
   callDocumentCreated = true;
+  activePhoneCallId = callRef.id;
   await Promise.all(queuedCallerCandidates.splice(0).map((candidate) => fb.addDoc(callerCandidates, candidate)));
   const pendingCalleeCandidates = [];
   fb.onSnapshot(callRef, async (snapshot) => {
@@ -11730,12 +12060,13 @@ async function answerFirebaseCall(callId) {
     return addFeed("Dieser Browser unterstützt WebRTC/Mikrofon hier nicht.");
   }
   const callRef = fb.doc(fb.db, "phoneCalls", callId);
+  activePhoneCallId = callId;
   const callSnapshot = await fb.getDoc(callRef);
   const callData = callSnapshot.data();
   if (!callData?.offer) return addFeed("Anruf ist nicht mehr verfügbar.");
   if (callData.calleeUid !== fb.auth.currentUser?.uid) return addFeed("Dieser Anruf gehört nicht zu deiner Telefonnummer.");
-  activeLocalPhoneStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-  activePhonePeer = createPhonePeer();
+  activeLocalPhoneStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
+  activePhonePeer = createPhonePeer(await resolvePhoneIceServers());
   activeLocalPhoneStream.getTracks().forEach((track) => activePhonePeer.addTrack(track, activeLocalPhoneStream));
   const calleeCandidates = fb.collection(callRef, "calleeCandidates");
   activePhonePeer.onicecandidate = (event) => {
@@ -11758,6 +12089,8 @@ async function answerFirebaseCall(callId) {
   });
   state.phoneCallStatus = `Anruf mit ${contactNameFor(callData.caller)} aktiv.`;
   state.phoneIncomingCalls = [];
+  stopPhoneRingtone();
+  syncIncomingCallNotifications([]);
   save();
   addFeed(state.phoneCallStatus);
   openDeviceInterface(ownedPhoneItem(), "phone", false);
@@ -11772,19 +12105,35 @@ async function rejectFirebaseCall(callId) {
   }
   await fb.updateDoc(callRef, { status: "rejected", rejectedAtMs: Date.now() });
   state.phoneIncomingCalls = (state.phoneIncomingCalls || []).filter((call) => call.id !== callId);
+  if (!state.phoneIncomingCalls.length) stopPhoneRingtone();
+  syncIncomingCallNotifications(state.phoneIncomingCalls);
   state.phoneCallStatus = "Anruf abgelehnt.";
   save();
   openDeviceInterface(ownedPhoneItem(), "phone", false);
 }
 
-function endFirebaseCall() {
+async function endFirebaseCall() {
+  const callId = activePhoneCallId;
+  activePhoneCallId = "";
   activePhonePeer?.close();
   activePhonePeer = null;
   activeLocalPhoneStream?.getTracks().forEach((track) => track.stop());
   activeLocalPhoneStream = null;
+  stopPhoneRingtone();
+  if (callId) {
+    try {
+      const fb = await loadFirebasePhoneRuntime();
+      await fb.updateDoc(fb.doc(fb.db, "phoneCalls", callId), { status: "ended", endedAtMs: Date.now() });
+    } catch (error) {
+      console.warn("Call end signaling failed", error);
+    }
+  }
   state.phoneCallStatus = "Anruf beendet.";
+  state.phoneIncomingCalls = [];
+  syncIncomingCallNotifications([]);
   save();
-  openDeviceInterface(ownedPhoneItem(), "phone", false);
+  const phone = ownedPhoneItem();
+  if (phone) openDeviceInterface(phone, "phone", false);
 }
 
 function phoneItems() {
@@ -11944,6 +12293,7 @@ function normalizeFinderSave(value = {}, owner = state || {}) {
   finder.dateHistory = Array.isArray(finder.dateHistory) ? finder.dateHistory : [];
   finder.lastMeetingDay = Math.max(0, Number(finder.lastMeetingDay || 0));
   finder.onlineProfileRegistered = !!finder.onlineProfileRegistered;
+  finder.ownProfileOpen = !!finder.ownProfileOpen;
   if (finder.swipeDay !== Number(owner.day || 1)) {
     finder.swipeDay = Number(owner.day || 1);
     finder.swipesToday = 0;
@@ -12418,10 +12768,34 @@ function finderOnlineSettingsHtml() {
   </div>`;
 }
 
+
+function finderOwnProfileModalHtml() {
+  const finder = ensureFinderState();
+  if (!finder.ownProfileOpen) return "";
+  const profile = finderOnlineOwnProfile;
+  const locked = finder.plan === "free";
+  const content = locked
+    ? `<div class="finder-own-profile-locked">
+        <span>🔒</span>
+        <h4>Eigenes Profil ab Finder.KL Plus</h4>
+        <p>Dein kostenlos erstellter Account bleibt online sichtbar. Zum Öffnen und Bearbeiten deines eigenen Profils brauchst du mindestens Finder.KL Plus.</p>
+        <button class="mini-button gold" data-finder-own-profile-upgrade>Tarife öffnen</button>
+      </div>`
+    : finderOnlineSettingsHtml();
+  return `<div class="finder-own-profile-overlay" data-finder-own-profile-overlay>
+    <section class="finder-own-profile-modal" role="dialog" aria-modal="true" aria-label="Mein Finder.KL-Profil">
+      <header>
+        <div><small>MEIN FINDER.KL-ACCOUNT</small><h3>${escapeHtml(profile?.name || "Eigenes Profil")}</h3></div>
+        <button type="button" data-finder-own-profile-close aria-label="Schließen">×</button>
+      </header>
+      ${content}
+    </section>
+  </div>`;
+}
+
 function finderSettingsHtml() {
   const finder = ensureFinderState();
   return `${finderSummaryHtml()}
-    ${finderOnlineSettingsHtml()}
     <div class="finder-plan-grid">${FINDER_PLAN_ORDER.map((planId) => {
       const plan = FINDER_PLANS[planId];
       const current = finder.plan === planId;
@@ -12484,7 +12858,7 @@ function finderAppHtml() {
   else if (finder.view === "chat" && active) body = finderChatHtml(active);
   else body = finderDiscoverHtml();
   const showNav = !["profile", "chat"].includes(finder.view);
-  return `<div class="finder-app">${showNav ? finderNavigationHtml(finder.view) : ""}${body}${finderRelationshipSwitchConfirmHtml()}</div>`;
+  return `<div class="finder-app">${showNav ? finderNavigationHtml(finder.view) : ""}${body}${finderRelationshipSwitchConfirmHtml()}${finderOwnProfileModalHtml()}</div>`;
 }
 
 function changeFinderPlan(planId, item) {
@@ -12911,10 +13285,32 @@ function completeFinderDate(profileId, optionId) {
 function bindFinderDeviceActions(shell, item) {
   const finder = ensureFinderState();
   loadFinderOnlineProfiles(false, item);
-  shell.querySelector("[data-finder-own-profile]")?.addEventListener("click", () => { finder.view = "settings"; if (finder.plan === "free") addFeed("Dein Finder.KL-Profil kannst du ab Finder.KL Plus ansehen und bearbeiten."); save(); refreshDeviceApp("finder", item); });
+  shell.querySelector("[data-finder-own-profile]")?.addEventListener("click", () => {
+    finder.ownProfileOpen = true;
+    save();
+    refreshDeviceApp("finder", item);
+  });
+  shell.querySelector("[data-finder-own-profile-close]")?.addEventListener("click", () => {
+    finder.ownProfileOpen = false;
+    save();
+    refreshDeviceApp("finder", item);
+  });
+  shell.querySelector("[data-finder-own-profile-overlay]")?.addEventListener("click", (event) => {
+    if (event.target !== event.currentTarget) return;
+    finder.ownProfileOpen = false;
+    save();
+    refreshDeviceApp("finder", item);
+  });
+  shell.querySelector("[data-finder-own-profile-upgrade]")?.addEventListener("click", () => {
+    finder.ownProfileOpen = false;
+    finder.view = "settings";
+    save();
+    refreshDeviceApp("finder", item);
+  });
   shell.querySelectorAll("[data-finder-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       finder.view = button.dataset.finderTab || "discover";
+      finder.ownProfileOpen = false;
       if (!["profile", "chat"].includes(finder.view)) finder.activeProfileId = "";
       save();
       refreshDeviceApp("finder", item);
@@ -13741,6 +14137,24 @@ const phoneAppStoreCatalog = [
     description: "Firebase-Social-App mit Profilen, Live-Feed, Bildern, Likes, Kommentaren und Nachrichten."
   },
   {
+    id: "ringpack-neon",
+    kind: "tonepack",
+    label: "Neon-Klingeltöne",
+    icon: "♫",
+    minTier: 1,
+    status: "available",
+    description: "Drei zusätzliche Anrufklingeltöne: Neon Call, Arcade Call und Night Signal."
+  },
+  {
+    id: "smspack-classic",
+    kind: "tonepack",
+    label: "SMS-Tonpaket",
+    icon: "♪",
+    minTier: 1,
+    status: "available",
+    description: "Drei zusätzliche Nachrichtentöne: Glass, Sparkle und Echo."
+  },
+  {
     id: "onlinecasino",
     label: "Casino",
     icon: "●",
@@ -13815,8 +14229,9 @@ function installPhoneApp(appId, item) {
   if (deviceTier(item) < app.minTier) return addFeed(`${app.label} benötigt ein Pro-Smartphone.`);
   if (isPhoneAppInstalled(appId)) return;
   state.installedPhoneApps.push(appId);
+  const typeLabel = app.kind === "tonepack" ? "Tonpaket" : "App";
   addFeed(`${app.label} wurde installiert.`);
-  queuePurchaseConfirmation({ kind: "use", title: "App installiert", name: app.label, icon: "⬇️" });
+  queuePurchaseConfirmation({ kind: "use", title: `${typeLabel} installiert`, name: app.label, icon: app.kind === "tonepack" ? "♫" : "⬇️" });
   save();
   openDeviceInterface(item, "appstore", false);
 }
@@ -13826,6 +14241,8 @@ function uninstallPhoneApp(appId, item) {
   if (!app || !isPhoneAppInstalled(appId)) return;
   state.installedPhoneApps = installedPhoneApps().filter((id) => id !== appId);
   if (appId === "finster") stopFinsterRealtime();
+  if (appId === "ringpack-neon" && PHONE_RINGTONE_DEFINITIONS[state.phoneRingtone]?.pack === appId) state.phoneRingtone = "classic";
+  if (appId === "smspack-classic" && PHONE_SMS_TONE_DEFINITIONS[state.phoneSmsTone]?.pack === appId) state.phoneSmsTone = "ping";
   if (appId === "finder") {
     const finder = state.finder = normalizeFinderSave(state.finder, state);
     finder.plan = "free";
@@ -14281,6 +14698,21 @@ function openDeviceInterface(item, activeApp = "home", activeUse = true) {
   shell.querySelectorAll("[data-phone-call]").forEach((button) => {
     button.addEventListener("click", () => startFirebaseCall(button.dataset.phoneCall).catch((error) => addFeed(`Anruf konnte nicht starten: ${error.message || error}`)));
   });
+  shell.querySelector("[data-phone-ringtone]")?.addEventListener("change", (event) => {
+    state.phoneRingtone = event.currentTarget.value || "classic";
+    save();
+    playPhoneTonePattern((PHONE_RINGTONE_DEFINITIONS[state.phoneRingtone] || PHONE_RINGTONE_DEFINITIONS.classic).pattern, .13);
+  });
+  shell.querySelector("[data-phone-sms-tone]")?.addEventListener("change", (event) => {
+    state.phoneSmsTone = event.currentTarget.value || "ping";
+    save();
+    playPhoneSmsTone();
+  });
+  shell.querySelector("[data-phone-preview-ringtone]")?.addEventListener("click", () => {
+    const id = shell.querySelector("[data-phone-ringtone]")?.value || normalizedPhoneRingtone();
+    playPhoneTonePattern((PHONE_RINGTONE_DEFINITIONS[id] || PHONE_RINGTONE_DEFINITIONS.classic).pattern, .13);
+  });
+  shell.querySelector("[data-phone-preview-sms-tone]")?.addEventListener("click", playPhoneSmsTone);
   shell.querySelectorAll("[data-phone-answer-call]").forEach((button) => {
     button.addEventListener("click", () => answerFirebaseCall(button.dataset.phoneAnswerCall).catch((error) => addFeed(`Anruf konnte nicht angenommen werden: ${error.message || error}`)));
   });
@@ -14291,7 +14723,7 @@ function openDeviceInterface(item, activeApp = "home", activeUse = true) {
     const number = shell.querySelector("[data-phone-direct-number]")?.value;
     startFirebaseCall(number).catch((error) => addFeed(`Anruf konnte nicht starten: ${error.message || error}`));
   });
-  shell.querySelector("[data-phone-end-call]")?.addEventListener("click", endFirebaseCall);
+  shell.querySelector("[data-phone-end-call]")?.addEventListener("click", () => endFirebaseCall().catch((error) => addFeed(`Anruf konnte nicht beendet werden: ${error.message || error}`)));
   shell.querySelectorAll("[data-sms-open-thread]").forEach((button) => {
     button.addEventListener("click", () => {
       state.phoneActiveContact = normalizePhoneNumber(button.dataset.smsOpenThread);
@@ -15834,6 +16266,7 @@ function devicePhoneViewHtml() {
         <small>${phoneRealtimeStatus()}</small>
         ${state.phoneCallStatus ? `<small>${escapeHtml(state.phoneCallStatus)}</small>` : ""}
       </div>
+      ${phoneToneSettingsHtml()}
       ${incoming.length ? `
         <div class="phone-contact-list">
           ${incoming.map((call) => `

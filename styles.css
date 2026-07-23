@@ -14935,3 +14935,284 @@ dialog.character-dialog[open] .character-hub-content {
 }
 
 .finder-own-profile-shortcut{width:100%;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:10px 12px;margin:8px 0 10px;border:1px solid rgba(84,231,153,.32);border-radius:15px;background:linear-gradient(135deg,rgba(30,92,62,.7),rgba(10,36,27,.9));color:inherit;text-align:left}.finder-own-profile-shortcut>span{width:44px;height:44px;display:grid;place-items:center;overflow:hidden}.finder-own-profile-shortcut .finder-avatar{transform:scale(.55);transform-origin:center}.finder-own-profile-shortcut div{display:grid;gap:2px}.finder-own-profile-shortcut small{color:#5ce697;font-weight:900}.finder-own-profile-shortcut em{font-style:normal;opacity:.72;font-size:.78rem}.finder-own-profile-shortcut i{font-size:1.5rem}.finder-swipe-actions{position:sticky;bottom:4px;z-index:4;background:linear-gradient(transparent,rgba(5,18,13,.96) 28%);padding-top:18px;margin-top:-8px}
+
+
+/* Finder-Profil-Popup, Kommunikationsanzeigen und Klingeltöne · 2026-07-23 */
+.finder-app { position: relative; }
+
+:root {
+  --communication-toast-offset: 0px;
+  --purchase-toast-offset: 0px;
+}
+
+.communication-toast-layer {
+  position: fixed;
+  z-index: 2147483647;
+  top: max(10px, env(safe-area-inset-top));
+  left: 50%;
+  width: min(470px, calc(100vw - 20px));
+  display: grid;
+  gap: 9px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.communication-toast-layer > div {
+  display: grid;
+  gap: 9px;
+}
+
+.communication-toast {
+  width: 100%;
+  min-height: 84px;
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  padding: 12px;
+  border: 1px solid rgba(111, 239, 189, .34);
+  border-radius: 17px;
+  background:
+    radial-gradient(circle at 10% 12%, rgba(111,239,189,.16), transparent 32%),
+    linear-gradient(145deg, rgba(13, 35, 29, .99), rgba(4, 12, 9, .99));
+  box-shadow: 0 22px 60px rgba(0,0,0,.58), inset 0 1px rgba(255,255,255,.07);
+  color: #f7fff9;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity .24s ease, transform .28s ease;
+  pointer-events: auto;
+  backdrop-filter: blur(18px);
+}
+
+.communication-sms-toast {
+  opacity: 0;
+  transform: translateY(-15px) scale(.96);
+}
+
+.communication-sms-toast.show {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.communication-toast.hide {
+  opacity: 0;
+  transform: translateY(-12px) scale(.97);
+}
+
+.communication-toast-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(111,239,189,.35);
+  border-radius: 15px;
+  background: rgba(111,239,189,.1);
+  font-size: 1.35rem;
+}
+
+.communication-call-toast .communication-toast-icon {
+  animation: communication-ring 1.15s ease-in-out infinite;
+}
+
+.communication-toast-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.communication-toast-copy small {
+  color: #71efbd;
+  font-size: .62rem;
+  font-weight: 950;
+  letter-spacing: .08em;
+}
+
+.communication-toast-copy strong,
+.communication-toast-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.communication-toast-copy strong { font-size: .94rem; }
+.communication-toast-copy span { color: rgba(234,255,244,.7); font-size: .7rem; }
+
+.communication-toast-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.communication-toast-actions.compact {
+  grid-template-columns: auto 34px;
+}
+
+.communication-toast-actions button {
+  min-height: 36px;
+  padding: 7px 9px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 10px;
+  font-size: .65rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.communication-toast-actions .accept { background: #efc95c; color: #161103; }
+.communication-toast-actions .reject { background: #ff7d70; color: #210805; }
+.communication-toast-actions .neutral { background: rgba(255,255,255,.08); color: #fff; }
+
+@keyframes communication-ring {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(-7deg); }
+  40% { transform: rotate(7deg); }
+  60% { transform: rotate(-4deg); }
+  80% { transform: rotate(4deg); }
+}
+
+.purchase-toast-layer {
+  top: calc(max(18px, env(safe-area-inset-top)) + var(--communication-toast-offset));
+}
+
+.game-xp-toast-layer,
+.game-xp-toast-layer.below-purchase-toast {
+  top: calc(max(18px, env(safe-area-inset-top)) + var(--communication-toast-offset) + var(--purchase-toast-offset));
+}
+
+.phone-tone-settings {
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid rgba(239,201,92,.18);
+  border-radius: 14px;
+  background: rgba(0,0,0,.13);
+}
+
+.phone-tone-settings header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: end;
+}
+
+.phone-tone-settings header div { display: grid; gap: 2px; }
+.phone-tone-settings header small { color: #71efbd; font-size: .56rem; font-weight: 950; }
+.phone-tone-settings header b { font-size: .78rem; }
+.phone-tone-settings header span { color: rgba(255,255,255,.5); font-size: .57rem; }
+
+.phone-tone-settings label {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  color: rgba(255,255,255,.74);
+  font-size: .64rem;
+  font-weight: 850;
+}
+
+.phone-tone-settings select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 9px;
+  background: rgba(0,0,0,.25);
+  color: #fff;
+}
+
+.finder-own-profile-overlay {
+  position: absolute;
+  z-index: 50;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  background: rgba(1, 5, 4, .78);
+  backdrop-filter: blur(8px);
+  overflow: auto;
+}
+
+.finder-own-profile-modal {
+  width: min(100%, 520px);
+  max-height: min(720px, calc(100dvh - 70px));
+  overflow: auto;
+  padding: 13px;
+  border: 1px solid rgba(255,95,120,.32);
+  border-radius: 18px;
+  background: linear-gradient(150deg, rgba(28,28,36,.99), rgba(7,11,14,.99));
+  box-shadow: 0 28px 80px rgba(0,0,0,.65);
+}
+
+.finder-own-profile-modal > header {
+  position: sticky;
+  z-index: 2;
+  top: -13px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: -13px -13px 12px;
+  padding: 12px 13px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  background: rgba(11,13,17,.96);
+}
+
+.finder-own-profile-modal > header div { display: grid; gap: 2px; }
+.finder-own-profile-modal > header small { color: #ff8ba0; font-size: .58rem; font-weight: 950; }
+.finder-own-profile-modal > header h3 { margin: 0; font-size: 1rem; }
+.finder-own-profile-modal > header button {
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 50%;
+  background: rgba(255,255,255,.07);
+  color: #fff;
+  font-size: 1.15rem;
+}
+
+.finder-own-profile-locked {
+  min-height: 260px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  padding: 20px;
+  text-align: center;
+}
+
+.finder-own-profile-locked > span { font-size: 2.2rem; }
+.finder-own-profile-locked h4 { margin: 0; }
+.finder-own-profile-locked p { max-width: 390px; margin: 0; color: rgba(255,255,255,.65); line-height: 1.5; }
+
+@media (max-width: 520px) {
+  .communication-toast-layer {
+    top: max(7px, env(safe-area-inset-top));
+    width: calc(100vw - 12px);
+  }
+  .communication-toast {
+    min-height: 76px;
+    grid-template-columns: 42px minmax(0,1fr);
+    gap: 8px;
+    padding: 9px;
+  }
+  .communication-toast-icon { width: 42px; height: 42px; }
+  .communication-toast-actions {
+    grid-column: 1 / -1;
+    grid-template-columns: 1fr 1fr;
+  }
+  .communication-toast-actions.compact { grid-template-columns: 1fr 38px; }
+  .purchase-toast-layer {
+    top: calc(max(10px, env(safe-area-inset-top)) + var(--communication-toast-offset));
+  }
+  .game-xp-toast-layer,
+  .game-xp-toast-layer.below-purchase-toast {
+    top: calc(max(10px, env(safe-area-inset-top)) + var(--communication-toast-offset) + var(--purchase-toast-offset));
+  }
+  .phone-tone-settings label {
+    grid-template-columns: 45px minmax(0,1fr);
+  }
+  .phone-tone-settings label button {
+    grid-column: 1 / -1;
+  }
+  .finder-own-profile-overlay { padding: 6px; }
+  .finder-own-profile-modal { max-height: calc(100dvh - 24px); border-radius: 15px; }
+}
