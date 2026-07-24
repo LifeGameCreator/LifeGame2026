@@ -1,1784 +1,1429 @@
-(() => {
-  "use strict";
-
-  const AM_APP_ID = "aergermensch-kl";
-  const AM_VERSION = "2026-07-24-bot-party-repair-v6";
-  const AM_DATABASE_ID = "gamekl";
-  const AM_COLLECTION = "angerMenschGames";
-  const AM_MAX_LOG = 18;
-  const AM_BOT_DELAY = 760;
-
-  const AM_COLORS = [
-    { id: "rot", label: "Rot", hex: "#ff4d5f", dark: "#7d1724", start: 0, base: [15.5, 15.5] },
-    { id: "blau", label: "Blau", hex: "#4da3ff", dark: "#164c83", start: 10, base: [84.5, 15.5] },
-    { id: "gelb", label: "Gelb", hex: "#ffd84d", dark: "#826b13", start: 20, base: [84.5, 84.5] },
-    { id: "gruen", label: "Grün", hex: "#45d58a", dark: "#17643f", start: 30, base: [15.5, 84.5] }
-  ];
-
-  const AM_EXTRAS = [
-    { id: "shield", cost: 1, icon: "◈", label: "Schutzschild", text: "Schützt eine eigene Figur bis zu deinem nächsten Zug vor Rauswurf und Extras.", target: "ownPawn" },
-    { id: "reroll", cost: 2, icon: "↻", label: "Nochmal würfeln", text: "Verwirf den aktuellen Wurf und würfle sofort neu.", target: "instant" },
-    { id: "turbo", cost: 3, icon: "+2", label: "Turbo-Schritt", text: "Erhöht deinen aktuellen Wurf um 2, höchstens auf 6.", target: "instant" },
-    { id: "skip", cost: 4, icon: "Ⅱ", label: "Runde aussetzen", text: "Ein ausgewählter Gegner muss seinen nächsten Zug aussetzen.", target: "player" },
-    { id: "reverse", cost: 5, icon: "⇤", label: "Rückwärtsgang", text: "Schiebt eine gegnerische Figur vier Felder zurück.", target: "enemyPawn" },
-    { id: "swap", cost: 6, icon: "⇄", label: "Platztausch", text: "Tausche eine eigene Figur auf der Strecke mit einer gegnerischen Figur.", target: "swap" },
-    { id: "sendhome", cost: 8, icon: "⌂", label: "Zurück ins Haus", text: "Schiebt eine gegnerische Figur direkt zurück in den Startbereich.", target: "enemyPawn" },
-    { id: "wish", cost: 10, icon: "✦", label: "Wunschwurf", text: "Wähle deinen nächsten Würfelwert selbst. Eine gewählte 6 gibt keinen Point.", target: "die" }
-  ];
-
-  const AM_BOT_NAMES = ["Mara Bot", "Kian Bot", "Nova Bot", "Rico Bot", "Lina Bot", "Tarek Bot"];
-
-  const amRuntime = {
-    view: "home",
-    onlineDoc: null,
-    onlineId: "",
-    onlineUnsub: null,
-    publicUnsub: null,
-    publicRooms: [],
-    firebasePromise: null,
-    fb: null,
-    overlay: null,
-    pendingExtra: "",
-    swapOwn: null,
-    botTimer: null,
-    busy: false,
-    toastTimer: null,
-    sideTab: "players",
-    fullscreen: false,
-    mobileSheetOpen: false
-  };
-
-  const amClone = (value) => typeof structuredClone === "function"
-    ? structuredClone(value)
-    : JSON.parse(JSON.stringify(value));
-
-  const amEscape = (value) => typeof escapeHtml === "function"
-    ? escapeHtml(value)
-    : String(value ?? "").replace(/[&<>\"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[char]));
-
-  function amRootSave() {
-    state.angerMensch ||= {};
-    state.angerMensch.version = AM_VERSION;
-    if (typeof save === "function") save();
-  }
-
-  function amNormalizeLocalGame(game) {
-    if (!game || typeof game !== "object" || !Array.isArray(game.players) || game.players.length < 2 || game.players.length > 4) return null;
-    game.players = game.players.slice(0, 4).map((player, index) => ({
-      id: String(player?.id || player?.uid || `player-${index}`),
-      uid: String(player?.uid || player?.id || `player-${index}`),
-      name: String(player?.name || (index ? `Bot ${index}` : "Du")).slice(0, 30),
-      color: amPlayerColor(index).id,
-      isBot: index === 0 ? false : player?.isBot !== false,
-      points: Math.max(0, Math.min(99, Number(player?.points || 0))),
-      skipTurns: Math.max(0, Math.min(2, Number(player?.skipTurns || 0)))
-    }));
-    game.pawns ||= {};
-    game.players.forEach((player) => {
-      const values = Array.isArray(game.pawns[player.id]) ? game.pawns[player.id].slice(0, 4) : [];
-      while (values.length < 4) values.push(-1);
-      game.pawns[player.id] = values.map((value) => Math.max(-1, Math.min(43, Number(value) || (Number(value) === 0 ? 0 : -1))));
-    });
-    game.turnIndex = Math.max(0, Math.min(game.players.length - 1, Number(game.turnIndex || 0)));
-    game.turnCounter = Math.max(1, Number(game.turnCounter || 1));
-    game.phase = ["roll", "move", "finished"].includes(game.phase) ? game.phase : "roll";
-    game.status = ["playing", "finished"].includes(game.status) ? game.status : "playing";
-    game.die = Math.max(0, Math.min(6, Number(game.die || 0)));
-    game.shields = game.shields && typeof game.shields === "object" ? game.shields : {};
-    game.log = Array.isArray(game.log) ? game.log.slice(0, AM_MAX_LOG).map(String) : ["Partie wiederhergestellt."];
-    return game;
-  }
-
-  function amLocalGame() {
-    state.angerMensch ||= {};
-    const normalized = amNormalizeLocalGame(state.angerMensch.localGame);
-    if (!normalized && state.angerMensch.localGame) {
-      delete state.angerMensch.localGame;
-      amRootSave();
-    } else if (normalized) {
-      state.angerMensch.localGame = normalized;
-    }
-    return normalized;
-  }
-
-  function amSetLocalGame(game) {
-    state.angerMensch ||= {};
-    state.angerMensch.localGame = game;
-    amRootSave();
-  }
-
-  function amCurrentGame() {
-    if (amRuntime.onlineDoc?.gameState) return amRuntime.onlineDoc.gameState;
-    return amLocalGame();
-  }
-
-  function amCurrentPlayers() {
-    return amCurrentGame()?.players || [];
-  }
-
-  function amOwnUid() {
-    try {
-      return amRuntime.fb?.auth?.currentUser?.uid || amRuntime.onlineDoc?.viewerUid || "";
-    } catch {
-      return amRuntime.onlineDoc?.viewerUid || "";
-    }
-  }
-
-  function amOwnPlayerIndex(game = amCurrentGame()) {
-    if (!game) return -1;
-    if (!game.online) return 0;
-    const uid = amRuntime.onlineDoc?.viewerUid || amOwnUid();
-    return game.players.findIndex((player) => player.uid === uid);
-  }
-
-  function amIsHost() {
-    const uid = amOwnUid();
-    return !!uid && amRuntime.onlineDoc?.hostUid === uid;
-  }
-
-  function amPlayerColor(index) {
-    return AM_COLORS[index % AM_COLORS.length];
-  }
-
-  function amNewCode() {
-    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    let result = "";
-    for (let i = 0; i < 6; i += 1) result += alphabet[Math.floor(Math.random() * alphabet.length)];
-    return result;
-  }
-
-  function amPlayerDisplayName() {
-    const fallback = `${state?.firstName || ""} ${state?.lastName || ""}`.trim() || "Spieler";
-    try {
-      return amRuntime.fb?.auth?.currentUser?.displayName || fallback;
-    } catch {
-      return fallback;
-    }
-  }
-
-  function amCreatePlayers(total, online = false, humans = []) {
-    const players = [];
-    if (online) {
-      humans.slice(0, total).forEach((human, index) => {
-        players.push({
-          id: human.uid,
-          uid: human.uid,
-          name: String(human.name || `Spieler ${index + 1}`).slice(0, 30),
-          color: amPlayerColor(index).id,
-          isBot: false,
-          points: 0,
-          skipTurns: 0
-        });
-      });
-    } else {
-      players.push({
-        id: "local-human",
-        uid: "local-human",
-        name: `${state?.firstName || "Du"}`.trim() || "Du",
-        color: AM_COLORS[0].id,
-        isBot: false,
-        points: 0,
-        skipTurns: 0
-      });
-    }
-    while (players.length < total) {
-      const index = players.length;
-      players.push({
-        id: `bot-${Date.now()}-${index}`,
-        uid: `bot-${index}`,
-        name: AM_BOT_NAMES[(index - (online ? humans.length : 1) + AM_BOT_NAMES.length) % AM_BOT_NAMES.length],
-        color: amPlayerColor(index).id,
-        isBot: true,
-        points: 0,
-        skipTurns: 0
-      });
-    }
-    return players;
-  }
-
-  function amCreateGame(players, online = false) {
-    const pawns = {};
-    players.forEach((player) => { pawns[player.id] = [-1, -1, -1, -1]; });
-    return {
-      version: AM_VERSION,
-      online,
-      status: "playing",
-      players,
-      pawns,
-      turnIndex: 0,
-      turnCounter: 1,
-      phase: "roll",
-      die: 0,
-      naturalSix: false,
-      usedExtraThisTurn: false,
-      shields: {},
-      winnerId: "",
-      winnerName: "",
-      createdAtMs: Date.now(),
-      updatedAtMs: Date.now(),
-      log: [`${players[0]?.name || "Spieler"} beginnt.`]
-    };
-  }
-
-  function amLog(game, text) {
-    game.log = [String(text), ...(game.log || [])].slice(0, AM_MAX_LOG);
-    game.updatedAtMs = Date.now();
-  }
-
-  function amPawnKey(playerIndex, pawnIndex) {
-    return `${playerIndex}:${pawnIndex}`;
-  }
-
-  function amGlobalTrackIndex(playerIndex, progress) {
-    return (amPlayerColor(playerIndex).start + progress) % 40;
-  }
-
-  function amShieldActive(game, playerIndex, pawnIndex) {
-    const until = Number(game.shields?.[amPawnKey(playerIndex, pawnIndex)] || 0);
-    return until > Number(game.turnCounter || 0);
-  }
-
-  function amCleanupEffects(game) {
-    game.shields ||= {};
-    Object.keys(game.shields).forEach((key) => {
-      if (Number(game.shields[key] || 0) <= Number(game.turnCounter || 0)) delete game.shields[key];
-    });
-  }
-
-  function amTrackOccupant(game, globalIndex, exclude = null) {
-    for (let p = 0; p < game.players.length; p += 1) {
-      const list = game.pawns[game.players[p].id] || [];
-      for (let i = 0; i < list.length; i += 1) {
-        if (exclude && exclude[0] === p && exclude[1] === i) continue;
-        const progress = Number(list[i]);
-        if (progress >= 0 && progress < 40 && amGlobalTrackIndex(p, progress) === globalIndex) {
-          return { playerIndex: p, pawnIndex: i, progress };
-        }
-      }
-    }
-    return null;
-  }
-
-  function amOwnPawnAtProgress(game, playerIndex, progress, excludePawn = -1) {
-    const list = game.pawns[game.players[playerIndex].id] || [];
-    return list.findIndex((value, index) => index !== excludePawn && Number(value) === Number(progress));
-  }
-
-  function amCanMovePawn(game, playerIndex, pawnIndex, dieValue = game.die) {
-    const player = game.players[playerIndex];
-    if (!player || dieValue < 1 || dieValue > 6) return false;
-    const pawns = game.pawns[player.id] || [];
-    const progress = Number(pawns[pawnIndex]);
-
-    if (progress < 0) {
-      if (dieValue !== 6) return false;
-      if (amOwnPawnAtProgress(game, playerIndex, 0) >= 0) return false;
-      const occupant = amTrackOccupant(game, amGlobalTrackIndex(playerIndex, 0));
-      if (occupant && occupant.playerIndex !== playerIndex && amShieldActive(game, occupant.playerIndex, occupant.pawnIndex)) return false;
-      return true;
-    }
-
-    const target = progress + dieValue;
-    if (target > 43) return false;
-    if (amOwnPawnAtProgress(game, playerIndex, target, pawnIndex) >= 0) return false;
-
-    if (target >= 40) {
-      for (let step = Math.max(40, progress + 1); step <= target; step += 1) {
-        if (amOwnPawnAtProgress(game, playerIndex, step, pawnIndex) >= 0) return false;
-      }
-      return true;
-    }
-
-    const targetGlobal = amGlobalTrackIndex(playerIndex, target);
-    const occupant = amTrackOccupant(game, targetGlobal, [playerIndex, pawnIndex]);
-    if (occupant?.playerIndex === playerIndex) return false;
-    if (occupant && amShieldActive(game, occupant.playerIndex, occupant.pawnIndex)) return false;
-    return true;
-  }
-
-  function amLegalMoves(game, playerIndex = game.turnIndex, dieValue = game.die) {
-    const player = game.players[playerIndex];
-    if (!player) return [];
-    const pawns = game.pawns[player.id] || [];
-    let legal = pawns.map((_, pawnIndex) => pawnIndex).filter((pawnIndex) => amCanMovePawn(game, playerIndex, pawnIndex, dieValue));
-
-    if (dieValue === 6) {
-      const basePawns = pawns.map((progress, index) => ({ progress, index })).filter((entry) => Number(entry.progress) < 0);
-      if (basePawns.length) {
-        const startPawn = pawns.findIndex((progress) => Number(progress) === 0);
-        const baseLegal = basePawns.map((entry) => entry.index).filter((pawnIndex) => legal.includes(pawnIndex));
-        if (baseLegal.length) return baseLegal;
-        if (startPawn >= 0 && legal.includes(startPawn)) return [startPawn];
-      }
-    }
-    return legal;
-  }
-
-  function amCaptureAt(game, movingPlayerIndex, pawnIndex, targetProgress) {
-    if (targetProgress < 0 || targetProgress >= 40) return null;
-    const global = amGlobalTrackIndex(movingPlayerIndex, targetProgress);
-    const occupant = amTrackOccupant(game, global, [movingPlayerIndex, pawnIndex]);
-    if (!occupant || occupant.playerIndex === movingPlayerIndex) return null;
-    if (amShieldActive(game, occupant.playerIndex, occupant.pawnIndex)) return null;
-    const enemy = game.players[occupant.playerIndex];
-    game.pawns[enemy.id][occupant.pawnIndex] = -1;
-    delete game.shields[amPawnKey(occupant.playerIndex, occupant.pawnIndex)];
-    return enemy;
-  }
-
-  function amHasWon(game, playerIndex) {
-    const player = game.players[playerIndex];
-    return (game.pawns[player.id] || []).every((progress) => Number(progress) >= 40);
-  }
-
-  function amAdvanceTurn(game) {
-    game.die = 0;
-    game.naturalSix = false;
-    game.phase = "roll";
-    game.usedExtraThisTurn = false;
-    game.turnCounter = Number(game.turnCounter || 0) + 1;
-    let guard = 0;
-    do {
-      game.turnIndex = (Number(game.turnIndex || 0) + 1) % game.players.length;
-      const next = game.players[game.turnIndex];
-      if (Number(next.skipTurns || 0) > 0) {
-        next.skipTurns -= 1;
-        amLog(game, `${next.name} setzt eine Runde aus.`);
-        game.turnCounter += 1;
-      } else {
-        break;
-      }
-      guard += 1;
-    } while (guard < game.players.length * 2);
-    amCleanupEffects(game);
-  }
-
-  function amRollMutation(game, forcedRoll = null, isWish = false) {
-    if (game.status !== "playing" || game.phase !== "roll") return { ok: false, message: "Jetzt kann nicht gewürfelt werden." };
-    const player = game.players[game.turnIndex];
-    const die = Math.max(1, Math.min(6, Number(forcedRoll || Math.floor(Math.random() * 6) + 1)));
-    game.die = die;
-    game.phase = "move";
-    game.naturalSix = die === 6 && !isWish;
-    if (game.naturalSix) {
-      player.points = Math.min(99, Number(player.points || 0) + 1);
-      amLog(game, `${player.name} würfelt eine 6 und erhält 1 Point.`);
-    } else {
-      amLog(game, `${player.name} würfelt eine ${die}.`);
-    }
-    return { ok: true, die };
-  }
-
-  function amMoveMutation(game, pawnIndex) {
-    if (game.status !== "playing" || game.phase !== "move") return { ok: false, message: "Würfle zuerst." };
-    const playerIndex = game.turnIndex;
-    const player = game.players[playerIndex];
-    if (!amLegalMoves(game, playerIndex).includes(Number(pawnIndex))) return { ok: false, message: "Diese Figur kann mit dem aktuellen Wurf nicht ziehen." };
-    const list = game.pawns[player.id];
-    const before = Number(list[pawnIndex]);
-    const target = before < 0 ? 0 : before + Number(game.die || 0);
-    const captured = amCaptureAt(game, playerIndex, Number(pawnIndex), target);
-    list[pawnIndex] = target;
-    delete game.shields[amPawnKey(playerIndex, Number(pawnIndex))];
-
-    if (captured) amLog(game, `${player.name} wirft ${captured.name} raus.`);
-    if (target >= 40) amLog(game, `${player.name} bringt eine Figur ins Ziel.`);
-    else if (!captured) amLog(game, `${player.name} zieht ${game.die} Felder.`);
-
-    if (amHasWon(game, playerIndex)) {
-      game.status = "finished";
-      game.winnerId = player.id;
-      game.winnerName = player.name;
-      game.phase = "finished";
-      game.die = 0;
-      amLog(game, `${player.name} gewinnt ÄrgerMensch.KL!`);
-      return { ok: true, won: true };
-    }
-
-    if (game.naturalSix) {
-      game.phase = "roll";
-      game.die = 0;
-      game.naturalSix = false;
-      amLog(game, `${player.name} darf wegen der 6 noch einmal würfeln.`);
-      amCleanupEffects(game);
-    } else {
-      amAdvanceTurn(game);
-    }
-    return { ok: true };
-  }
-
-  function amEndTurnMutation(game) {
-    if (game.status !== "playing" || game.phase !== "move") return { ok: false };
-    const player = game.players[game.turnIndex];
-    if (amLegalMoves(game).length) return { ok: false, message: "Du hast noch einen gültigen Zug." };
-    amLog(game, `${player.name} kann nicht ziehen.`);
-    if (game.naturalSix) {
-      game.phase = "roll";
-      game.die = 0;
-      game.naturalSix = false;
-      amLog(game, `${player.name} darf wegen der 6 erneut würfeln.`);
-    } else {
-      amAdvanceTurn(game);
-    }
-    return { ok: true };
-  }
-
-  function amExtraById(extraId) {
-    return AM_EXTRAS.find((entry) => entry.id === extraId) || null;
-  }
-
-  function amCanUseExtra(game, extraId) {
-    const extra = amExtraById(extraId);
-    const player = game.players[game.turnIndex];
-    if (!extra || !player || game.status !== "playing" || game.usedExtraThisTurn) return false;
-    if (Number(player.points || 0) < extra.cost) return false;
-    if (extraId === "reroll") return game.phase === "move" && game.die > 0;
-    if (extraId === "turbo") return game.phase === "move" && game.die > 0 && game.die < 6;
-    if (extraId === "wish") return game.phase === "roll";
-    return game.phase === "roll" || game.phase === "move";
-  }
-
-  function amChargeExtra(game, extraId) {
-    const extra = amExtraById(extraId);
-    const player = game.players[game.turnIndex];
-    if (!amCanUseExtra(game, extraId)) return false;
-    player.points -= extra.cost;
-    game.usedExtraThisTurn = true;
-    return true;
-  }
-
-  function amExtraMutation(game, extraId, payload = {}) {
-    const extra = amExtraById(extraId);
-    const actorIndex = game.turnIndex;
-    const actor = game.players[actorIndex];
-    if (!extra || !amCanUseExtra(game, extraId)) return { ok: false, message: "Dieses Extra ist gerade nicht verfügbar." };
-
-    if (extraId === "reroll") {
-      if (!amChargeExtra(game, extraId)) return { ok: false };
-      game.phase = "roll";
-      game.die = 0;
-      game.naturalSix = false;
-      amLog(game, `${actor.name} kauft „Nochmal würfeln“.`);
-      return { ok: true };
-    }
-
-    if (extraId === "turbo") {
-      const boosted = Math.min(6, Number(game.die || 0) + 2);
-      if (!amLegalMoves(game, actorIndex, boosted).length) return { ok: false, message: "Mit +2 wäre kein gültiger Zug möglich." };
-      if (!amChargeExtra(game, extraId)) return { ok: false };
-      game.die = boosted;
-      game.naturalSix = false;
-      amLog(game, `${actor.name} aktiviert Turbo und zieht mit ${boosted}.`);
-      return { ok: true };
-    }
-
-    if (extraId === "wish") {
-      const value = Math.max(1, Math.min(6, Number(payload.value || 0)));
-      if (!value) return { ok: false };
-      if (!amChargeExtra(game, extraId)) return { ok: false };
-      game.die = value;
-      game.phase = "move";
-      game.naturalSix = false;
-      amLog(game, `${actor.name} wählt mit dem Wunschwurf eine ${value}.`);
-      return { ok: true };
-    }
-
-    if (extraId === "skip") {
-      const targetIndex = Number(payload.playerIndex);
-      const target = game.players[targetIndex];
-      if (!target || targetIndex === actorIndex) return { ok: false, message: "Wähle einen Gegner." };
-      if (!amChargeExtra(game, extraId)) return { ok: false };
-      target.skipTurns = Math.min(2, Number(target.skipTurns || 0) + 1);
-      amLog(game, `${actor.name} lässt ${target.name} eine Runde aussetzen.`);
-      return { ok: true };
-    }
-
-    if (["shield", "reverse", "sendhome"].includes(extraId)) {
-      const targetPlayerIndex = Number(payload.playerIndex);
-      const pawnIndex = Number(payload.pawnIndex);
-      const targetPlayer = game.players[targetPlayerIndex];
-      const progress = Number(game.pawns[targetPlayer?.id]?.[pawnIndex]);
-      if (!targetPlayer || !Number.isInteger(pawnIndex)) return { ok: false };
-
-      if (extraId === "shield") {
-        if (targetPlayerIndex !== actorIndex || progress < 0 || progress >= 40) return { ok: false, message: "Wähle eine eigene Figur auf der Strecke." };
-        if (!amChargeExtra(game, extraId)) return { ok: false };
-        game.shields[amPawnKey(targetPlayerIndex, pawnIndex)] = Number(game.turnCounter || 0) + game.players.length;
-        amLog(game, `${actor.name} schützt eine Figur bis zum nächsten Zug.`);
-        return { ok: true };
-      }
-
-      if (targetPlayerIndex === actorIndex || progress < 0 || progress >= 40) return { ok: false, message: "Wähle eine gegnerische Figur auf der Strecke." };
-      if (amShieldActive(game, targetPlayerIndex, pawnIndex)) return { ok: false, message: "Diese Figur ist geschützt." };
-
-      if (extraId === "reverse") {
-        const targetProgress = progress - 4;
-        if (targetProgress >= 0 && amOwnPawnAtProgress(game, targetPlayerIndex, targetProgress, pawnIndex) >= 0) return { ok: false, message: "Das Zielfeld ist durch eine eigene Figur blockiert." };
-        if (targetProgress >= 0) {
-          const occupied = amTrackOccupant(game, amGlobalTrackIndex(targetPlayerIndex, targetProgress), [targetPlayerIndex, pawnIndex]);
-          if (occupied) return { ok: false, message: "Das Zielfeld ist bereits besetzt." };
-        }
-        if (!amChargeExtra(game, extraId)) return { ok: false };
-        game.pawns[targetPlayer.id][pawnIndex] = targetProgress < 0 ? -1 : targetProgress;
-        delete game.shields[amPawnKey(targetPlayerIndex, pawnIndex)];
-        amLog(game, `${actor.name} schiebt ${targetPlayer.name} vier Felder zurück.`);
-        return { ok: true };
-      }
-
-      if (extraId === "sendhome") {
-        if (!amChargeExtra(game, extraId)) return { ok: false };
-        game.pawns[targetPlayer.id][pawnIndex] = -1;
-        delete game.shields[amPawnKey(targetPlayerIndex, pawnIndex)];
-        amLog(game, `${actor.name} schiebt eine Figur von ${targetPlayer.name} zurück ins Haus.`);
-        return { ok: true };
-      }
-    }
-
-    if (extraId === "swap") {
-      const ownPawnIndex = Number(payload.ownPawnIndex);
-      const enemyPlayerIndex = Number(payload.enemyPlayerIndex);
-      const enemyPawnIndex = Number(payload.enemyPawnIndex);
-      const ownProgress = Number(game.pawns[actor.id]?.[ownPawnIndex]);
-      const enemy = game.players[enemyPlayerIndex];
-      const enemyProgress = Number(game.pawns[enemy?.id]?.[enemyPawnIndex]);
-      if (!enemy || enemyPlayerIndex === actorIndex || ownProgress < 0 || ownProgress >= 40 || enemyProgress < 0 || enemyProgress >= 40) return { ok: false, message: "Für den Tausch müssen beide Figuren auf der Strecke stehen." };
-      if (amShieldActive(game, enemyPlayerIndex, enemyPawnIndex)) return { ok: false, message: "Die gegnerische Figur ist geschützt." };
-      const ownGlobal = amGlobalTrackIndex(actorIndex, ownProgress);
-      const enemyGlobal = amGlobalTrackIndex(enemyPlayerIndex, enemyProgress);
-      const newOwnProgress = (enemyGlobal - amPlayerColor(actorIndex).start + 40) % 40;
-      const newEnemyProgress = (ownGlobal - amPlayerColor(enemyPlayerIndex).start + 40) % 40;
-      if (newOwnProgress >= 40 || newEnemyProgress >= 40) return { ok: false };
-      if (!amChargeExtra(game, extraId)) return { ok: false };
-      game.pawns[actor.id][ownPawnIndex] = newOwnProgress;
-      game.pawns[enemy.id][enemyPawnIndex] = newEnemyProgress;
-      delete game.shields[amPawnKey(actorIndex, ownPawnIndex)];
-      delete game.shields[amPawnKey(enemyPlayerIndex, enemyPawnIndex)];
-      amLog(game, `${actor.name} tauscht den Platz mit ${enemy.name}.`);
-      return { ok: true };
-    }
-
-    return { ok: false };
-  }
-
-  async function amFirebase() {
-    if (amRuntime.firebasePromise) return amRuntime.firebasePromise;
-    amRuntime.firebasePromise = (async () => {
-      const [appMod, authMod, dbMod] = await Promise.all([
-        import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js"),
-        import("https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js"),
-        import("https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js")
-      ]);
-      const app = appMod.getApps().length ? appMod.getApp() : appMod.initializeApp(firebasePhoneConfig);
-      const auth = authMod.getAuth(app);
-      const db = dbMod.getFirestore(app, AM_DATABASE_ID);
-      const runtime = { ...authMod, ...dbMod, auth, db };
-      amRuntime.fb = runtime;
-      return runtime;
-    })().catch((error) => {
-      amRuntime.firebasePromise = null;
-      throw error;
-    });
-    return amRuntime.firebasePromise;
-  }
-
-  function amRequireOnlineUser(fb) {
-    const user = fb.auth.currentUser;
-    if (!user) throw new Error("Bitte melde dich zuerst mit deinem LifeBuilder-Account an.");
-    return user;
-  }
-
-  async function amMutate(mutator) {
-    if (amRuntime.busy) return { ok: false, message: "Aktion läuft bereits." };
-    amRuntime.busy = true;
-    try {
-      if (!amRuntime.onlineId) {
-        const current = amLocalGame();
-        if (!current) return { ok: false, message: "Kein Spiel aktiv." };
-        const next = amClone(current);
-        const result = mutator(next) || { ok: true };
-        if (result.ok !== false) {
-          next.updatedAtMs = Date.now();
-          amSetLocalGame(next);
-          amRenderAll();
-          amScheduleBot();
-        }
-        if (result.message) amToast(result.message);
-        return result;
-      }
-
-      const fb = await amFirebase();
-      const user = amRequireOnlineUser(fb);
-      const ref = fb.doc(fb.db, AM_COLLECTION, amRuntime.onlineId);
-      let mutationResult = { ok: false };
-      await fb.runTransaction(fb.db, async (transaction) => {
-        const snapshot = await transaction.get(ref);
-        if (!snapshot.exists()) throw new Error("Der Raum existiert nicht mehr.");
-        const data = snapshot.data();
-        const game = amClone(data.gameState);
-        const current = game.players[game.turnIndex];
-        const mayAct = current?.uid === user.uid || (current?.isBot && data.hostUid === user.uid);
-        if (!mayAct) throw new Error("Du bist gerade nicht am Zug.");
-        mutationResult = mutator(game) || { ok: true };
-        if (mutationResult.ok === false) return;
-        game.updatedAtMs = Date.now();
-        transaction.update(ref, {
-          gameState: game,
-          status: game.status,
-          winnerName: game.winnerName || "",
-          updatedAtMs: Date.now()
-        });
-      });
-      if (mutationResult.message) amToast(mutationResult.message);
-      return mutationResult;
-    } catch (error) {
-      const message = String(error?.message || error || "Online-Aktion fehlgeschlagen.");
-      amToast(message);
-      return { ok: false, message };
-    } finally {
-      amRuntime.busy = false;
-    }
-  }
-
-  function amCurrentCanAct(game = amCurrentGame()) {
-    if (!game || game.status !== "playing") return false;
-    const current = game.players[game.turnIndex];
-    if (!game.online) return !current?.isBot;
-    return current?.uid === amOwnUid();
-  }
-
-  function amMoveScore(game, playerIndex, pawnIndex, dieValue = game.die) {
-    const player = game.players[playerIndex];
-    const progress = Number(game.pawns[player.id][pawnIndex]);
-    const target = progress < 0 ? 0 : progress + dieValue;
-    let score = target * 1.5;
-    if (progress < 0) score += 34;
-    if (target >= 40) score += 68 + target * 2;
-    if (target >= 0 && target < 40) {
-      const occupant = amTrackOccupant(game, amGlobalTrackIndex(playerIndex, target), [playerIndex, pawnIndex]);
-      if (occupant && occupant.playerIndex !== playerIndex) score += 110 + Number(game.pawns[game.players[occupant.playerIndex].id][occupant.pawnIndex] || 0);
-      if ([0, 10, 20, 30].includes(amGlobalTrackIndex(playerIndex, target))) score += 9;
-      const threatened = game.players.some((enemy, enemyIndex) => {
-        if (enemyIndex === playerIndex) return false;
-        return (game.pawns[enemy.id] || []).some((enemyProgress) => {
-          if (enemyProgress < 0 || enemyProgress >= 40) return false;
-          const distance = (amGlobalTrackIndex(playerIndex, target) - amGlobalTrackIndex(enemyIndex, enemyProgress) + 40) % 40;
-          return distance >= 1 && distance <= 6;
-        });
-      });
-      if (threatened) score -= 14;
-    }
-    return score + Math.random() * 3;
-  }
-
-  function amBestMove(game, playerIndex = game.turnIndex, dieValue = game.die) {
-    const legal = amLegalMoves(game, playerIndex, dieValue);
-    if (!legal.length) return -1;
-    return legal.map((pawnIndex) => ({ pawnIndex, score: amMoveScore(game, playerIndex, pawnIndex, dieValue) }))
-      .sort((a, b) => b.score - a.score)[0].pawnIndex;
-  }
-
-  function amLeadingEnemyIndex(game, botIndex) {
-    return game.players.map((player, index) => ({
-      index,
-      score: index === botIndex ? -1 : (game.pawns[player.id] || []).reduce((sum, progress) => sum + Math.max(0, Number(progress)), 0)
-    })).sort((a, b) => b.score - a.score)[0]?.index ?? -1;
-  }
-
-  function amAdvancedEnemyPawn(game, botIndex) {
-    let best = null;
-    game.players.forEach((player, playerIndex) => {
-      if (playerIndex === botIndex) return;
-      (game.pawns[player.id] || []).forEach((progress, pawnIndex) => {
-        if (progress >= 0 && progress < 40 && !amShieldActive(game, playerIndex, pawnIndex)) {
-          if (!best || progress > best.progress) best = { playerIndex, pawnIndex, progress };
-        }
-      });
-    });
-    return best;
-  }
-
-
-  function amBestWishChoice(game, playerIndex) {
-    let best = null;
-    for (let die = 1; die <= 6; die += 1) {
-      const pawnIndex = amBestMove(game, playerIndex, die);
-      if (pawnIndex < 0) continue;
-      const player = game.players[playerIndex];
-      const before = Number(game.pawns[player.id][pawnIndex]);
-      const target = before < 0 ? 0 : before + die;
-      const score = amMoveScore(game, playerIndex, pawnIndex, die) + (target >= 40 ? 80 : 0);
-      if (!best || score > best.score) best = { die, pawnIndex, score, target };
-    }
-    return best;
-  }
-
-  function amBestSwapChoice(game, playerIndex) {
-    const player = game.players[playerIndex];
-    let best = null;
-    (game.pawns[player.id] || []).forEach((ownProgress, ownPawnIndex) => {
-      if (ownProgress < 0 || ownProgress >= 40) return;
-      const ownGlobal = amGlobalTrackIndex(playerIndex, ownProgress);
-      game.players.forEach((enemy, enemyPlayerIndex) => {
-        if (enemyPlayerIndex === playerIndex) return;
-        (game.pawns[enemy.id] || []).forEach((enemyProgress, enemyPawnIndex) => {
-          if (enemyProgress < 0 || enemyProgress >= 40 || amShieldActive(game, enemyPlayerIndex, enemyPawnIndex)) return;
-          const enemyGlobal = amGlobalTrackIndex(enemyPlayerIndex, enemyProgress);
-          const newOwnProgress = (enemyGlobal - amPlayerColor(playerIndex).start + 40) % 40;
-          const newEnemyProgress = (ownGlobal - amPlayerColor(enemyPlayerIndex).start + 40) % 40;
-          const gain = newOwnProgress - ownProgress;
-          const enemyLoss = enemyProgress - newEnemyProgress;
-          const score = gain * 2 + enemyLoss + (newOwnProgress >= 34 ? 35 : 0);
-          if (gain >= 8 && (!best || score > best.score)) best = { ownPawnIndex, enemyPlayerIndex, enemyPawnIndex, score };
-        });
-      });
-    });
-    return best;
-  }
-
-  async function amBotStep() {
-    const game = amCurrentGame();
-    if (!game || game.status !== "playing") return;
-    const bot = game.players[game.turnIndex];
-    if (!bot?.isBot) return;
-    if (game.online && !amIsHost()) return;
-
-    const botIndex = game.turnIndex;
-    const points = Number(bot.points || 0);
-
-    if (!game.usedExtraThisTurn && game.phase === "roll") {
-      const enemyIndex = amLeadingEnemyIndex(game, botIndex);
-      const enemy = game.players[enemyIndex];
-      const enemyHomeCount = enemy ? (game.pawns[enemy.id] || []).filter((p) => p >= 40).length : 0;
-      const ownHomeCount = (game.pawns[bot.id] || []).filter((p) => p >= 40).length;
-
-      // 10-Point-Wunschwurf nur für entscheidende Ziel- oder Rauswurfzüge.
-      if (points >= 10) {
-        const wish = amBestWishChoice(game, botIndex);
-        if (wish && (ownHomeCount >= 3 && wish.target >= 40 || wish.score >= 175)) {
-          await amMutate((next) => amExtraMutation(next, "wish", { value: wish.die }));
-          return;
-        }
-      }
-
-      if (points >= 4 && enemyIndex >= 0 && enemyHomeCount >= 3) {
-        await amMutate((next) => amExtraMutation(next, "skip", { playerIndex: enemyIndex }));
-        return;
-      }
-
-      const advanced = amAdvancedEnemyPawn(game, botIndex);
-      if (points >= 8 && advanced?.progress >= 35) {
-        await amMutate((next) => amExtraMutation(next, "sendhome", advanced));
-        return;
-      }
-      if (points >= 6) {
-        const swap = amBestSwapChoice(game, botIndex);
-        if (swap?.score >= 28) {
-          await amMutate((next) => amExtraMutation(next, "swap", swap));
-          return;
-        }
-      }
-      if (points >= 5 && advanced?.progress >= 29) {
-        await amMutate((next) => amExtraMutation(next, "reverse", advanced));
-        return;
-      }
-    }
-
-    if (game.phase === "roll") {
-      await amMutate((next) => amRollMutation(next, Math.floor(Math.random() * 6) + 1));
-      return;
-    }
-
-    if (game.phase === "move") {
-      const legal = amLegalMoves(game);
-      if (!game.usedExtraThisTurn && !legal.length && points >= 2) {
-        await amMutate((next) => amExtraMutation(next, "reroll"));
-        return;
-      }
-      if (!game.usedExtraThisTurn && game.die < 6 && points >= 3) {
-        const currentBest = amBestMove(game, botIndex, game.die);
-        const boostedDie = Math.min(6, game.die + 2);
-        const boostedBest = amBestMove(game, botIndex, boostedDie);
-        if (boostedBest >= 0 && (currentBest < 0 || amMoveScore(game, botIndex, boostedBest, boostedDie) > amMoveScore(game, botIndex, currentBest, game.die) + 28)) {
-          await amMutate((next) => amExtraMutation(next, "turbo"));
-          return;
-        }
-      }
-      if (!game.usedExtraThisTurn && points >= 1) {
-        const own = (game.pawns[bot.id] || []).map((progress, pawnIndex) => ({ progress, pawnIndex }))
-          .filter((entry) => entry.progress >= 24 && entry.progress < 40 && !amShieldActive(game, botIndex, entry.pawnIndex))
-          .sort((a, b) => b.progress - a.progress)[0];
-        if (own && Math.random() < 0.35) {
-          await amMutate((next) => amExtraMutation(next, "shield", { playerIndex: botIndex, pawnIndex: own.pawnIndex }));
-          return;
-        }
-      }
-      const move = amBestMove(game);
-      if (move >= 0) await amMutate((next) => amMoveMutation(next, move));
-      else await amMutate((next) => amEndTurnMutation(next));
-    }
-  }
-
-  function amScheduleBot() {
-    clearTimeout(amRuntime.botTimer);
-    amRuntime.botTimer = null;
-    const game = amCurrentGame();
-    if (!game || game.status !== "playing") return;
-    const current = game.players[game.turnIndex];
-    if (!current?.isBot) return;
-    if (game.online && !amIsHost()) return;
-    amRuntime.botTimer = setTimeout(() => amBotStep().catch((error) => amToast(error.message || error)), AM_BOT_DELAY);
-  }
-
-  function amRingPoint(index) {
-    const angle = (-90 + index * 9) * Math.PI / 180;
-    return { x: 50 + Math.cos(angle) * 36.5, y: 50 + Math.sin(angle) * 36.5 };
-  }
-
-  function amHomePoint(playerIndex, homeIndex) {
-    const start = amRingPoint(amPlayerColor(playerIndex).start);
-    const t = (homeIndex + 1) / 5.5;
-    return { x: start.x + (50 - start.x) * t, y: start.y + (50 - start.y) * t };
-  }
-
-  function amBasePoint(playerIndex, pawnIndex) {
-    const [cx, cy] = amPlayerColor(playerIndex).base;
-    const offsets = [[-3.65, -3.65], [3.65, -3.65], [-3.65, 3.65], [3.65, 3.65]];
-    return { x: cx + offsets[pawnIndex][0], y: cy + offsets[pawnIndex][1] };
-  }
-
-  function amPawnPosition(game, playerIndex, pawnIndex) {
-    const player = game.players[playerIndex];
-    const progress = Number(game.pawns[player.id][pawnIndex]);
-    if (progress < 0) return amBasePoint(playerIndex, pawnIndex);
-    if (progress < 40) return amRingPoint(amGlobalTrackIndex(playerIndex, progress));
-    return amHomePoint(playerIndex, progress - 40);
-  }
-
-  function amBoardSvg(game) {
-    const activeIndex = Math.max(0, Math.min(game.players.length - 1, Number(game.turnIndex || 0)));
-    const ring = Array.from({ length: 40 }, (_, index) => {
-      const point = amRingPoint(index);
-      const startPlayerRaw = AM_COLORS.findIndex((color) => color.start === index);
-      const startPlayer = startPlayerRaw >= 0 && startPlayerRaw < game.players.length ? startPlayerRaw : -1;
-      const color = startPlayer >= 0 ? amPlayerColor(startPlayer) : null;
-      const fill = color ? color.hex : "rgba(226,239,255,.16)";
-      return `<g class="am-path-slot ${startPlayer >= 0 ? "start" : ""}">
-        ${startPlayer >= 0 ? `<circle cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="3.15" fill="${color.hex}22" stroke="${color.hex}66" stroke-width=".42"/>` : ""}
-        <circle class="am-path-cell ${startPlayer >= 0 ? "start" : ""}" cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="2.05" fill="${fill}" data-cell="${index}"/>
-      </g>`;
-    }).join("");
-
-    const bases = game.players.map((player, playerIndex) => {
-      const color = amPlayerColor(playerIndex);
-      const [cx, cy] = color.base;
-      const isTurn = game.status === "playing" && activeIndex === playerIndex;
-      const slots = Array.from({ length: 4 }, (_, pawnIndex) => {
-        const point = amBasePoint(playerIndex, pawnIndex);
-        return `<circle class="am-base-slot" cx="${point.x}" cy="${point.y}" r="2.72" fill="rgba(3,8,16,.78)" stroke="${color.hex}" stroke-width=".48"/>`;
-      }).join("");
-      return `<g class="am-base ${isTurn ? "active" : ""}" style="--base-color:${color.hex}">
-        ${isTurn ? `<rect x="${cx - 9.3}" y="${cy - 9.3}" width="18.6" height="18.6" rx="5.6" fill="none" stroke="${color.hex}" stroke-width=".55" class="am-active-base-ring"/>` : ""}
-        <rect x="${cx - 8.1}" y="${cy - 8.1}" width="16.2" height="16.2" rx="4.8" fill="${color.hex}18" stroke="${color.hex}" stroke-width=".7"/>
-        ${slots}
-        <text x="${cx}" y="${cy + 11.1}" text-anchor="middle" class="am-base-title" fill="${color.hex}">${amEscape(player.name).slice(0, 12)}</text>
-      </g>`;
-    }).join("");
-
-    const homes = game.players.map((_, playerIndex) => {
-      const color = amPlayerColor(playerIndex);
-      const first = amHomePoint(playerIndex, 0);
-      const last = amHomePoint(playerIndex, 3);
-      const lane = `<line class="am-home-lane" x1="${first.x.toFixed(2)}" y1="${first.y.toFixed(2)}" x2="${last.x.toFixed(2)}" y2="${last.y.toFixed(2)}" stroke="${color.hex}"/>`;
-      const cells = Array.from({ length: 4 }, (_, homeIndex) => {
-        const point = amHomePoint(playerIndex, homeIndex);
-        return `<circle class="am-home-cell" cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="2.25" fill="${color.hex}42" stroke="${color.hex}" stroke-width=".55"/>`;
-      }).join("");
-      return `<g>${lane}${cells}</g>`;
-    }).join("");
-
-    const legal = new Set(amCurrentCanAct(game) && game.phase === "move" ? amLegalMoves(game).map((index) => `${game.turnIndex}:${index}`) : []);
-    const pawns = game.players.map((player, playerIndex) => (game.pawns[player.id] || []).map((_, pawnIndex) => {
-      const point = amPawnPosition(game, playerIndex, pawnIndex);
-      const color = amPlayerColor(playerIndex);
-      const key = `${playerIndex}:${pawnIndex}`;
-      const shield = amShieldActive(game, playerIndex, pawnIndex);
-      const targetable = amPawnTargetable(game, playerIndex, pawnIndex);
-      return `<g class="am-pawn ${legal.has(key) ? "legal" : ""} ${targetable ? "targetable" : ""} ${shield ? "shielded" : ""}" data-am-pawn="${key}" transform="translate(${point.x.toFixed(2)} ${point.y.toFixed(2)})">
-        ${legal.has(key) || targetable ? `<circle r="3.85" class="am-pawn-action-ring" fill="none" stroke="${targetable ? "#fff0a8" : "#ffffff"}"/>` : ""}
-        ${shield ? `<circle r="4.25" class="am-shield-ring" fill="none" stroke="${color.hex}"/>` : ""}
-        <circle class="am-pawn-body" r="2.78" fill="${color.hex}" stroke="rgba(255,255,255,.96)" stroke-width=".58"/>
-        <circle r="1.22" fill="${color.dark}" opacity=".92"/>
-        <text y=".7" text-anchor="middle" fill="#fff" font-size="2" font-weight="950">${pawnIndex + 1}</text>
-      </g>`;
-    }).join("")).join("");
-
-    return `<svg class="am-board-svg" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" role="img" aria-label="ÄrgerMensch.KL Spielfeld">
-      <defs>
-        <radialGradient id="amBg" cx="50%" cy="44%" r="68%"><stop offset="0" stop-color="#27435f"/><stop offset=".55" stop-color="#12233a"/><stop offset="1" stop-color="#060d18"/></radialGradient>
-        <linearGradient id="amBoardEdge" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#68ddff" stop-opacity=".34"/><stop offset=".5" stop-color="#776cff" stop-opacity=".13"/><stop offset="1" stop-color="#ff5ba8" stop-opacity=".25"/></linearGradient>
-        <filter id="amGlow"><feGaussianBlur stdDeviation=".38" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-        <filter id="amSoftShadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="1" stdDeviation="1.1" flood-color="#000" flood-opacity=".55"/></filter>
-      </defs>
-      <rect x="1.2" y="1.2" width="97.6" height="97.6" rx="12.5" fill="url(#amBg)" stroke="url(#amBoardEdge)" stroke-width=".7"/>
-      <path d="M8 50a42 42 0 1 0 84 0a42 42 0 1 0-84 0" fill="none" stroke="rgba(111,221,255,.09)" stroke-width="1.4"/>
-      <circle cx="50" cy="50" r="39.5" fill="none" stroke="rgba(255,255,255,.035)" stroke-dasharray="1 2.1" stroke-width=".45"/>
-      ${bases}
-      ${ring}
-      ${homes}
-      <g class="am-center" filter="url(#amSoftShadow)">
-        <circle cx="50" cy="50" r="6.25" fill="#06101d" stroke="#83eaff" stroke-width=".65"/>
-        <circle cx="50" cy="50" r="5.1" fill="none" stroke="rgba(190,137,255,.34)" stroke-width=".35"/>
-        <text x="50" y="49.1" text-anchor="middle">ÄM</text><text x="50" y="52.5" text-anchor="middle" class="small">.KL</text>
-      </g>
-      <g filter="url(#amGlow)">${pawns}</g>
-    </svg>`;
-  }
-
-  function amPawnTargetable(game, playerIndex, pawnIndex) {
-    const extraId = amRuntime.pendingExtra;
-    if (!extraId) return false;
-    const progress = Number(game.pawns[game.players[playerIndex].id]?.[pawnIndex]);
-    if (extraId === "shield") return playerIndex === game.turnIndex && progress >= 0 && progress < 40;
-    if (["reverse", "sendhome"].includes(extraId)) return playerIndex !== game.turnIndex && progress >= 0 && progress < 40 && !amShieldActive(game, playerIndex, pawnIndex);
-    if (extraId === "swap") {
-      if (!amRuntime.swapOwn) return playerIndex === game.turnIndex && progress >= 0 && progress < 40;
-      return playerIndex !== game.turnIndex && progress >= 0 && progress < 40 && !amShieldActive(game, playerIndex, pawnIndex);
-    }
-    return false;
-  }
-
-  function amPlayerCards(game) {
-    return game.players.map((player, index) => {
-      const color = amPlayerColor(index);
-      const isTurn = game.status === "playing" && game.turnIndex === index;
-      const home = (game.pawns[player.id] || []).filter((p) => p >= 40).length;
-      return `<article class="am-player-card ${isTurn ? "turn" : ""}" style="--am-player:${color.hex}">
-        <span class="am-player-dot"></span>
-        <div><b>${amEscape(player.name)}</b><small>${player.isBot ? "Strategie-Bot" : game.online ? "Online-Spieler" : "Du"} · ${home}/4 im Ziel</small></div>
-        <strong>${Number(player.points || 0)} <i>Points</i></strong>
-        ${Number(player.skipTurns || 0) ? `<em>Pause ×${player.skipTurns}</em>` : ""}
-      </article>`;
-    }).join("");
-  }
-
-  function amExtraShop(game) {
-    const player = game.players[game.turnIndex];
-    const canAct = amCurrentCanAct(game);
-    return `<div class="am-extra-grid">
-      ${AM_EXTRAS.map((extra) => {
-        const enabled = canAct && amCanUseExtra(game, extra.id);
-        return `<button class="am-extra-card ${amRuntime.pendingExtra === extra.id ? "selected" : ""}" data-am-extra="${extra.id}" ${enabled ? "" : "disabled"}>
-          <span>${extra.icon}</span><div><b>${extra.label}</b><small>${extra.text}</small></div><strong>${extra.cost}</strong>
-        </button>`;
-      }).join("")}
-      <p class="am-extra-hint">${game.usedExtraThisTurn ? "Für diesen Zug wurde bereits ein Extra benutzt." : `${amEscape(player?.name || "Spieler")} hat ${Number(player?.points || 0)} Points.`}</p>
-    </div>`;
-  }
-
-  function amTargetControls(game) {
-    const extra = amExtraById(amRuntime.pendingExtra);
-    if (!extra) return "";
-    if (extra.target === "player") {
-      return `<div class="am-target-panel"><b>Welcher Gegner soll aussetzen?</b><div>${game.players.map((player, index) => index === game.turnIndex ? "" : `<button data-am-target-player="${index}">${amEscape(player.name)}</button>`).join("")}</div><button class="ghost" data-am-cancel-extra>Abbrechen</button></div>`;
-    }
-    if (extra.target === "die") {
-      return `<div class="am-target-panel"><b>Wunschwurf auswählen</b><div class="dice-pick">${[1,2,3,4,5,6].map((value) => `<button data-am-wish="${value}">${value}</button>`).join("")}</div><button class="ghost" data-am-cancel-extra>Abbrechen</button></div>`;
-    }
-    const prompt = extra.id === "swap" && amRuntime.swapOwn
-      ? "Jetzt eine gegnerische Figur auf der Strecke wählen."
-      : extra.id === "swap"
-        ? "Zuerst eine eigene Figur auf der Strecke wählen."
-        : extra.target === "ownPawn"
-          ? "Wähle eine eigene Figur auf dem Spielfeld."
-          : "Wähle eine gegnerische Figur auf dem Spielfeld.";
-    return `<div class="am-target-panel"><b>${prompt}</b><button class="ghost" data-am-cancel-extra>Abbrechen</button></div>`;
-  }
-
-  function amDiceFace(value) {
-    const dots = {
-      1: "●", 2: "●  ●", 3: "●  ●  ●", 4: "● ●\n● ●", 5: "● ●\n ● \n● ●", 6: "● ●\n● ●\n● ●"
-    };
-    return dots[value] || "?";
-  }
-
-  function amGameOverlayHtml(game) {
-    const current = game.players[game.turnIndex];
-    const currentColor = amPlayerColor(game.turnIndex);
-    const canAct = amCurrentCanAct(game);
-    const legal = game.phase === "move" ? amLegalMoves(game) : [];
-    const roomLabel = game.online ? `Online-Raum ${amEscape(amRuntime.onlineId)}` : "Bot-Spiel";
-    const statusText = game.status === "finished"
-      ? `${amEscape(game.winnerName)} gewinnt!`
-      : `${amEscape(current?.name || "Spieler")} ist am Zug`;
-    const actionText = game.status === "finished"
-      ? "Partie beendet"
-      : !canAct
-        ? current?.isBot ? "Bot berechnet den besten Zug …" : "Warte auf den anderen Spieler …"
-        : game.phase === "roll"
-          ? "Würfle jetzt"
-          : legal.length
-            ? `${legal.length} Figur${legal.length === 1 ? "" : "en"} kann${legal.length === 1 ? "" : " können"} ziehen`
-            : "Kein gültiger Zug – Zug beenden";
-    const phaseText = game.status === "finished" ? "ENDE" : game.phase === "roll" ? "WÜRFELN" : "ZIEHEN";
-    const fullscreenText = document.fullscreenElement ? "Fenster" : "Vollbild";
-    const sideTab = ["players", "shop", "log"].includes(amRuntime.sideTab) ? amRuntime.sideTab : "players";
-    const scoreStrip = game.players.map((player, index) => {
-      const color = amPlayerColor(index);
-      const home = (game.pawns[player.id] || []).filter((progress) => Number(progress) >= 40).length;
-      return `<span style="--p:${color.hex}" class="${index === amOwnPlayerIndex(game) ? "own" : ""}"><i></i><b>${amEscape(player.name)}</b><strong>${Number(player.points || 0)}P</strong><small>${home}/4</small></span>`;
-    }).join("");
-    const ownPoints = Number(game.players[amOwnPlayerIndex(game)]?.points || 0);
-
-    return `<section class="am-game-shell" style="--turn-color:${currentColor.hex}">
-      <header class="am-game-head">
-        <div class="am-head-copy"><p>ÄrgerMensch.KL · ${roomLabel}</p><h2>${statusText}</h2><small>${actionText}</small></div>
-        <div class="am-head-actions"><button data-am-fullscreen>${fullscreenText}</button>${game.online ? `<button data-am-copy-code>Code kopieren</button>` : ""}<button data-am-minimize>Minimieren</button></div>
-      </header>
-      <div class="am-mobile-score-strip" aria-label="Spieler, Points und Zielfiguren">${scoreStrip}</div>
-      <div class="am-game-layout">
-        <main class="am-board-panel">
-          <div class="am-board-stage">
-            ${amBoardSvg(game)}
-            ${amTargetControls(game)}
-          </div>
-          <div class="am-control-deck">
-            <div class="am-turn-strip">
-              <span class="am-turn-dot"></span><div><small>Aktueller Zug</small><b>${amEscape(current?.name || "Spieler")}</b></div><em>${phaseText}</em>
-            </div>
-            <div class="am-main-controls">
-              <div class="am-dice ${game.die ? "rolled" : ""}"><span>${amDiceFace(game.die)}</span><b>${game.die || "–"}</b></div>
-              <div class="am-action-buttons">
-                <button class="am-roll-button" data-am-roll ${canAct && game.phase === "roll" && game.status === "playing" ? "" : "disabled"}>Würfeln</button>
-                <button class="am-pass-button" data-am-pass ${canAct && game.phase === "move" && !legal.length ? "" : "disabled"}>Zug beenden</button>
-              </div>
-              <small class="am-control-hint">PC: Leertaste zum Würfeln · Leuchtende Figur anklicken</small>
-            </div>
-          </div>
-        </main>
-        <nav class="am-mobile-tools" aria-label="Spielinformationen"><button data-am-side-tab="players">Spieler</button><button class="boosts" data-am-side-tab="shop">Boosts <strong>${ownPoints}</strong></button><button data-am-side-tab="log">Verlauf</button></nav>
-        <aside class="am-side-panel ${amRuntime.mobileSheetOpen ? "sheet-open" : "sheet-closed"}" data-am-side-panel>
-          <nav class="am-side-tabs" aria-label="Spielinformationen"><button class="am-sheet-close" data-am-sheet-close aria-label="Informationen schließen">×</button>
-            <button class="${sideTab === "players" ? "active" : ""}" data-am-side-tab="players">Spieler</button>
-            <button class="${sideTab === "shop" ? "active" : ""}" data-am-side-tab="shop">Extras</button>
-            <button class="${sideTab === "log" ? "active" : ""}" data-am-side-tab="log">Verlauf</button>
-          </nav>
-          <section class="am-side-section ${sideTab === "players" ? "active" : ""}" data-am-side-section="players"><div class="am-player-list">${amPlayerCards(game)}</div></section>
-          <section class="am-shop-panel am-side-section ${sideTab === "shop" ? "active" : ""}" data-am-side-section="shop"><h3>Point-Shop</h3><p>Jede natürlich gewürfelte 6 bringt genau 1 Point.</p>${amExtraShop(game)}</section>
-          <section class="am-log-panel am-side-section ${sideTab === "log" ? "active" : ""}" data-am-side-section="log"><h3>Spielverlauf</h3>${(game.log || []).map((entry, index) => `<p class="${index === 0 ? "latest" : ""}">${amEscape(entry)}</p>`).join("")}</section>
-        </aside>
-      </div>
-      ${game.status === "finished" ? `<div class="am-winner-panel"><span>🏆</span><h2>${amEscape(game.winnerName)} gewinnt ÄrgerMensch.KL</h2><p>Alle vier Figuren sind im Ziel.</p><div>${game.online && amIsHost() ? `<button data-am-rematch>Revanche starten</button>` : !game.online ? `<button data-am-local-rematch>Noch eine Runde</button>` : ""}<button data-am-minimize>Zur App</button></div></div>` : ""}
-      <div class="am-toast" data-am-toast></div>
-    </section>`;
-  }
-
-  function amEnsureOverlay() {
-    if (amRuntime.overlay) return amRuntime.overlay;
-    const overlay = document.createElement("div");
-    overlay.className = "am-overlay";
-    overlay.dataset.amOverlay = "1";
-    document.body.appendChild(overlay);
-    overlay.addEventListener("click", amOverlayClick);
-    amRuntime.overlay = overlay;
-    return overlay;
-  }
-
-  function amOpenBoard() {
-    const game = amCurrentGame();
-    if (!game) return amToast("Es ist noch kein Spiel aktiv.");
-    const overlay = amEnsureOverlay();
-    overlay.innerHTML = amGameOverlayHtml(game);
-    overlay.classList.add("show");
-    document.body.classList.add("am-game-open");
-    amScheduleBot();
-  }
-
-  function amCloseBoard() {
-    amRuntime.overlay?.classList.remove("show");
-    document.body.classList.remove("am-game-open");
-    amRuntime.pendingExtra = "";
-    amRuntime.swapOwn = null;
-    amRuntime.mobileSheetOpen = false;
-    amRefreshApp();
-  }
-
-  function amRenderOverlay() {
-    const game = amCurrentGame();
-    if (!amRuntime.overlay?.classList.contains("show") || !game) return;
-    const previousScroll = amRuntime.overlay.querySelector("[data-am-side-panel]")?.scrollTop || 0;
-    amRuntime.overlay.innerHTML = amGameOverlayHtml(game);
-    requestAnimationFrame(() => {
-      const panel = amRuntime.overlay?.querySelector("[data-am-side-panel]");
-      if (panel) panel.scrollTop = previousScroll;
-    });
-  }
-
-  function amRenderAll() {
-    amRenderOverlay();
-    amRefreshApp();
-  }
-
-  function amToast(message) {
-    const text = String(message || "").trim();
-    if (!text) return;
-    const overlay = amRuntime.overlay;
-    const toast = overlay?.querySelector("[data-am-toast]");
-    if (toast) {
-      toast.textContent = text;
-      toast.classList.add("show");
-      clearTimeout(amRuntime.toastTimer);
-      amRuntime.toastTimer = setTimeout(() => toast.classList.remove("show"), 2600);
-    } else if (typeof addFeed === "function") {
-      addFeed(text);
-    }
-  }
-
-  async function amToggleFullscreen() {
-    const shell = amRuntime.overlay?.querySelector(".am-game-shell");
-    try {
-      if (!document.fullscreenElement) await (shell?.requestFullscreen?.() || amRuntime.overlay?.requestFullscreen?.());
-      else await document.exitFullscreen?.();
-    } catch (error) {
-      amToast("Vollbild konnte auf diesem Gerät nicht geöffnet werden.");
-    }
-  }
-
-  async function amOverlayClick(event) {
-    const button = event.target.closest("button, [data-am-pawn]");
-    if (!button) return;
-    const game = amCurrentGame();
-    if (!game) return;
-
-    if (button.matches("[data-am-minimize]")) return amCloseBoard();
-    if (button.matches("[data-am-fullscreen]")) { await amToggleFullscreen(); return; }
-    if (button.matches("[data-am-side-tab]")) {
-      const nextTab = button.dataset.amSideTab || "players";
-      if (window.matchMedia("(max-width: 850px)").matches && amRuntime.mobileSheetOpen && amRuntime.sideTab === nextTab) amRuntime.mobileSheetOpen = false;
-      else { amRuntime.sideTab = nextTab; amRuntime.mobileSheetOpen = true; }
-      amRenderOverlay();
-      return;
-    }
-    if (button.matches("[data-am-sheet-close]")) { amRuntime.mobileSheetOpen = false; amRenderOverlay(); return; }
-    if (button.matches("[data-am-copy-code]")) {
-      try { await navigator.clipboard.writeText(amRuntime.onlineId); amToast("Raumcode kopiert."); }
-      catch { amToast(`Raumcode: ${amRuntime.onlineId}`); }
-      return;
-    }
-    if (button.matches("[data-am-roll]")) {
-      if (!amCurrentCanAct(game)) return;
-      await amMutate((next) => amRollMutation(next, Math.floor(Math.random() * 6) + 1));
-      return;
-    }
-    if (button.matches("[data-am-pass]")) {
-      await amMutate((next) => amEndTurnMutation(next));
-      return;
-    }
-    if (button.matches("[data-am-cancel-extra]")) {
-      amRuntime.pendingExtra = "";
-      amRuntime.swapOwn = null;
-      amRenderOverlay();
-      return;
-    }
-    if (button.matches("[data-am-extra]")) {
-      const extraId = button.dataset.amExtra;
-      const extra = amExtraById(extraId);
-      if (!extra || !amCanUseExtra(game, extraId)) return;
-      if (["reroll", "turbo"].includes(extraId)) {
-        await amMutate((next) => amExtraMutation(next, extraId));
-      } else {
-        amRuntime.pendingExtra = extraId;
-        amRuntime.swapOwn = null;
-        amRenderOverlay();
-      }
-      return;
-    }
-    if (button.matches("[data-am-target-player]")) {
-      const extraId = amRuntime.pendingExtra;
-      const playerIndex = Number(button.dataset.amTargetPlayer);
-      const result = await amMutate((next) => amExtraMutation(next, extraId, { playerIndex }));
-      if (result.ok) { amRuntime.pendingExtra = ""; amRuntime.swapOwn = null; }
-      amRenderOverlay();
-      return;
-    }
-    if (button.matches("[data-am-wish]")) {
-      const value = Number(button.dataset.amWish);
-      const result = await amMutate((next) => amExtraMutation(next, "wish", { value }));
-      if (result.ok) amRuntime.pendingExtra = "";
-      amRenderOverlay();
-      return;
-    }
-    if (button.matches("[data-am-pawn]")) {
-      const [playerIndex, pawnIndex] = button.dataset.amPawn.split(":").map(Number);
-      if (amRuntime.pendingExtra) {
-        const extraId = amRuntime.pendingExtra;
-        if (extraId === "swap") {
-          if (!amRuntime.swapOwn) {
-            if (playerIndex !== game.turnIndex || !amPawnTargetable(game, playerIndex, pawnIndex)) return amToast("Wähle zuerst eine eigene Figur auf der Strecke.");
-            amRuntime.swapOwn = { playerIndex, pawnIndex };
-            amRenderOverlay();
-            return;
-          }
-          const result = await amMutate((next) => amExtraMutation(next, "swap", {
-            ownPawnIndex: amRuntime.swapOwn.pawnIndex,
-            enemyPlayerIndex: playerIndex,
-            enemyPawnIndex: pawnIndex
-          }));
-          if (result.ok) { amRuntime.pendingExtra = ""; amRuntime.swapOwn = null; }
-          amRenderOverlay();
-          return;
-        }
-        const result = await amMutate((next) => amExtraMutation(next, extraId, { playerIndex, pawnIndex }));
-        if (result.ok) { amRuntime.pendingExtra = ""; amRuntime.swapOwn = null; }
-        amRenderOverlay();
-        return;
-      }
-      if (playerIndex === game.turnIndex && amCurrentCanAct(game)) await amMutate((next) => amMoveMutation(next, pawnIndex));
-      return;
-    }
-    if (button.matches("[data-am-local-rematch]")) {
-      const players = amClone(game.players).map((player) => ({ ...player, points: 0, skipTurns: 0 }));
-      amSetLocalGame(amCreateGame(players, false));
-      amRenderAll();
-      amScheduleBot();
-      return;
-    }
-    if (button.matches("[data-am-rematch]")) {
-      await amOnlineRematch();
-    }
-  }
-
-  function amHomeHtml() {
-    const local = amLocalGame();
-    const online = amRuntime.onlineDoc?.gameState;
-    const active = online || local;
-    return `<div class="am-app-home">
-      <section class="am-app-hero"><span>ÄM</span><div><p>BRETTSPIEL · BOT · ONLINE</p><h4>ÄrgerMensch.KL</h4><small>Das taktische 2–4-Spieler-Brettspiel mit Points, Extras, öffentlichen Räumen und Privatcodes.</small></div></section>
-      ${active ? `<button class="am-resume-card" data-am-app="resume"><span>▶</span><div><b>${active.online ? `Online-Partie · Raum ${amEscape(amRuntime.onlineId)}` : "Botpartie fortsetzen"}</b><small>${active.status === "finished" ? `${amEscape(active.winnerName)} hat gewonnen.` : `${amEscape(active.players[active.turnIndex]?.name)} ist am Zug.`}</small></div></button>` : ""}
-      <div class="am-battle-hub-title"><h4>Spielmodus</h4><small>2–4 SPIELER</small></div>
-      <div class="am-mode-grid am-mode-grid-standalone">
-        <button data-am-app="local-setup"><span>🤖</span><b>Gegen Bots</b><small>1 vs 1 bis vier Spieler mit taktischen Bots.</small></button>
-        <button data-am-app="online"><span>🌐</span><b>Online spielen</b><small>Öffentlich sichtbar oder privat mit Raumcode.</small></button>
-        <button data-am-app="rules"><span>?</span><b>Regeln & Point-Shop</b><small>Alle Regeln, Points und Extras erklärt.</small></button>
-      </div>
-      <div class="am-feature-strip"><span>Bot-Modus</span><span>Online-Lobbys</span><span>Privatcodes</span><span>Point-Shop</span><span>PC & Handy</span></div>
-    </div>`;
-  }
-
-  function amLocalSetupHtml() {
-    return `<div class="am-app-page"><button class="am-app-back" data-am-app="home">← Zurück</button><h4>Bot-Spiel erstellen</h4><p>Du spielst Rot. Die übrigen Plätze werden mit taktischen Bots besetzt.</p>
-      <label>Spieleranzahl<select data-am-local-count><option value="2">1 vs 1</option><option value="3">1 vs 1 vs 1</option><option value="4" selected>1 vs 1 vs 1 vs 1</option></select></label>
-      <div class="am-setup-preview">${AM_COLORS.map((color, index) => `<span style="--c:${color.hex}">${index === 0 ? "Du" : `Bot ${index}`}</span>`).join("")}</div>
-      <button class="am-primary" data-am-start-local>Partie starten</button>
-      <small class="am-note">Die Bots priorisieren Rauswürfe, Zielzüge, sichere Felder, Pflichtauszüge und setzen Points taktisch ein.</small>
-    </div>`;
-  }
-
-  function amRulesHtml() {
-    return `<div class="am-app-page"><button class="am-app-back" data-am-app="home">← Zurück</button><h4>Regeln & Point-Shop</h4>
-      <div class="am-rule-list"><p><b>1.</b> Eine Figur verlässt das Haus nur mit einer 6. Wenn möglich, muss bei einer 6 zuerst eine Figur herausgesetzt werden.</p><p><b>2.</b> Eigene Figuren dürfen nicht auf demselben Feld stehen. Für den Zieleinlauf brauchst du die passende Augenzahl.</p><p><b>3.</b> Landest du auf einer ungeschützten gegnerischen Figur, wird sie zurück ins Haus geschickt.</p><p><b>4.</b> Nach einer natürlich gewürfelten 6 erhältst du 1 Point und würfelst nach deinem Zug erneut.</p><p><b>5.</b> Pro eigenem Zug darf höchstens ein Extra gekauft werden.</p></div>
-      <div class="am-rules-extras">${AM_EXTRAS.map((extra) => `<article><span>${extra.icon}</span><div><b>${extra.label}</b><small>${extra.text}</small></div><strong>${extra.cost}</strong></article>`).join("")}</div>
-    </div>`;
-  }
-
-  function amOnlineHtml() {
-    const connected = !!amRuntime.onlineDoc;
-    if (connected && amRuntime.onlineDoc.status === "lobby") return amLobbyHtml();
-    if (connected && amRuntime.onlineDoc.gameState) return `<div class="am-app-page"><button class="am-app-back" data-am-leave-view>← Menü</button><h4>Online-Partie</h4><div class="am-room-code"><small>Raumcode</small><b>${amEscape(amRuntime.onlineId)}</b></div><button class="am-primary" data-am-app="resume">Spielbrett öffnen</button><button class="am-danger" data-am-online-disconnect>Raum verlassen</button></div>`;
-    return `<div class="am-app-page am-online-page"><button class="am-app-back" data-am-app="home">← Zurück</button><h4>Online spielen</h4>
-      <section class="am-online-create"><h5>Neuen Raum erstellen</h5><label>Spieleranzahl<select data-am-online-count><option value="2">2 Spieler</option><option value="3">3 Spieler</option><option value="4" selected>4 Spieler</option></select></label><label>Sichtbarkeit<select data-am-online-visibility><option value="public">Öffentlich sichtbar</option><option value="private">Privat · nur mit Code</option></select></label><label class="am-check"><input type="checkbox" data-am-fill-bots checked> Freie Plätze beim Start mit Bots auffüllen</label><button class="am-primary" data-am-create-room>Raum erstellen</button></section>
-      <section class="am-code-join"><h5>Mit Code beitreten</h5><div><input data-am-room-code maxlength="6" placeholder="ABC123"><button data-am-join-code>Beitreten</button></div></section>
-      <section class="am-public-rooms"><div><h5>Öffentliche Räume</h5><button data-am-refresh-rooms>Aktualisieren</button></div>${amPublicRoomsHtml()}</section>
-    </div>`;
-  }
-
-  function amPublicRoomsHtml() {
-    if (!amRuntime.publicRooms.length) return `<p class="am-empty">Aktuell wartet kein öffentlicher Raum. Erstelle den ersten.</p>`;
-    return amRuntime.publicRooms.map((room) => `<article><span>${room.players?.length || 1}/${room.maxPlayers || 4}</span><div><b>${amEscape(room.hostName || "Spieler")}</b><small>Raum ${amEscape(room.gameId || room.id)} · ${room.fillBots ? "Bots erlaubt" : "nur Online-Spieler"}</small></div><button data-am-join-room="${amEscape(room.gameId || room.id)}">Beitreten</button></article>`).join("");
-  }
-
-  function amLobbyHtml() {
-    const room = amRuntime.onlineDoc;
-    const players = room.players || [];
-    const host = amIsHost();
-    return `<div class="am-app-page am-lobby-page"><button class="am-app-back" data-am-leave-room>← Raum verlassen</button><h4>Warteraum</h4>
-      <div class="am-room-code"><small>${room.visibility === "private" ? "Privater Raumcode" : "Raumcode"}</small><b>${amEscape(amRuntime.onlineId)}</b><button data-am-copy-room-code>Kopieren</button></div>
-      <div class="am-lobby-status"><span class="pulse"></span><b>Spiel startet gleich</b><small>Andere Spieler sehen öffentliche Räume direkt in ihrer App.</small></div>
-      <div class="am-lobby-players">${Array.from({ length: room.maxPlayers || 4 }, (_, index) => {
-        const player = players[index];
-        const color = amPlayerColor(index);
-        return `<article style="--c:${color.hex}"><span>${player ? player.isBot ? "BOT" : index + 1 : "+"}</span><div><b>${player ? amEscape(player.name) : "Freier Platz"}</b><small>${player ? player.uid === room.hostUid ? "Host" : player.isBot ? "Strategie-Bot" : "Online verbunden" : "Wartet auf Spieler"}</small></div></article>`;
-      }).join("")}</div>
-      ${host ? `<label class="am-check"><input type="checkbox" data-am-lobby-fill-bots ${room.fillBots ? "checked" : ""}> Beim Start freie Plätze mit Bots füllen</label><button class="am-primary" data-am-start-online ${players.length >= 2 || room.fillBots ? "" : "disabled"}>Spiel starten</button>` : `<p class="am-wait-host">Der Host startet die Partie, sobald genug Spieler da sind.</p>`}
-    </div>`;
-  }
-
-  function amAppHtml() {
-    if (amRuntime.view === "local-setup") return amLocalSetupHtml();
-    if (amRuntime.view === "rules") return amRulesHtml();
-    if (amRuntime.view === "online") return amOnlineHtml();
-    return amHomeHtml();
-  }
-
-  function amRefreshApp() {
-    const shells = [...document.querySelectorAll("#detailDialog .device-shell")];
-    const shell = shells.reverse().find((entry) => entry.classList.contains(`device-active-${AM_APP_ID}`)) || shells[0];
-    if (!shell?.classList.contains(`device-active-${AM_APP_ID}`)) return;
-    const phone = typeof ownedPhoneItem === "function" ? ownedPhoneItem() : "";
-    if (phone && typeof openDeviceInterface === "function") {
-      const scroll = shell.querySelector(".device-screen")?.scrollTop || 0;
-      openDeviceInterface(phone, AM_APP_ID, false);
-      requestAnimationFrame(() => {
-        const next = document.querySelector("#detailDialog .device-shell .device-screen");
-        if (next) next.scrollTop = scroll;
-      });
-    }
-  }
-
-  async function amStartLocal(shell) {
-    try {
-      const activeShell = shell?.isConnected ? shell : document.querySelector("#detailDialog .device-shell:last-of-type");
-      const total = Math.max(2, Math.min(4, Number(activeShell?.querySelector("[data-am-local-count]")?.value || 4)));
-      clearTimeout(amRuntime.botTimer);
-      amRuntime.onlineUnsub?.();
-      amRuntime.onlineUnsub = null;
-      amRuntime.onlineId = "";
-      amRuntime.onlineDoc = null;
-      amRuntime.pendingExtra = "";
-      amRuntime.swapOwn = null;
-      amRuntime.mobileSheetOpen = false;
-      const players = amCreatePlayers(total, false);
-      amSetLocalGame(amCreateGame(players, false));
-      amRuntime.view = "home";
-      document.querySelector("#detailDialog")?.close?.();
-      amOpenBoard();
-      return true;
-    } catch (error) {
-      console.error("ÄrgerMensch.KL Bot-Partie", error);
-      amToast(`Bot-Partie konnte nicht gestartet werden: ${error?.message || error}`);
-      return false;
-    }
-  }
-
-  async function amCreateRoom(shell) {
-    const fb = await amFirebase();
-    const user = amRequireOnlineUser(fb);
-    const maxPlayers = Math.max(2, Math.min(4, Number(shell.querySelector("[data-am-online-count]")?.value || 4)));
-    const visibility = shell.querySelector("[data-am-online-visibility]")?.value === "private" ? "private" : "public";
-    const fillBots = !!shell.querySelector("[data-am-fill-bots]")?.checked;
-    let code = "";
-    let ref = null;
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      code = amNewCode();
-      ref = fb.doc(fb.db, AM_COLLECTION, code);
-      if (!(await fb.getDoc(ref)).exists()) break;
-    }
-    const player = { uid: user.uid, name: user.displayName || amPlayerDisplayName(), isBot: false };
-    const room = {
-      gameId: code,
-      hostUid: user.uid,
-      hostName: player.name,
-      visibility,
-      maxPlayers,
-      fillBots,
-      status: "lobby",
-      playerUids: [user.uid],
-      players: [player],
-      gameState: null,
-      winnerName: "",
-      createdAtMs: Date.now(),
-      updatedAtMs: Date.now(),
-      version: AM_VERSION
-    };
-    await fb.setDoc(ref, room);
-    await amWatchRoom(code);
-    amRuntime.view = "online";
-    amRefreshApp();
-  }
-
-  async function amJoinRoom(codeRaw) {
-    const code = String(codeRaw || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
-    if (code.length !== 6) throw new Error("Der Raumcode muss sechs Zeichen haben.");
-    const fb = await amFirebase();
-    const user = amRequireOnlineUser(fb);
-    const ref = fb.doc(fb.db, AM_COLLECTION, code);
-    await fb.runTransaction(fb.db, async (transaction) => {
-      const snapshot = await transaction.get(ref);
-      if (!snapshot.exists()) throw new Error("Dieser Raum wurde nicht gefunden.");
-      const room = snapshot.data();
-      if (room.status !== "lobby") throw new Error("Diese Partie läuft bereits.");
-      const players = Array.isArray(room.players) ? [...room.players] : [];
-      if (players.some((entry) => entry.uid === user.uid)) return;
-      if (players.length >= Number(room.maxPlayers || 4)) throw new Error("Der Raum ist bereits voll.");
-      players.push({ uid: user.uid, name: user.displayName || amPlayerDisplayName(), isBot: false });
-      transaction.update(ref, { players, playerUids: players.map((entry) => entry.uid), updatedAtMs: Date.now() });
-    });
-    await amWatchRoom(code);
-    amRuntime.view = "online";
-    amRefreshApp();
-  }
-
-  async function amWatchRoom(code) {
-    const fb = await amFirebase();
-    const user = amRequireOnlineUser(fb);
-    amRuntime.onlineUnsub?.();
-    amRuntime.onlineId = code;
-    const ref = fb.doc(fb.db, AM_COLLECTION, code);
-    amRuntime.onlineUnsub = fb.onSnapshot(ref, (snapshot) => {
-      const previousStatus = amRuntime.onlineDoc?.status || "";
-      if (!snapshot.exists()) {
-        amToast("Der Online-Raum wurde geschlossen.");
-        amDisconnectRoom(false);
-        return;
-      }
-      amRuntime.onlineDoc = { id: snapshot.id, viewerUid: user.uid, ...snapshot.data() };
-      if (previousStatus === "lobby" && amRuntime.onlineDoc.status === "playing") {
-        // Der Host kann starten, während Gäste noch im Warteraum sind.
-        // Das Spielbrett öffnet sich für alle Teilnehmer automatisch.
-        amOpenBoard();
-      }
-      amRenderAll();
-      amScheduleBot();
-    }, (error) => amToast(`Raumverbindung: ${error.message || error}`));
-  }
-
-  async function amStartOnline(shell) {
-    const fb = await amFirebase();
-    const user = amRequireOnlineUser(fb);
-    const ref = fb.doc(fb.db, AM_COLLECTION, amRuntime.onlineId);
-    await fb.runTransaction(fb.db, async (transaction) => {
-      const snapshot = await transaction.get(ref);
-      if (!snapshot.exists()) throw new Error("Raum nicht gefunden.");
-      const room = snapshot.data();
-      if (room.hostUid !== user.uid) throw new Error("Nur der Host kann starten.");
-      if (room.status !== "lobby") return;
-      const fillBots = !!shell.querySelector("[data-am-lobby-fill-bots]")?.checked;
-      const humans = (room.players || []).filter((entry) => !entry.isBot);
-      if (humans.length < 2 && !fillBots) throw new Error("Mindestens zwei Online-Spieler werden benötigt.");
-      const requestedTotal = Math.max(2, Math.min(4, Number(room.maxPlayers || 4)));
-      const actualTotal = fillBots ? requestedTotal : Math.max(2, humans.length);
-      const players = amCreatePlayers(actualTotal, true, humans);
-      const gameState = amCreateGame(players, true);
-      transaction.update(ref, {
-        fillBots,
-        players: players.map((player) => ({ uid: player.uid, name: player.name, isBot: player.isBot })),
-        playerUids: humans.map((entry) => entry.uid),
-        gameState,
-        status: "playing",
-        updatedAtMs: Date.now()
-      });
-    });
-    amOpenBoard();
-  }
-
-  async function amOnlineRematch() {
-    if (!amRuntime.onlineId || !amIsHost()) return;
-    const fb = await amFirebase();
-    const ref = fb.doc(fb.db, AM_COLLECTION, amRuntime.onlineId);
-    await fb.runTransaction(fb.db, async (transaction) => {
-      const snapshot = await transaction.get(ref);
-      if (!snapshot.exists()) throw new Error("Raum nicht gefunden.");
-      const room = snapshot.data();
-      const players = amClone(room.gameState?.players || []).map((player) => ({ ...player, points: 0, skipTurns: 0 }));
-      transaction.update(ref, { gameState: amCreateGame(players, true), status: "playing", winnerName: "", updatedAtMs: Date.now() });
-    });
-  }
-
-  async function amLeaveRoom() {
-    if (!amRuntime.onlineId) return;
-    try {
-      const fb = await amFirebase();
-      const user = amRequireOnlineUser(fb);
-      const ref = fb.doc(fb.db, AM_COLLECTION, amRuntime.onlineId);
-      await fb.runTransaction(fb.db, async (transaction) => {
-        const snapshot = await transaction.get(ref);
-        if (!snapshot.exists()) return;
-        const room = snapshot.data();
-        if (room.status !== "lobby") return;
-        if (room.hostUid === user.uid) {
-          transaction.delete(ref);
-          return;
-        }
-        const players = (room.players || []).filter((entry) => entry.uid !== user.uid);
-        transaction.update(ref, { players, playerUids: players.map((entry) => entry.uid), updatedAtMs: Date.now() });
-      });
-    } catch (error) {
-      amToast(error.message || error);
-    }
-    amDisconnectRoom(false);
-  }
-
-  function amDisconnectRoom(refresh = true) {
-    amRuntime.onlineUnsub?.();
-    amRuntime.onlineUnsub = null;
-    amRuntime.onlineDoc = null;
-    amRuntime.onlineId = "";
-    amRuntime.view = "online";
-    amCloseBoard();
-    if (refresh) amRefreshApp();
-  }
-
-  async function amListenPublicRooms() {
-    const fb = await amFirebase();
-    amRequireOnlineUser(fb);
-    amRuntime.publicUnsub?.();
-    const query = fb.query(fb.collection(fb.db, AM_COLLECTION), fb.where("visibility", "==", "public"), fb.where("status", "==", "lobby"), fb.limit(30));
-    amRuntime.publicUnsub = fb.onSnapshot(query, (snapshot) => {
-      amRuntime.publicRooms = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
-        .filter((room) => room.status === "lobby" && room.visibility === "public" && (room.players?.length || 0) < Number(room.maxPlayers || 4))
-        .sort((a, b) => Number(b.updatedAtMs || 0) - Number(a.updatedAtMs || 0));
-      if (amRuntime.view === "online") amRefreshApp();
-    }, (error) => amToast(`Lobby-Liste: ${error.message || error}`));
-  }
-
-  function amBindApp(shell) {
-    if (!shell) return;
-    if (shell.dataset.amBoundVersion === AM_VERSION) return;
-    shell.dataset.amBoundVersion = AM_VERSION;
-    shell.querySelectorAll("[data-am-app]").forEach((button) => button.addEventListener("click", () => {
-      const action = button.dataset.amApp;
-      if (action === "resume") return amOpenBoard();
-      amRuntime.view = action;
-      if (action === "online") amListenPublicRooms().catch((error) => amToast(error.message || error));
-      amRefreshApp();
-    }));
-    shell.querySelectorAll("[data-am-battle-game]").forEach((button) => button.addEventListener("click", () => {
-      if (window.LifeBuilderBattleHub?.open) window.LifeBuilderBattleHub.open(button.dataset.amBattleGame);
-      else amToast("Battle Hub wird noch geladen. Bitte die App kurz schließen und erneut öffnen.");
-    }));
-    shell.querySelector("[data-am-start-local]")?.addEventListener("click", () => amStartLocal(shell).catch((error) => amToast(error?.message || error)));
-    shell.querySelector("[data-am-create-room]")?.addEventListener("click", () => amCreateRoom(shell).catch((error) => amToast(error.message || error)));
-    shell.querySelector("[data-am-join-code]")?.addEventListener("click", () => amJoinRoom(shell.querySelector("[data-am-room-code]")?.value).catch((error) => amToast(error.message || error)));
-    shell.querySelectorAll("[data-am-join-room]").forEach((button) => button.addEventListener("click", () => amJoinRoom(button.dataset.amJoinRoom).catch((error) => amToast(error.message || error))));
-    shell.querySelector("[data-am-refresh-rooms]")?.addEventListener("click", () => amListenPublicRooms().catch((error) => amToast(error.message || error)));
-    shell.querySelector("[data-am-start-online]")?.addEventListener("click", () => amStartOnline(shell).catch((error) => amToast(error.message || error)));
-    shell.querySelector("[data-am-leave-room]")?.addEventListener("click", () => amLeaveRoom());
-    shell.querySelector("[data-am-online-disconnect]")?.addEventListener("click", () => amDisconnectRoom());
-    shell.querySelector("[data-am-leave-view]")?.addEventListener("click", () => { amRuntime.view = "home"; amRefreshApp(); });
-    shell.querySelector("[data-am-copy-room-code]")?.addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText(amRuntime.onlineId); amToast("Raumcode kopiert."); }
-      catch { amToast(`Raumcode: ${amRuntime.onlineId}`); }
-    });
-  }
-
-  const BATTLE_STANDALONE_APPS = [
-    {
-      id: "grundstueck-kampf",
-      gameType: "territory",
-      label: "Grundstück-Kampf",
-      icon: "▦",
-      accent: "#45e6b0",
-      eyebrow: "GEBIET · TAKTIK · TEMPO",
-      description: "Erobere ein quadratisches Spielfeld, verteidige Gebiete und setze Schutz, Frost, Bomben und Doppeleroberung taktisch ein."
-    },
-    {
-      id: "paket-chaos",
-      gameType: "packages",
-      label: "Paket-Chaos",
-      icon: "▣",
-      accent: "#ffbf4b",
-      eyebrow: "LOGISTIK · EXPRESS · CHAOS",
-      description: "Sortiere Pakete gleichzeitig nach Farbe und Zielort, schütze zerbrechliche Ware und störe deine Gegner mit Sonderkarten."
-    },
-    {
-      id: "reaktions-battle",
-      gameType: "reaction",
-      label: "Reaktions-Battle",
-      icon: "⚡",
-      accent: "#b876ff",
-      eyebrow: "REAKTION · FOKUS · DUELL",
-      description: "Tippen, wischen, halten und vergleichen: Wer falsch oder zu langsam reagiert, verliert ein Leben."
-    }
-  ];
-
-  function standaloneBattleDefinition(appId) {
-    return BATTLE_STANDALONE_APPS.find((entry) => entry.id === appId) || null;
-  }
-
-  function battleStandaloneAppHtml(appId) {
-    const app = standaloneBattleDefinition(appId);
-    if (!app) return "";
-    return `<div class="standalone-battle-app" style="--standalone-accent:${app.accent}">
-      <section class="standalone-battle-hero">
-        <span>${app.icon}</span>
-        <div><p>${app.eyebrow}</p><h4>${amEscape(app.label)}</h4><small>${amEscape(app.description)}</small></div>
-      </section>
-      <div class="standalone-battle-actions">
-        <button data-standalone-battle-local="${app.gameType}"><span>🤖</span><div><b>Gegen Bots</b><small>2, 3 oder 4 Spieler · Best-of-1/3/5</small></div><i>›</i></button>
-        <button data-standalone-battle-online="${app.gameType}"><span>🌐</span><div><b>Online spielen</b><small>Öffentliche Räume oder privat mit sechsstelligem Code</small></div><i>›</i></button>
-      </div>
-      <div class="standalone-battle-info"><span>Touch</span><span>Maus</span><span>Tastatur</span><span>Privatcode</span></div>
-      <p>Dieses Spiel ist eine eigenständige App und bleibt nach dem Neuladen installiert.</p>
-    </div>`;
-  }
-
-  // Jede Multiplayer-App wird als eigener Download im Life App Store geführt.
-  const storeApps = [
-    {
-      id: AM_APP_ID,
-      label: "ÄrgerMensch.KL",
-      icon: "ÄM",
-      minTier: 1,
-      status: "available",
-      description: "Taktisches Brettspiel für 2–4 Spieler mit Bots, Online-Lobbys, Privatcodes, Points und Extras."
-    },
-    ...BATTLE_STANDALONE_APPS.map((app) => ({
-      id: app.id,
-      label: app.label,
-      icon: app.icon,
-      minTier: 1,
-      status: "available",
-      description: `${app.description} Gegen Bots oder online für 2–4 Spieler.`
-    }))
-  ];
-  storeApps.forEach((entry) => {
-    const existing = phoneAppStoreCatalog.find((app) => app.id === entry.id);
-    if (existing) Object.assign(existing, entry);
-    else phoneAppStoreCatalog.push(entry);
-  });
-
-  const amBasePhoneAppStoreHtml = phoneAppStoreHtml;
-  phoneAppStoreHtml = function amPhoneAppStoreHtml(item) {
-    return amBasePhoneAppStoreHtml(item).replace(
-      /<p class="device-hint">[\s\S]*?<\/p>\s*<\/div>\s*$/,
-      `<p class="device-hint">ÄrgerMensch.KL, Grundstück-Kampf, Paket-Chaos und Reaktions-Battle werden einzeln installiert. Installationen bleiben nach dem Neuladen erhalten.</p></div>`
-    );
-  };
-
-  const amBaseDeviceAppsFor = deviceAppsFor;
-  deviceAppsFor = function amDeviceAppsFor(item) {
-    const apps = amBaseDeviceAppsFor(item);
-    if (!phoneItems().includes(item)) return apps;
-    const tier = deviceTier(item);
-    const missingTier = tier < 1;
-    const missingSim = !hasPhoneSim();
-
-    if (isPhoneAppInstalled(AM_APP_ID) && !apps.some((app) => app.id === AM_APP_ID)) {
-      apps.push({
-        id: AM_APP_ID,
-        min: 1,
-        data: true,
-        label: "ÄrgerMensch.KL",
-        icon: "ÄM",
-        text: "Taktisches Brettspiel mit Point-Shop – gegen Bots oder online für zwei bis vier Spieler.",
-        layoutClass: "device-downloaded-app am-app-icon",
-        locked: missingTier,
-        lockText: missingTier ? "Benötigt mindestens ein Einsteiger-Smartphone." : missingSim ? "Bot-Spiele funktionieren ohne SIM. Für Online-Lobbys wird eine SIM-Karte benötigt." : ""
-      });
-    }
-
-    BATTLE_STANDALONE_APPS.forEach((entry) => {
-      if (!isPhoneAppInstalled(entry.id) || apps.some((app) => app.id === entry.id)) return;
-      apps.push({
-        id: entry.id,
-        min: 1,
-        data: true,
-        label: entry.label,
-        icon: entry.icon,
-        text: entry.description,
-        layoutClass: `device-downloaded-app standalone-battle-icon standalone-battle-icon-${entry.gameType}`,
-        locked: missingTier,
-        lockText: missingTier ? "Benötigt mindestens ein Einsteiger-Smartphone." : missingSim ? "Bot-Spiele funktionieren ohne SIM. Für Online-Lobbys wird eine SIM-Karte benötigt." : ""
-      });
-    });
-    return apps;
-  };
-
-  const amBaseDeviceAppActions = deviceAppActions;
-  deviceAppActions = function amDeviceAppActions(appId, item) {
-    if (appId === AM_APP_ID) return amAppHtml();
-    if (standaloneBattleDefinition(appId)) return battleStandaloneAppHtml(appId);
-    return amBaseDeviceAppActions(appId, item);
-  };
-
-  const amBaseOpenDeviceAppDirect = openDeviceAppDirect;
-  openDeviceAppDirect = function amOpenDeviceAppDirect(item, appId) {
-    if (appId === AM_APP_ID) return openDeviceInterface(item, AM_APP_ID, false);
-    const battleApp = standaloneBattleDefinition(appId);
-    if (battleApp) {
-      document.querySelector("#detailDialog")?.close?.();
-      return window.LifeBuilderBattleHub?.openSingle?.(battleApp.gameType, "home");
-    }
-    return amBaseOpenDeviceAppDirect(item, appId);
-  };
-
-  function bindStandaloneBattleApp(shell) {
-    shell?.querySelectorAll("[data-standalone-battle-local]").forEach((button) => button.addEventListener("click", () => {
-      document.querySelector("#detailDialog")?.close?.();
-      window.LifeBuilderBattleHub?.openSingle?.(button.dataset.standaloneBattleLocal, "local");
-    }));
-    shell?.querySelectorAll("[data-standalone-battle-online]").forEach((button) => button.addEventListener("click", () => {
-      document.querySelector("#detailDialog")?.close?.();
-      window.LifeBuilderBattleHub?.openSingle?.(button.dataset.standaloneBattleOnline, "online");
-    }));
-  }
-
-  const amBaseOpenDeviceInterface = openDeviceInterface;
-  openDeviceInterface = function amOpenDeviceInterface(item, activeApp = "home", activeUse = true) {
-    const result = amBaseOpenDeviceInterface(item, activeApp, activeUse);
-    const shell = document.querySelector("#detailDialog .device-shell:last-of-type") || document.querySelector("#detailDialog .device-shell");
-    if (activeApp === AM_APP_ID) amBindApp(shell);
-    if (standaloneBattleDefinition(activeApp)) bindStandaloneBattleApp(shell);
-    return result;
-  };
-
-  document.addEventListener("keydown", (event) => {
-    if (!amRuntime.overlay?.classList.contains("show")) return;
-    if (event.target?.matches?.("input, textarea, select")) return;
-    const game = amCurrentGame();
-    if (!game) return;
-    if (event.key === "Escape") {
-      if (amRuntime.pendingExtra) {
-        amRuntime.pendingExtra = "";
-        amRuntime.swapOwn = null;
-        amRenderOverlay();
-      } else {
-        amCloseBoard();
-      }
-      return;
-    }
-    if (event.code === "Space") {
-      event.preventDefault();
-      if (!amCurrentCanAct(game) || amRuntime.busy) return;
-      if (game.phase === "roll") amMutate((next) => amRollMutation(next, Math.floor(Math.random() * 6) + 1));
-      else if (game.phase === "move" && !amLegalMoves(game).length) amMutate((next) => amEndTurnMutation(next));
-    }
-  });
-
-  document.addEventListener("fullscreenchange", () => {
-    amRuntime.fullscreen = !!document.fullscreenElement;
-    amRenderOverlay();
-  });
-
-  window.AergerMenschKL = {
-    version: AM_VERSION,
-    openBotParty: (total = 4) => {
-      const count = Math.max(2, Math.min(4, Number(total || 4)));
-      const players = amCreatePlayers(count, false);
-      amRuntime.onlineId = "";
-      amRuntime.onlineDoc = null;
-      amSetLocalGame(amCreateGame(players, false));
-      amRuntime.view = "home";
-      amOpenBoard();
-      return true;
-    },
-    resume: amOpenBoard,
-    getGame: amCurrentGame
-  };
-
-  document.addEventListener("click", (event) => {
-    const button = event.target.closest?.("[data-am-start-local]");
-    if (!button) return;
-    const count = Number(button.closest(".device-shell")?.querySelector("[data-am-local-count]")?.value || 4);
-    setTimeout(() => {
-      if (!amRuntime.overlay?.classList.contains("show")) {
-        console.warn("ÄrgerMensch.KL: regulärer Start blieb aus, Fallback wird verwendet.");
-        window.AergerMenschKL.openBotParty(count);
-      }
-    }, 350);
-  }, true);
-
-  window.addEventListener("beforeunload", () => {
-    amRuntime.onlineUnsub?.();
-    amRuntime.publicUnsub?.();
-  });
-})();
+/* LifeBuilder Battle Hub – Grundstück-Kampf, Paket-Chaos und Reaktions-Battle */
+.bh-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147482500;
+  display: none;
+  padding: clamp(6px, 1.4vw, 20px);
+  overflow: auto;
+  color: #eef8ff;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(49, 213, 255, .16), transparent 34%),
+    radial-gradient(circle at 100% 100%, rgba(184, 92, 255, .16), transparent 34%),
+    rgba(3, 8, 17, .96);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  overscroll-behavior: contain;
+  touch-action: manipulation;
+}
+.bh-overlay.show { display: block; }
+body.bh-open { overflow: hidden !important; }
+.bh-overlay *, .bh-overlay *::before, .bh-overlay *::after { box-sizing: border-box; }
+.bh-overlay button, .bh-overlay input, .bh-overlay select { font: inherit; }
+.bh-overlay button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.bh-overlay button:disabled { cursor: default; opacity: .42; filter: saturate(.45); }
+
+.bh-shell {
+  --accent: #59e7ff;
+  position: relative;
+  width: min(1540px, 100%);
+  min-height: calc(100dvh - clamp(12px, 2.8vw, 40px));
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 70%);
+  border-radius: clamp(18px, 2.2vw, 30px);
+  background:
+    linear-gradient(rgba(255,255,255,.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px),
+    radial-gradient(circle at 15% 0, color-mix(in srgb, var(--accent), transparent 83%), transparent 36%),
+    #08121f;
+  background-size: 24px 24px, 24px 24px, auto, auto;
+  box-shadow: 0 28px 90px rgba(0,0,0,.52), inset 0 1px rgba(255,255,255,.06);
+}
+
+.bh-header {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-height: 74px;
+  padding: 13px clamp(13px, 2vw, 24px);
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  background: rgba(7, 16, 29, .88);
+  backdrop-filter: blur(14px);
+}
+.bh-header > button {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 14px;
+  color: #effaff;
+  background: rgba(255,255,255,.055);
+  font-size: 1.45rem;
+  font-weight: 800;
+}
+.bh-header > button:hover { border-color: color-mix(in srgb, var(--accent), transparent 40%); background: color-mix(in srgb, var(--accent), transparent 88%); }
+.bh-header > div:nth-child(2) { min-width: 0; flex: 1; }
+.bh-header p { margin: 0 0 3px; color: var(--accent); font-size: .66rem; font-weight: 950; letter-spacing: .12em; }
+.bh-header h2 { margin: 0; overflow: hidden; font-size: clamp(1.06rem, 2vw, 1.65rem); line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
+.bh-live-pill, .bh-round-badge, .bh-game-icon {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 58%);
+  border-radius: 999px;
+  color: color-mix(in srgb, var(--accent), white 25%);
+  background: color-mix(in srgb, var(--accent), transparent 89%);
+  font-size: .72rem;
+  font-weight: 900;
+}
+.bh-game-icon { display: grid; place-items: center; width: 43px; height: 43px; padding: 0; font-size: 1.15rem; }
+
+.bh-launch-hero {
+  position: relative;
+  min-height: clamp(220px, 32vw, 390px);
+  padding: clamp(25px, 5vw, 72px);
+  overflow: hidden;
+  background:
+    linear-gradient(90deg, rgba(5,12,24,.98), rgba(5,12,24,.64) 55%, rgba(5,12,24,.24)),
+    radial-gradient(circle at 82% 28%, rgba(73, 220, 145, .32), transparent 20%),
+    radial-gradient(circle at 75% 70%, rgba(74, 168, 255, .24), transparent 23%),
+    linear-gradient(135deg, #0b2032, #191337 55%, #2b1535);
+}
+.bh-launch-hero::before, .bh-launch-hero::after {
+  content: "";
+  position: absolute;
+  right: clamp(20px, 8vw, 130px);
+  top: 50%;
+  width: clamp(150px, 26vw, 360px);
+  aspect-ratio: 1;
+  border: clamp(16px, 2.6vw, 38px) solid rgba(255,255,255,.06);
+  border-radius: 34%;
+  transform: translateY(-50%) rotate(24deg);
+  box-shadow: inset 0 0 60px rgba(255,255,255,.03), 0 0 80px rgba(92, 99, 255, .15);
+}
+.bh-launch-hero::after { right: clamp(60px, 16vw, 260px); width: clamp(80px, 13vw, 180px); border-width: 10px; transform: translateY(-45%) rotate(-12deg); }
+.bh-launch-hero > div { position: relative; z-index: 2; max-width: 670px; }
+.bh-launch-hero > div > span {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  margin-bottom: 18px;
+  border-radius: 23px;
+  background: linear-gradient(145deg, #52e7b4, #4aa8ff 52%, #b876ff);
+  color: #071320;
+  font-size: 1.45rem;
+  font-weight: 1000;
+  box-shadow: 0 14px 36px rgba(67, 191, 210, .25), inset 0 1px rgba(255,255,255,.65);
+}
+.bh-launch-hero p { margin: 0 0 8px; color: #69e8ff; font-size: .72rem; font-weight: 950; letter-spacing: .14em; }
+.bh-launch-hero h1 { margin: 0; font-size: clamp(2rem, 6vw, 5rem); line-height: .95; letter-spacing: -.045em; }
+.bh-launch-hero small { display: block; max-width: 560px; margin-top: 16px; color: #b7c6d8; font-size: clamp(.86rem, 1.35vw, 1.08rem); line-height: 1.5; }
+
+.bh-launch-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(10px, 1.5vw, 18px);
+  padding: clamp(12px, 2.2vw, 27px);
+}
+.bh-launch-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 13px;
+  min-height: 240px;
+  padding: clamp(14px, 2vw, 22px);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 70%);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--accent), transparent 72%), transparent 42%),
+    linear-gradient(145deg, rgba(25, 39, 61, .97), rgba(11, 20, 35, .97));
+  box-shadow: inset 0 1px rgba(255,255,255,.06), 0 14px 35px rgba(0,0,0,.22);
+}
+.bh-launch-card::after { content: ""; position: absolute; right: -35px; bottom: -45px; width: 140px; height: 140px; border: 22px solid color-mix(in srgb, var(--accent), transparent 88%); border-radius: 36%; transform: rotate(24deg); }
+.bh-launch-card > span {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 17px;
+  color: #07131f;
+  background: var(--accent);
+  font-size: 1.42rem;
+  font-weight: 1000;
+  box-shadow: 0 10px 25px color-mix(in srgb, var(--accent), transparent 65%);
+}
+.bh-launch-card > div { position: relative; z-index: 1; min-width: 0; }
+.bh-launch-card p { margin: 1px 0 4px; color: var(--accent); font-size: .64rem; font-weight: 950; letter-spacing: .1em; text-transform: uppercase; }
+.bh-launch-card h3 { margin: 0; font-size: clamp(1.08rem, 2vw, 1.5rem); }
+.bh-launch-card small { display: block; margin-top: 9px; color: #9fb0c5; line-height: 1.42; }
+.bh-launch-card > button {
+  position: relative;
+  z-index: 2;
+  align-self: end;
+  min-height: 43px;
+  border-radius: 13px;
+  font-weight: 900;
+}
+.bh-launch-card > button:nth-of-type(1) { border: 0; color: #07131f; background: var(--accent); }
+.bh-launch-card > button:nth-of-type(2) { border: 1px solid color-mix(in srgb, var(--accent), transparent 55%); color: #eaf8ff; background: color-mix(in srgb, var(--accent), transparent 89%); }
+.bh-return-am { display: block; width: calc(100% - clamp(24px, 4.4vw, 54px)); min-height: 45px; margin: 0 auto 24px; border: 1px solid rgba(255,255,255,.12); border-radius: 14px; color: #dce8f5; background: rgba(255,255,255,.05); font-weight: 850; }
+
+.bh-setup-grid, .bh-lobby-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(330px, .9fr);
+  gap: clamp(12px, 2vw, 24px);
+  padding: clamp(13px, 2.4vw, 30px);
+}
+.bh-setup-grid > section, .bh-lobby-grid > section {
+  padding: clamp(15px, 2.2vw, 26px);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 23px;
+  background: linear-gradient(145deg, rgba(20, 33, 52, .94), rgba(11, 20, 34, .96));
+  box-shadow: inset 0 1px rgba(255,255,255,.045), 0 14px 34px rgba(0,0,0,.18);
+}
+.bh-setup-grid h3, .bh-lobby-grid h3 { margin: 0 0 9px; font-size: 1.25rem; }
+.bh-setup-grid p { color: #9dadc0; line-height: 1.48; }
+.bh-setup-grid label { display: grid; gap: 7px; margin-top: 13px; color: #c7d5e4; font-size: .76rem; font-weight: 850; }
+.bh-setup-grid select, .bh-setup-grid input, .bh-join-panel input {
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 13px;
+  outline: none;
+  color: #f4fbff;
+  background: #0d192a;
+}
+.bh-setup-grid select:focus, .bh-setup-grid input:focus, .bh-join-panel input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent), transparent 85%); }
+.bh-check { display: flex !important; align-items: center; gap: 10px !important; }
+.bh-check input { width: 20px !important; min-height: 20px !important; margin: 0; accent-color: var(--accent); }
+.bh-primary, .bh-secondary {
+  width: 100%;
+  min-height: 48px;
+  margin-top: 16px;
+  border-radius: 14px;
+  font-weight: 950;
+}
+.bh-primary { border: 0; color: #07131f; background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent), white 25%)); box-shadow: 0 10px 26px color-mix(in srgb, var(--accent), transparent 72%); }
+.bh-secondary { border: 1px solid rgba(255,255,255,.13); color: #e4eff9; background: rgba(255,255,255,.055); }
+.bh-bot-preview > div { display: grid; grid-template-columns: repeat(2, 1fr); gap: 9px; margin-top: 17px; }
+.bh-bot-preview span { display: grid; place-items: center; min-height: 70px; border: 1px solid color-mix(in srgb, var(--bot), transparent 55%); border-radius: 17px; color: var(--bot); background: color-mix(in srgb, var(--bot), transparent 89%); font-weight: 1000; }
+.bh-join-panel > div:first-of-type { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.bh-join-panel > div:first-of-type button, .bh-public-rooms button { border: 0; border-radius: 12px; color: #07131f; background: var(--accent); font-weight: 900; }
+.bh-join-panel h3:not(:first-child) { margin-top: 25px; }
+.bh-public-rooms { display: grid; gap: 8px; }
+.bh-public-rooms > p { padding: 15px; border-radius: 14px; background: rgba(255,255,255,.04); text-align: center; }
+.bh-public-rooms article { display: grid; grid-template-columns: 42px 1fr auto; align-items: center; gap: 10px; padding: 10px; border: 1px solid rgba(255,255,255,.09); border-radius: 15px; background: rgba(255,255,255,.035); }
+.bh-public-rooms article > span { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 13px; color: var(--accent); background: color-mix(in srgb, var(--accent), transparent 88%); font-size: .72rem; font-weight: 950; }
+.bh-public-rooms b, .bh-public-rooms small { display: block; }
+.bh-public-rooms small { color: #8497ad; }
+.bh-public-rooms button { padding: 9px 11px; }
+
+.bh-code-card { display: grid; place-items: center; align-content: center; min-height: 280px; text-align: center; }
+.bh-code-card small { color: #8da2ba; font-weight: 850; letter-spacing: .13em; }
+.bh-code-card b { margin: 10px 0; color: var(--accent); font-size: clamp(2.3rem, 7vw, 5.5rem); letter-spacing: .14em; text-shadow: 0 0 30px color-mix(in srgb, var(--accent), transparent 50%); }
+.bh-code-card button { padding: 10px 15px; border: 0; border-radius: 12px; color: #07131f; background: var(--accent); font-weight: 950; }
+.bh-code-card p { max-width: 480px; margin: 18px 0 0; color: #92a4b9; line-height: 1.45; }
+.bh-seat-grid { display: grid; gap: 9px; }
+.bh-seat-grid article { display: grid; grid-template-columns: 50px 1fr; align-items: center; gap: 11px; padding: 12px; border: 1px solid color-mix(in srgb, var(--seat), transparent 67%); border-radius: 17px; background: color-mix(in srgb, var(--seat), transparent 92%); }
+.bh-seat-grid article > span { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 15px; color: #07131f; background: var(--seat); font-size: .72rem; font-weight: 1000; }
+.bh-seat-grid b, .bh-seat-grid small { display: block; }
+.bh-seat-grid small { color: #8fa2b8; }
+.bh-lobby-controls { grid-column: 1 / -1; }
+.bh-wait { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; align-items: center; padding: 15px; border-radius: 16px; background: rgba(255,255,255,.04); }
+.bh-wait > span { grid-row: 1 / 3; width: 16px; height: 16px; border-radius: 50%; background: #50e49b; box-shadow: 0 0 0 0 rgba(80,228,155,.5); animation: bhPulse 1.45s infinite; }
+.bh-wait small { color: #8ea1b6; }
+
+.bh-game-shell { min-height: calc(100dvh - clamp(12px, 2.8vw, 40px)); }
+.bh-game-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(290px, 360px); min-height: calc(100dvh - 102px); }
+.bh-game-layout > main { min-width: 0; padding: clamp(8px, 1.5vw, 20px); }
+.bh-game-layout > aside { padding: 15px; overflow: auto; border-left: 1px solid rgba(255,255,255,.08); background: rgba(6,14,25,.72); }
+.bh-game-layout > aside > h3 { margin: 0 0 11px; }
+.bh-game-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(270px, 350px); gap: clamp(10px, 1.4vw, 18px); min-height: 100%; }
+.bh-game-main > section { min-width: 0; padding: clamp(10px, 1.5vw, 18px); border: 1px solid rgba(255,255,255,.09); border-radius: 22px; background: rgba(9,20,35,.78); box-shadow: inset 0 1px rgba(255,255,255,.04); }
+.bh-board-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.bh-board-status b { color: var(--accent); font-size: clamp(1.3rem, 3vw, 2.1rem); font-variant-numeric: tabular-nums; }
+.bh-board-status span { color: #9eb0c4; font-size: .78rem; text-align: right; }
+
+.bh-territory-board-wrap { align-content: start; }
+.bh-territory-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  width: min(100%, 980px);
+  margin: 0 auto;
+  overflow: hidden;
+  border: 2px solid rgba(255,255,255,.13);
+  border-radius: 18px;
+  background: #07111e;
+  box-shadow: 0 18px 50px rgba(0,0,0,.35), inset 0 0 45px rgba(0,0,0,.42);
+}
+.bh-territory-cell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  min-width: 0;
+  padding: 0;
+  border: 1px solid rgba(255,255,255,.045);
+  background: color-mix(in srgb, var(--owner), #0b1727 58%);
+  transition: transform .12s ease, filter .12s ease, box-shadow .12s ease;
+}
+.bh-territory-cell.reachable { z-index: 1; box-shadow: inset 0 0 0 2px rgba(255,255,255,.38), 0 0 12px rgba(90,232,255,.18); animation: bhReach 1.1s infinite alternate; }
+.bh-territory-cell.bomb-target { box-shadow: inset 0 0 0 2px #ff586f; animation: bhBomb .75s infinite alternate; }
+.bh-territory-cell > span { display: grid; place-items: center; width: 66%; aspect-ratio: 1; border: 2px solid rgba(255,255,255,.75); border-radius: 50%; color: #07131f; background: var(--token); font-size: clamp(.42rem, 1.15vw, .82rem); font-weight: 1000; box-shadow: 0 4px 10px rgba(0,0,0,.32); }
+.bh-territory-cell em { position: absolute; right: 5%; top: 3%; color: #fff; font-size: clamp(.38rem, .9vw, .72rem); font-style: normal; text-shadow: 0 1px 5px #000; }
+.bh-territory-cell i { position: absolute; left: 4%; top: 2%; color: #fff; font-size: clamp(.36rem, .75vw, .68rem); font-style: normal; opacity: .8; }
+.bh-move-pad { display: grid; grid-template-columns: repeat(4, minmax(50px, 78px)); justify-content: center; gap: 8px; margin-top: 13px; }
+.bh-move-pad button { min-height: 45px; border: 1px solid rgba(255,255,255,.14); border-radius: 13px; color: #eaf8ff; background: rgba(255,255,255,.06); font-weight: 950; }
+
+.bh-power-panel h3 { margin: 0; }
+.bh-power-panel > p { margin: 4px 0 13px; color: #8fa3b9; line-height: 1.4; }
+.bh-power-panel > div:not(.bh-inline-hint):not(.bh-target-list) { display: grid; gap: 8px; }
+.bh-power-panel > div > button {
+  display: grid;
+  grid-template-columns: 44px 1fr 28px;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 15px;
+  color: #edf8ff;
+  background: rgba(255,255,255,.045);
+  text-align: left;
+}
+.bh-power-panel > div > button.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent), transparent 88%); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent), transparent 90%); }
+.bh-power-panel > div > button > span { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 13px; color: #07131f; background: var(--accent); font-weight: 1000; }
+.bh-power-panel button b, .bh-power-panel button small { display: block; }
+.bh-power-panel button small { margin-top: 2px; color: #8ea0b5; line-height: 1.3; }
+.bh-power-panel button strong { display: grid; place-items: center; width: 27px; height: 27px; border-radius: 50%; color: #07131f; background: #fff; }
+.bh-inline-hint, .bh-target-list { margin-top: 12px; padding: 11px; border: 1px solid color-mix(in srgb, var(--accent), transparent 65%); border-radius: 14px; background: color-mix(in srgb, var(--accent), transparent 91%); color: #cfefff; line-height: 1.4; }
+.bh-inline-hint button, .bh-target-list button { margin-top: 7px; padding: 8px 10px; border: 1px solid rgba(255,255,255,.14); border-radius: 10px; color: #fff; background: rgba(255,255,255,.07); }
+.bh-target-list { display: grid; gap: 7px; }
+.bh-target-list > b { margin-bottom: 2px; }
+.bh-target-list button { margin: 0; }
+
+.bh-logistics-floor { position: relative; overflow: hidden; }
+.bh-routing-map { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-bottom: 13px; }
+.bh-routing-map span { display: grid; grid-template-columns: 9px 1fr; gap: 1px 7px; align-items: center; padding: 8px; border: 1px solid color-mix(in srgb, var(--route), transparent 65%); border-radius: 13px; background: color-mix(in srgb, var(--route), transparent 92%); }
+.bh-routing-map i { grid-row: 1 / 3; width: 8px; height: 30px; border-radius: 8px; background: var(--route); }
+.bh-routing-map b { font-size: .7rem; }
+.bh-routing-map small { color: #9eb0c4; font-size: .63rem; }
+.bh-conveyor { display: flex; align-items: center; gap: 10px; min-height: 290px; padding: 20px; overflow: hidden; border: 1px solid rgba(255,255,255,.1); border-radius: 20px; background: repeating-linear-gradient(90deg, #111d2c 0 28px, #0c1725 28px 56px); box-shadow: inset 0 0 40px rgba(0,0,0,.4); }
+.bh-conveyor > div { flex: 0 0 160px; transform: scale(.78); opacity: .52; }
+.bh-conveyor > div.current { flex-basis: clamp(190px, 30vw, 280px); transform: scale(1); opacity: 1; }
+.bh-package { --pack: #ff4f6d; position: relative; display: grid; align-content: center; min-height: 190px; padding: 22px 15px; overflow: hidden; border: 3px solid color-mix(in srgb, var(--pack), black 18%); border-radius: 18px; color: #21170c; background: linear-gradient(145deg, color-mix(in srgb, var(--pack), #f0c383 44%), color-mix(in srgb, var(--pack), #b97a39 62%)); box-shadow: 0 16px 30px rgba(0,0,0,.35), inset 0 1px rgba(255,255,255,.45); text-align: center; }
+.bh-package .tape { position: absolute; left: 50%; top: 0; width: 34px; height: 100%; background: rgba(245, 226, 176, .58); transform: translateX(-50%); }
+.bh-package b, .bh-package div, .bh-package small { position: relative; z-index: 1; }
+.bh-package b { font-size: 1.15rem; }
+.bh-package div { margin: 8px 0; font-weight: 900; }
+.bh-package small { font-weight: 850; }
+.bh-careful-toggle { display: grid; grid-template-columns: auto 1fr; gap: 1px 9px; align-items: center; margin: 13px 0; padding: 11px; border: 1px solid rgba(255,255,255,.11); border-radius: 14px; background: rgba(255,255,255,.045); }
+.bh-careful-toggle input { grid-row: 1 / 3; width: 21px; height: 21px; accent-color: var(--accent); }
+.bh-careful-toggle span { font-weight: 900; }
+.bh-careful-toggle small { color: #8fa1b7; }
+.bh-city-buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.bh-city-buttons button { min-height: 50px; border: 1px solid color-mix(in srgb, var(--accent), transparent 60%); border-radius: 14px; color: #eaf8ff; background: color-mix(in srgb, var(--accent), transparent 90%); font-weight: 950; }
+.bh-city-buttons button:hover { color: #07131f; background: var(--accent); }
+.bh-blind-cover { position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; align-content: center; gap: 6px; background: rgba(2,5,10,.96); backdrop-filter: blur(18px); text-align: center; }
+.bh-blind-cover span { font-size: 3rem; }
+.bh-blind-cover b { font-size: 1.5rem; }
+.bh-blind-cover small { color: #9eb0c4; }
+
+.bh-reaction-main { grid-template-columns: 1fr; }
+.bh-reaction-arena { display: grid; align-content: start; min-height: calc(100dvh - 140px); background: radial-gradient(circle at 50% 25%, color-mix(in srgb, var(--accent), transparent 85%), transparent 35%), rgba(9,20,35,.78) !important; }
+.bh-reaction-top { display: flex; justify-content: space-between; align-items: center; }
+.bh-reaction-top span { color: var(--accent); font-weight: 950; letter-spacing: .08em; text-transform: uppercase; }
+.bh-reaction-top b { font-size: 1.65rem; font-variant-numeric: tabular-nums; }
+.bh-life-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-top: 14px; }
+.bh-life-row > div { padding: 9px; border: 1px solid color-mix(in srgb, var(--life), transparent 67%); border-radius: 13px; background: color-mix(in srgb, var(--life), transparent 92%); text-align: center; }
+.bh-life-row b, .bh-life-row span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bh-life-row b { font-size: .72rem; }
+.bh-life-row span { margin-top: 4px; color: var(--life); letter-spacing: .06em; }
+.bh-prompt { display: grid; place-items: center; align-content: center; min-height: 220px; padding: 20px; text-align: center; }
+.bh-prompt small { color: var(--accent); font-weight: 950; letter-spacing: .16em; }
+.bh-prompt h2 { max-width: 780px; margin: 10px 0 0; font-size: clamp(1.65rem, 5vw, 4.4rem); line-height: 1; }
+.bh-prompt p { color: #a9bacd; }
+.bh-color-controls, .bh-number-controls, .bh-symbol-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; width: min(900px, 100%); margin: 0 auto; }
+.bh-color-controls button, .bh-number-controls button, .bh-symbol-controls button { min-height: clamp(90px, 13vw, 155px); border: 1px solid rgba(255,255,255,.13); border-radius: 21px; color: #eef9ff; background: rgba(255,255,255,.055); font-size: clamp(1rem, 3vw, 2rem); font-weight: 1000; }
+.bh-color-controls button span { display: block; width: 45px; height: 45px; margin: 0 auto 8px; border-radius: 50%; background: var(--choice); box-shadow: 0 0 20px color-mix(in srgb, var(--choice), transparent 55%); }
+.bh-number-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.bh-number-controls button { font-size: clamp(2rem, 8vw, 6rem); }
+.bh-symbol-controls button { font-size: clamp(2rem, 7vw, 5rem); }
+.bh-swipe-zone { display: grid; place-items: center; align-content: center; width: min(820px, 100%); min-height: 270px; margin: 0 auto; border: 2px dashed color-mix(in srgb, var(--accent), transparent 48%); border-radius: 25px; background: color-mix(in srgb, var(--accent), transparent 93%); user-select: none; touch-action: none; }
+.bh-swipe-zone > span { font-size: 4rem; animation: bhSwipe 1.1s infinite; }
+.bh-swipe-zone b { font-size: 1.25rem; }
+.bh-swipe-zone small { margin-top: 5px; color: #8fa2b8; }
+.bh-swipe-zone button { min-width: 210px; min-height: 45px; margin-top: 18px; border: 0; border-radius: 13px; color: #07131f; background: var(--accent); font-weight: 950; }
+.bh-hold-button { position: relative; display: grid; place-items: center; align-content: center; gap: 5px; width: min(620px, 100%); min-height: 240px; margin: 0 auto; overflow: hidden; border: 2px solid color-mix(in srgb, var(--accent), transparent 45%); border-radius: 30px; color: #effaff; background: color-mix(in srgb, var(--accent), transparent 91%); }
+.bh-hold-button > span { position: absolute; inset: auto 0 0; height: 0; background: color-mix(in srgb, var(--accent), transparent 35%); transition: height .12s; }
+.bh-hold-button.holding > span { height: 100%; transition: height .8s linear; }
+.bh-hold-button b, .bh-hold-button small { position: relative; z-index: 1; }
+.bh-hold-button b { font-size: 1.5rem; }
+.bh-hold-button small { color: #a4b7ca; }
+.bh-reaction-wait { display: grid; place-items: center; align-content: center; min-height: 260px; }
+.bh-reaction-wait span { font-size: 3rem; color: #55e6a0; }
+.bh-reaction-wait small { color: #8fa1b7; }
+.bh-reaction-arena.answered-correct { box-shadow: inset 0 0 0 2px rgba(73,220,145,.55), inset 0 0 80px rgba(73,220,145,.08); }
+.bh-reaction-arena.answered-wrong { box-shadow: inset 0 0 0 2px rgba(255,79,109,.55), inset 0 0 80px rgba(255,79,109,.08); }
+
+.bh-player-list { display: grid; gap: 8px; }
+.bh-player { display: grid; grid-template-columns: 42px 1fr; align-items: center; gap: 9px; padding: 10px; border: 1px solid color-mix(in srgb, var(--player), transparent 70%); border-radius: 14px; background: color-mix(in srgb, var(--player), transparent 94%); }
+.bh-player.own { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--player), transparent 35%); }
+.bh-player > span { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 13px; color: #07131f; background: var(--player); font-size: .67rem; font-weight: 1000; }
+.bh-player b, .bh-player small { display: block; }
+.bh-player small { margin-top: 2px; color: #8da0b6; line-height: 1.3; }
+.bh-log { margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,.08); }
+.bh-log h4 { margin: 0 0 8px; }
+.bh-log p { margin: 0; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,.055); color: #8fa2b7; font-size: .75rem; line-height: 1.35; }
+
+.bh-result-overlay { position: absolute; inset: 0; z-index: 30; display: grid; place-items: center; padding: 16px; background: rgba(2,7,14,.88); backdrop-filter: blur(16px); }
+.bh-result-overlay > div { width: min(680px, 100%); max-height: 92dvh; padding: clamp(20px, 4vw, 42px); overflow: auto; border: 1px solid color-mix(in srgb, var(--accent), transparent 55%); border-radius: 28px; background: radial-gradient(circle at 50% 0, color-mix(in srgb, var(--accent), transparent 78%), transparent 38%), #0b1727; box-shadow: 0 28px 90px rgba(0,0,0,.55); text-align: center; }
+.bh-result-overlay > div > span { font-size: 3.5rem; }
+.bh-result-overlay p { margin: 8px 0 4px; color: var(--accent); font-weight: 950; letter-spacing: .12em; }
+.bh-result-overlay h2 { margin: 0; font-size: clamp(1.9rem, 6vw, 4rem); }
+.bh-result-overlay small { display: block; margin: 9px 0 18px; color: #9eb0c4; line-height: 1.45; }
+.bh-result-overlay section { display: grid; gap: 7px; text-align: left; }
+.bh-result-actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 18px; }
+.bh-result-actions button { min-height: 47px; border-radius: 14px; font-weight: 950; }
+.bh-result-actions button:first-child { border: 0; color: #07131f; background: var(--accent); }
+.bh-result-actions button:last-child { border: 1px solid rgba(255,255,255,.14); color: #eaf5ff; background: rgba(255,255,255,.06); }
+
+.bh-toast { position: fixed; z-index: 2147482999; left: 50%; bottom: 24px; max-width: min(560px, calc(100vw - 24px)); padding: 11px 15px; border: 1px solid rgba(255,255,255,.14); border-radius: 13px; color: #f5fbff; background: rgba(8,18,31,.96); box-shadow: 0 12px 36px rgba(0,0,0,.38); opacity: 0; pointer-events: none; transform: translate(-50%, 14px); transition: .2s ease; }
+.bh-toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* Battle-Hub-Karten innerhalb der ÄrgerMensch.KL-App */
+.am-battle-hub-title { display: flex; align-items: end; justify-content: space-between; gap: 8px; margin-top: 3px; }
+.am-battle-hub-title h4 { margin: 0; font-size: 1rem; }
+.am-battle-hub-title small { color: #7ceaff; font-size: .64rem; font-weight: 900; }
+.am-battle-game-grid { display: grid; gap: 8px; }
+.am-battle-game-card { display: grid; grid-template-columns: 45px 1fr auto; align-items: center; gap: 10px; width: 100%; padding: 11px; border: 1px solid color-mix(in srgb, var(--battle), transparent 66%); border-radius: 16px; color: #eff8ff; background: linear-gradient(145deg, color-mix(in srgb, var(--battle), transparent 91%), rgba(12,22,38,.95)); text-align: left; }
+.am-battle-game-card > span { display: grid; place-items: center; width: 43px; height: 43px; border-radius: 14px; color: #07131f; background: var(--battle); font-size: 1.2rem; font-weight: 1000; }
+.am-battle-game-card b, .am-battle-game-card small { display: block; }
+.am-battle-game-card small { margin-top: 3px; color: #8fa1b5; line-height: 1.28; }
+.am-battle-game-card > i { color: var(--battle); font-size: 1.35rem; font-style: normal; }
+
+@keyframes bhPulse { 70% { box-shadow: 0 0 0 12px rgba(80,228,155,0); } 100% { box-shadow: 0 0 0 0 rgba(80,228,155,0); } }
+@keyframes bhReach { to { filter: brightness(1.24); } }
+@keyframes bhBomb { to { filter: brightness(1.35) saturate(1.45); } }
+@keyframes bhSwipe { 50% { transform: translateX(-28px); } }
+
+@media (max-width: 1050px) {
+  .bh-launch-grid { grid-template-columns: 1fr; }
+  .bh-launch-card { min-height: 190px; }
+  .bh-game-layout { grid-template-columns: 1fr; }
+  .bh-game-layout > aside { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; border-top: 1px solid rgba(255,255,255,.08); border-left: 0; }
+  .bh-game-layout > aside > h3 { grid-column: 1 / -1; }
+  .bh-log { margin: 0; padding: 0 0 0 12px; border-top: 0; border-left: 1px solid rgba(255,255,255,.08); }
+}
+
+@media (max-width: 760px) {
+  .bh-overlay { padding: 0; background: #06101d; }
+  .bh-shell { min-height: 100dvh; border: 0; border-radius: 0; }
+  .bh-header { position: sticky; top: 0; min-height: 62px; padding: 9px 10px; }
+  .bh-header > button { width: 39px; height: 39px; border-radius: 12px; }
+  .bh-header p { font-size: .55rem; }
+  .bh-header h2 { font-size: 1rem; }
+  .bh-live-pill, .bh-round-badge { padding: 7px 9px; font-size: .62rem; }
+  .bh-launch-hero { min-height: 250px; padding: 28px 17px; }
+  .bh-launch-hero::before { right: -55px; width: 210px; }
+  .bh-launch-hero::after { display: none; }
+  .bh-launch-hero > div > span { width: 58px; height: 58px; border-radius: 18px; }
+  .bh-launch-hero h1 { font-size: 2.55rem; }
+  .bh-launch-grid { padding: 10px; }
+  .bh-launch-card { grid-template-columns: 43px 1fr; min-height: 205px; padding: 13px; border-radius: 19px; }
+  .bh-launch-card > span { width: 43px; height: 43px; border-radius: 14px; }
+  .bh-launch-card > button { min-height: 44px; }
+  .bh-return-am { width: calc(100% - 20px); margin-bottom: 14px; }
+  .bh-setup-grid, .bh-lobby-grid { grid-template-columns: 1fr; padding: 10px; }
+  .bh-setup-grid > section, .bh-lobby-grid > section { padding: 14px; border-radius: 18px; }
+  .bh-code-card { min-height: 210px; }
+  .bh-code-card b { font-size: 2.6rem; }
+  .bh-lobby-controls { grid-column: auto; }
+  .bh-game-layout { min-height: calc(100dvh - 62px); }
+  .bh-game-layout > main { padding: 7px; }
+  .bh-game-layout > aside { grid-template-columns: 1fr; padding: 9px; }
+  .bh-log { padding: 10px 0 0; border-top: 1px solid rgba(255,255,255,.08); border-left: 0; }
+  .bh-game-main { grid-template-columns: 1fr; gap: 7px; }
+  .bh-game-main > section { padding: 9px; border-radius: 17px; }
+  .bh-territory-cell > span { width: 78%; border-width: 1px; }
+  .bh-territory-cell em, .bh-territory-cell i { font-size: .42rem; }
+  .bh-move-pad { grid-template-columns: repeat(4, 1fr); }
+  .bh-power-panel > div > button { grid-template-columns: 39px 1fr 25px; padding: 8px; }
+  .bh-power-panel > div > button > span { width: 37px; height: 37px; border-radius: 11px; }
+  .bh-conveyor { min-height: 230px; padding: 12px; }
+  .bh-conveyor > div { flex-basis: 112px; }
+  .bh-conveyor > div.current { flex-basis: 190px; }
+  .bh-package { min-height: 155px; padding: 17px 10px; border-radius: 15px; }
+  .bh-routing-map { grid-template-columns: repeat(2, 1fr); }
+  .bh-city-buttons { grid-template-columns: repeat(2, 1fr); }
+  .bh-reaction-arena { min-height: calc(100dvh - 76px); }
+  .bh-life-row { grid-template-columns: repeat(2, 1fr); }
+  .bh-prompt { min-height: 165px; padding: 14px 5px; }
+  .bh-prompt h2 { font-size: 2rem; }
+  .bh-color-controls, .bh-symbol-controls { grid-template-columns: repeat(2, 1fr); gap: 7px; }
+  .bh-color-controls button, .bh-number-controls button, .bh-symbol-controls button { min-height: 95px; border-radius: 16px; }
+  .bh-swipe-zone { min-height: 220px; }
+  .bh-hold-button { min-height: 210px; }
+  .bh-result-overlay { padding: 8px; }
+  .bh-result-overlay > div { padding: 20px 13px; border-radius: 21px; }
+  .bh-result-actions { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 420px) {
+  .bh-header .bh-round-badge, .bh-header .bh-live-pill { display: none; }
+  .bh-launch-card small { font-size: .71rem; }
+  .bh-territory-grid { border-radius: 12px; }
+  .bh-board-status { align-items: flex-start; }
+  .bh-board-status span { max-width: 62%; font-size: .67rem; }
+  .bh-routing-map span { padding: 6px; }
+  .bh-conveyor > div.queued:nth-child(n+4) { display: none; }
+  .bh-public-rooms article { grid-template-columns: 36px 1fr; }
+  .bh-public-rooms article > button { grid-column: 1 / -1; min-height: 39px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bh-overlay *, .bh-overlay *::before, .bh-overlay *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .001ms !important; }
+}
+
+/* Startansicht einer einzeln installierten Battle-App */
+.bh-single-launcher { min-height: min(760px, calc(100vh - 28px)); }
+.bh-single-hero { position: relative; overflow: hidden; display: grid; grid-template-columns: 105px 1fr; align-items: center; gap: 22px; min-height: 260px; padding: 34px; border-bottom: 1px solid rgba(255,255,255,.08); background: radial-gradient(circle at 12% 20%, color-mix(in srgb, var(--accent) 27%, transparent), transparent 36%), linear-gradient(145deg, #0d1d31, #07101d); }
+.bh-single-hero::after { content: ""; position: absolute; right: -80px; bottom: -120px; width: 330px; height: 330px; border: 48px solid color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 50%; }
+.bh-single-hero > span { position: relative; z-index: 1; display: grid; place-items: center; width: 102px; height: 102px; border: 1px solid color-mix(in srgb, var(--accent) 60%, white 8%); border-radius: 30px; background: color-mix(in srgb, var(--accent) 20%, #081422); color: var(--accent); font-size: 3rem; font-weight: 950; box-shadow: 0 0 42px color-mix(in srgb, var(--accent) 25%, transparent); }
+.bh-single-hero div { position: relative; z-index: 1; max-width: 760px; }
+.bh-single-hero p { margin: 0 0 5px; color: var(--accent); font-size: .72rem; font-weight: 950; letter-spacing: .14em; text-transform: uppercase; }
+.bh-single-hero h1 { margin: 0 0 8px; font-size: clamp(2rem, 5vw, 4.5rem); line-height: .96; }
+.bh-single-hero small { display: block; max-width: 680px; color: #a5b7ca; font-size: .95rem; line-height: 1.5; }
+.bh-single-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 22px; }
+.bh-single-actions > button { display: grid; grid-template-columns: 62px 1fr 26px; align-items: center; gap: 14px; min-height: 122px; padding: 18px; border: 1px solid rgba(255,255,255,.09); border-radius: 22px; background: linear-gradient(145deg, rgba(255,255,255,.065), rgba(255,255,255,.025)); color: #effaff; text-align: left; box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 16px 38px rgba(0,0,0,.18); }
+.bh-single-actions > button:hover { border-color: color-mix(in srgb, var(--accent) 58%, transparent); transform: translateY(-2px); }
+.bh-single-actions > button > span { display: grid; place-items: center; width: 60px; height: 60px; border-radius: 18px; background: color-mix(in srgb, var(--accent) 14%, #101c2d); font-size: 1.7rem; }
+.bh-single-actions b, .bh-single-actions small { display: block; }
+.bh-single-actions b { margin-bottom: 5px; font-size: 1.05rem; }
+.bh-single-actions small { color: #92a7bd; line-height: 1.4; }
+.bh-single-actions i { color: var(--accent); font-size: 1.8rem; font-style: normal; }
+.bh-single-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; padding: 0 20px 24px; }
+.bh-single-tags span { padding: 7px 12px; border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--accent) 8%, transparent); color: #a9bdd0; font-size: .68rem; font-weight: 850; }
+
+@media (max-width: 760px) {
+  .bh-single-hero { grid-template-columns: 68px 1fr; gap: 14px; min-height: 220px; padding: 22px 15px; }
+  .bh-single-hero > span { width: 66px; height: 66px; border-radius: 21px; font-size: 2rem; }
+  .bh-single-hero h1 { font-size: 2.35rem; }
+  .bh-single-hero small { font-size: .78rem; }
+  .bh-single-actions { grid-template-columns: 1fr; gap: 10px; padding: 12px 10px; }
+  .bh-single-actions > button { min-height: 92px; grid-template-columns: 48px 1fr 20px; padding: 13px; border-radius: 18px; }
+  .bh-single-actions > button > span { width: 46px; height: 46px; border-radius: 14px; font-size: 1.25rem; }
+  .bh-single-tags { padding-bottom: 18px; }
+}
+
+/* ========================================================================== */
+/* Mobile Arena V3 – Vollbild, Canvas-Arena und neue Paket-Sortierstation      */
+/* ========================================================================== */
+.bh-game-shell {
+  height: calc(100dvh - clamp(12px, 2.8vw, 40px));
+  min-height: 560px;
+  display: flex;
+  flex-direction: column;
+}
+.bh-game-shell .bh-header { flex: 0 0 auto; }
+.bh-mobile-score-strip {
+  display: none;
+  flex: 0 0 auto;
+  gap: 6px;
+  padding: 6px 9px;
+  overflow-x: auto;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+  background: rgba(5,13,24,.92);
+  scrollbar-width: none;
+}
+.bh-mobile-score-strip::-webkit-scrollbar { display: none; }
+.bh-mobile-score-strip > span {
+  min-width: 105px;
+  display: grid;
+  grid-template-columns: 8px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--p), transparent 72%);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--p), transparent 94%);
+}
+.bh-mobile-score-strip > span.own { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--p), transparent 48%); }
+.bh-mobile-score-strip i { width: 7px; height: 7px; border-radius: 50%; background: var(--p); box-shadow: 0 0 9px var(--p); }
+.bh-mobile-score-strip b { overflow: hidden; font-size: .62rem; text-overflow: ellipsis; white-space: nowrap; }
+.bh-mobile-score-strip strong { color: var(--p); font-size: .72rem; }
+.bh-game-layout { flex: 1 1 auto; min-height: 0; height: auto; }
+.bh-game-layout > main { min-width: 0; min-height: 0; overflow: hidden; }
+.bh-game-layout > aside { min-height: 0; overflow-y: auto; }
+.bh-game-main { height: 100%; min-height: 0; }
+
+/* Grundstück-Kampf V2 */
+.bh-territory-main.bh-arena-v2 {
+  grid-template-columns: minmax(330px, 1fr) minmax(250px, 330px);
+  gap: 10px;
+}
+.bh-territory-board-wrap {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0,1fr) auto;
+  gap: 9px;
+  overflow: hidden;
+}
+.bh-arena-status { min-height: 48px; }
+.bh-arena-status b { font-size: clamp(1.45rem, 3vw, 2.35rem); }
+.bh-territory-canvas-wrap {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(111,231,190,.22);
+  border-radius: 22px;
+  background: radial-gradient(circle at 50% 45%, rgba(54,218,164,.1), transparent 60%), #030a13;
+  box-shadow: inset 0 0 40px rgba(0,0,0,.36);
+}
+.bh-territory-canvas {
+  width: min(100%, calc((100dvh - 235px) * .75));
+  height: min(100%, calc(100dvh - 235px));
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: 18 / 24;
+  display: block;
+  touch-action: none;
+  user-select: none;
+}
+.bh-canvas-tip {
+  position: absolute;
+  left: 50%;
+  bottom: 7px;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 999px;
+  color: rgba(221,244,255,.58);
+  background: rgba(2,7,13,.72);
+  font-size: .52rem;
+  font-weight: 900;
+  letter-spacing: .09em;
+  pointer-events: none;
+}
+.bh-move-pad-v2 {
+  width: min(330px, 100%);
+  justify-self: center;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-areas: ". up ." "left center right" ". down .";
+  gap: 5px;
+  padding: 0;
+}
+.bh-move-pad-v2 button {
+  min-height: 47px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 14px;
+  color: #e9fbff;
+  background: linear-gradient(145deg, rgba(255,255,255,.09), rgba(255,255,255,.035));
+  font-size: 1rem;
+  font-weight: 950;
+  touch-action: none;
+}
+.bh-move-pad-v2 button:active:not(:disabled) { transform: scale(.94); background: color-mix(in srgb, var(--accent), transparent 78%); }
+.bh-move-pad-v2 [data-bh-move="up"] { grid-area: up; }
+.bh-move-pad-v2 [data-bh-move="left"] { grid-area: left; }
+.bh-move-pad-v2 .center { grid-area: center; color: var(--accent); opacity: .75; }
+.bh-move-pad-v2 [data-bh-move="right"] { grid-area: right; }
+.bh-move-pad-v2 [data-bh-move="down"] { grid-area: down; }
+.bh-power-dock { min-height: 0; overflow-y: auto; }
+.bh-power-dock > header,
+.bh-card-drawer > header { display: flex; align-items: end; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
+.bh-power-dock > header h3,
+.bh-power-dock > header p,
+.bh-card-drawer > header h3,
+.bh-card-drawer > header p { margin: 0; }
+.bh-power-dock > header small { color: var(--accent); font-weight: 950; }
+
+/* Paket-Chaos V2 */
+.bh-package-main.bh-package-v2 { grid-template-columns: minmax(0,1fr) minmax(250px,330px); gap: 10px; }
+.bh-sort-station {
+  position: relative;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(190px,1fr) auto auto;
+  gap: 9px;
+  overflow: hidden;
+}
+.bh-package-status { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
+.bh-package-status b { font-size: clamp(1.55rem, 3vw, 2.35rem); }
+.bh-package-status > span { justify-self: center; color: #a9b9ca; }
+.bh-package-status > button,
+.bh-card-drawer > header button {
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 55%);
+  border-radius: 11px;
+  color: #06121d;
+  background: var(--accent);
+  font-weight: 950;
+}
+.bh-route-ribbon { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 6px; }
+.bh-route-ribbon > span {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 8px minmax(0,1fr);
+  gap: 1px 6px;
+  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, var(--route), transparent 62%);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--route), transparent 93%);
+}
+.bh-route-ribbon i { grid-row: 1 / 3; width: 7px; border-radius: 999px; background: var(--route); }
+.bh-route-ribbon b,
+.bh-route-ribbon small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bh-route-ribbon b { font-size: .68rem; }
+.bh-route-ribbon small { color: #91a5ba; font-size: .6rem; }
+.bh-package-stage {
+  position: relative;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 14px 118px 14px 14px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 24px;
+  background:
+    repeating-linear-gradient(90deg, rgba(255,255,255,.025) 0 46px, rgba(255,255,255,.055) 46px 92px),
+    linear-gradient(180deg, #091421, #050b14);
+}
+.bh-package-stage.correct { box-shadow: inset 0 0 0 2px rgba(73,220,145,.58), inset 0 0 70px rgba(73,220,145,.1); }
+.bh-package-stage.wrong { box-shadow: inset 0 0 0 2px rgba(255,79,109,.58), inset 0 0 70px rgba(255,79,109,.1); }
+.bh-package.hero {
+  width: min(390px, 88%);
+  min-height: min(260px, 30dvh);
+  display: grid;
+  place-content: center;
+  text-align: center;
+  transform: none;
+  box-shadow: 0 25px 55px rgba(0,0,0,.36), inset 0 1px rgba(255,255,255,.48);
+}
+.bh-package.hero b { font-size: clamp(2rem, 6vw, 4.4rem); }
+.bh-package.hero div:not(.bh-package-mark) { font-size: clamp(.85rem, 2.2vw, 1.35rem); }
+.bh-package-mark { position: absolute; top: 12px; left: 14px; padding: 4px 7px; border-radius: 999px; color: rgba(20,16,4,.72); background: rgba(255,255,255,.3); font-size: .55rem; letter-spacing: .08em; }
+.bh-up-next {
+  position: absolute;
+  right: 9px;
+  top: 9px;
+  bottom: 9px;
+  width: 100px;
+  display: grid;
+  align-content: center;
+  gap: 7px;
+}
+.bh-up-next > small { color: #8ea2b7; font-size: .52rem; font-weight: 950; letter-spacing: .08em; text-align: center; }
+.bh-package.compact { min-height: 92px; padding: 10px 6px; border-radius: 13px; opacity: .78; }
+.bh-package.compact .bh-package-mark,
+.bh-package.compact small { display: none; }
+.bh-package.compact b { font-size: .9rem; }
+.bh-package.compact div { margin: 3px 0; font-size: .55rem; }
+.bh-package-feedback { position: absolute; z-index: 5; left: 50%; bottom: 10px; transform: translateX(-50%); padding: 7px 11px; border-radius: 999px; font-size: .7rem; font-weight: 950; white-space: nowrap; }
+.bh-package-feedback.correct { color: #071d14; background: #66e8ac; }
+.bh-package-feedback.wrong { color: #26070c; background: #ff8091; }
+.bh-fragile-hold,
+.bh-standard-ready {
+  position: relative;
+  min-height: 58px;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 46px minmax(0,1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 8px 12px;
+  border: 1px solid rgba(255,191,75,.34);
+  border-radius: 16px;
+  color: #eef8ff;
+  background: rgba(255,191,75,.08);
+  text-align: left;
+  touch-action: none;
+}
+.bh-fragile-hold > span { position: absolute; inset: auto 0 0; height: 0; background: rgba(255,191,75,.28); transition: height .12s; }
+.bh-fragile-hold.holding > span { height: 100%; transition: height .45s linear; }
+.bh-fragile-hold::before,
+.bh-standard-ready > span { content: "⚠"; position: relative; z-index: 1; display: grid; place-items: center; width: 42px; height: 42px; border-radius: 13px; background: rgba(255,191,75,.17); font-size: 1.25rem; }
+.bh-fragile-hold.armed { border-color: rgba(73,220,145,.58); background: rgba(73,220,145,.1); }
+.bh-fragile-hold.armed::before { content: "✓"; background: rgba(73,220,145,.2); }
+.bh-fragile-hold b,
+.bh-fragile-hold small,
+.bh-standard-ready b,
+.bh-standard-ready small { position: relative; z-index: 1; display: block; }
+.bh-fragile-hold small,
+.bh-standard-ready small { color: #96a9bd; }
+.bh-sort-bins { grid-template-columns: repeat(4, minmax(0,1fr)); gap: 7px; }
+.bh-sort-bins button {
+  position: relative;
+  min-height: 84px;
+  display: grid;
+  align-content: center;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--bin), transparent 45%);
+  border-radius: 17px;
+  color: #f5fbff;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--bin), transparent 84%), rgba(8,17,29,.96));
+}
+.bh-sort-bins button > span { position: absolute; left: 0; top: 0; bottom: 0; width: 7px; background: var(--bin); }
+.bh-sort-bins small { color: var(--bin); font-size: .52rem; font-weight: 950; letter-spacing: .1em; }
+.bh-sort-bins b { margin: 2px 0; font-size: clamp(.9rem, 2vw, 1.25rem); }
+.bh-sort-bins em { color: #9db0c3; font-size: .62rem; font-style: normal; }
+.bh-sort-bins button:active { transform: scale(.96); filter: brightness(1.2); }
+.bh-card-drawer { min-height: 0; overflow-y: auto; }
+.bh-card-drawer > header button { color: #07131f; }
+
+/* Reaktions-Battle füllt die verfügbare Fläche ohne kleine Innenansicht. */
+.bh-game-reaction .bh-game-layout > main { height: 100%; }
+.bh-reaction-main,
+.bh-reaction-arena { height: 100%; min-height: 0; }
+.bh-reaction-arena { grid-template-rows: auto auto minmax(100px,.8fr) minmax(180px,1.2fr); }
+
+@media (max-width: 1050px) {
+  .bh-territory-main.bh-arena-v2,
+  .bh-package-main.bh-package-v2 { grid-template-columns: minmax(0,1fr) 285px; }
+  .bh-package-stage { padding-right: 104px; }
+  .bh-up-next { width: 88px; }
+}
+
+@media (max-width: 850px) {
+  .bh-overlay { padding: 0 !important; overflow: hidden !important; background: #030a14; }
+  .bh-shell.bh-game-shell {
+    width: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+  .bh-game-shell .bh-header { min-height: 55px; padding: max(7px, env(safe-area-inset-top)) 8px 7px; }
+  .bh-game-shell .bh-header > button { width: 38px; height: 38px; }
+  .bh-game-shell .bh-header p { font-size: .49rem; }
+  .bh-game-shell .bh-header h2 { font-size: 1rem; }
+  .bh-mobile-score-strip { display: flex; }
+  .bh-game-layout { display: block; flex: 1 1 auto; min-height: 0; overflow: hidden; }
+  .bh-game-layout > main { height: 100%; padding: 5px !important; overflow: hidden; }
+  .bh-game-layout > aside { display: none !important; }
+  .bh-game-main > section { padding: 7px; border-radius: 15px; }
+
+  .bh-territory-main.bh-arena-v2,
+  .bh-package-main.bh-package-v2 { display: block; height: 100%; }
+  .bh-territory-board-wrap { height: 100%; grid-template-rows: auto minmax(0,1fr) 106px; }
+  .bh-territory-canvas-wrap { border-radius: 15px; }
+  .bh-territory-canvas { width: min(100%, calc((100dvh - 250px) * .75)); height: min(100%, calc(100dvh - 250px)); }
+  .bh-canvas-tip { bottom: 4px; font-size: .46rem; }
+  .bh-move-pad-v2 { width: min(280px, 86vw); gap: 4px; }
+  .bh-move-pad-v2 button { min-height: 31px; border-radius: 11px; }
+  .bh-power-dock {
+    position: absolute;
+    z-index: 25;
+    left: 6px;
+    right: 6px;
+    bottom: max(5px, env(safe-area-inset-bottom));
+    height: 62px;
+    padding: 5px !important;
+    overflow: visible;
+    border-radius: 15px !important;
+    background: rgba(4,12,22,.94) !important;
+    backdrop-filter: blur(16px);
+  }
+  .bh-power-dock > header { display: none; }
+  .bh-power-dock > div { grid-template-columns: repeat(5, 1fr) !important; gap: 4px !important; }
+  .bh-power-dock > div > button { min-height: 50px !important; grid-template-columns: 1fr !important; place-items: center; padding: 3px !important; border-radius: 11px !important; }
+  .bh-power-dock > div > button > span { width: 30px !important; height: 30px !important; border-radius: 10px !important; }
+  .bh-power-dock > div > button > div { display: none; }
+  .bh-power-dock > div > button > strong { position: absolute; right: 4px; top: 3px; width: 18px !important; height: 18px !important; font-size: .58rem; }
+  .bh-inline-hint { position: fixed; z-index: 40; left: 8px; right: 8px; bottom: 72px; }
+
+  .bh-sort-station { height: 100%; grid-template-rows: auto auto minmax(150px,1fr) auto auto; gap: 6px; }
+  .bh-package-status { min-height: 41px; grid-template-columns: auto 1fr auto; padding: 4px 6px; }
+  .bh-package-status b { font-size: 1.45rem; }
+  .bh-package-status > span { font-size: .64rem; }
+  .bh-package-status > button { min-height: 31px; padding: 5px 8px; font-size: .62rem; }
+  .bh-route-ribbon { gap: 4px; }
+  .bh-route-ribbon > span { padding: 5px; border-radius: 9px; }
+  .bh-route-ribbon b { font-size: .56rem; }
+  .bh-route-ribbon small { font-size: .5rem; }
+  .bh-package-stage { min-height: 0; padding: 7px 78px 7px 7px; border-radius: 16px; }
+  .bh-package.hero { width: min(270px, 94%); min-height: min(210px, 27dvh); padding: 15px 8px; border-radius: 20px; }
+  .bh-package.hero b { font-size: clamp(2rem, 11vw, 3.3rem); }
+  .bh-package.hero div:not(.bh-package-mark) { font-size: .82rem; }
+  .bh-package.hero small { font-size: .68rem; }
+  .bh-up-next { right: 5px; top: 5px; bottom: 5px; width: 67px; gap: 4px; }
+  .bh-package.compact { min-height: 68px; padding: 6px 3px; border-radius: 10px; }
+  .bh-package.compact b { font-size: .68rem; }
+  .bh-package.compact div { font-size: .45rem; }
+  .bh-package-feedback { bottom: 5px; font-size: .6rem; }
+  .bh-fragile-hold,
+  .bh-standard-ready { min-height: 50px; padding: 6px 8px; border-radius: 13px; }
+  .bh-fragile-hold::before,
+  .bh-standard-ready > span { width: 36px; height: 36px; border-radius: 11px; }
+  .bh-fragile-hold b,
+  .bh-standard-ready b { font-size: .72rem; }
+  .bh-fragile-hold small,
+  .bh-standard-ready small { font-size: .58rem; }
+  .bh-sort-bins { grid-template-columns: repeat(2, 1fr) !important; gap: 5px; }
+  .bh-sort-bins button { min-height: 64px !important; border-radius: 13px !important; }
+  .bh-sort-bins b { font-size: 1rem; }
+  .bh-card-drawer {
+    display: none;
+    position: fixed;
+    z-index: 80;
+    left: 6px;
+    right: 6px;
+    bottom: max(6px, env(safe-area-inset-bottom));
+    max-height: 58dvh;
+    padding: 10px !important;
+    overflow-y: auto;
+    border-radius: 20px !important;
+    background: rgba(6,15,27,.98) !important;
+    box-shadow: 0 -20px 60px rgba(0,0,0,.62);
+    backdrop-filter: blur(18px);
+  }
+  .bh-card-drawer.open { display: block; }
+  .bh-card-drawer > div { grid-template-columns: 1fr 1fr !important; }
+  .bh-card-drawer > div > button { min-height: 61px !important; }
+
+  .bh-game-reaction .bh-game-layout > main { padding: 0 !important; }
+  .bh-reaction-arena { min-height: 0 !important; height: 100%; padding: 8px !important; border-radius: 0 !important; grid-template-rows: auto auto minmax(105px,.65fr) minmax(180px,1.35fr); }
+  .bh-reaction-top b { font-size: 1.35rem; }
+  .bh-life-row { grid-template-columns: repeat(4, minmax(82px,1fr)); overflow-x: auto; margin-top: 6px; }
+  .bh-life-row > div { padding: 6px; }
+  .bh-prompt { min-height: 0 !important; padding: 8px 4px; }
+  .bh-prompt h2 { font-size: clamp(1.8rem, 9vw, 3.6rem); }
+  .bh-color-controls,
+  .bh-number-controls,
+  .bh-symbol-controls { height: 100%; min-height: 0; gap: 6px; }
+  .bh-color-controls button,
+  .bh-number-controls button,
+  .bh-symbol-controls button { min-height: 0 !important; height: 100%; border-radius: 16px; }
+  .bh-swipe-zone,
+  .bh-hold-button { width: 100%; min-height: 0 !important; height: 100%; border-radius: 20px; }
+}
+
+@media (max-width: 420px) {
+  .bh-game-shell .bh-round-badge { display: none; }
+  .bh-mobile-score-strip > span { min-width: 92px; }
+  .bh-territory-board-wrap { grid-template-rows: auto minmax(0,1fr) 100px; }
+  .bh-power-dock { height: 58px; }
+  .bh-power-dock > div > button { min-height: 46px !important; }
+  .bh-route-ribbon > span { grid-template-columns: 5px minmax(0,1fr); gap: 1px 4px; }
+  .bh-package-stage { padding-right: 66px; }
+  .bh-up-next { width: 58px; }
+  .bh-package.hero { min-height: min(190px, 24dvh); }
+}
+
+/* Canvas muss immer vollständig in der Arena bleiben. */
+.bh-territory-canvas {
+  width: auto !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+}
+@media (max-width: 850px) {
+  .bh-territory-board-wrap {
+    grid-template-rows: auto minmax(0,1fr) 46px !important;
+    padding-bottom: 63px;
+  }
+  .bh-move-pad-v2 {
+    width: min(350px, 94vw);
+    grid-template-columns: repeat(4, 1fr) !important;
+    grid-template-areas: none !important;
+    gap: 5px;
+  }
+  .bh-move-pad-v2 button { min-height: 42px; grid-area: auto !important; }
+  .bh-move-pad-v2 .center { display: none; }
+}
+@media (max-width: 850px) {
+  .bh-territory-board-wrap { grid-template-rows: auto minmax(0,1fr) !important; }
+  .bh-move-pad-v2 { display: none !important; }
+}
+
+
+/* ========================================================================== */
+/* Responsive Arena V5 · 2026-07-24                                           */
+/* Spielfeld mittig, Spielstand oben, Boosts unten/als Mobile-Sheet, kein      */
+/* Scrollen während einer laufenden Partie.                                    */
+/* ========================================================================== */
+.bh-game-shell {
+  width: min(1420px, calc(100vw - 20px));
+  height: min(980px, calc(100dvh - 20px));
+  min-height: 560px;
+  overflow: hidden !important;
+}
+.bh-mobile-score-strip {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  gap: 7px;
+  padding: 7px 12px;
+  overflow: hidden;
+}
+.bh-mobile-score-strip > span { min-width: 0; }
+.bh-game-layout {
+  display: block !important;
+  flex: 1 1 auto;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+.bh-game-layout > main {
+  width: 100%;
+  max-width: 1180px;
+  height: 100%;
+  margin: 0 auto;
+  padding: 10px 14px 12px !important;
+  overflow: hidden !important;
+}
+.bh-game-layout > aside { display: none !important; }
+.bh-game-main {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+.bh-game-main > section { min-width: 0; }
+.bh-board-status { min-width: 0; }
+.bh-board-status > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bh-mobile-boost-trigger { display: none; }
+.bh-power-head-actions { display: flex; align-items: center; gap: 8px; }
+.bh-power-head-actions button,
+.bh-power-dock > header button {
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 55%);
+  border-radius: 10px;
+  color: #06121d;
+  background: var(--accent);
+  font-weight: 950;
+}
+.bh-boost-grid { display: grid !important; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px !important; }
+.bh-card-drawer .bh-boost-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+/* Grundstück-Kampf: das 18×24-Raster besitzt immer genau das passende Seitenverhältnis. */
+.bh-territory-main.bh-arena-v3 { grid-template-rows: minmax(0, 1fr) auto; }
+.bh-territory-board-wrap {
+  width: 100%;
+  max-width: 900px;
+  height: 100%;
+  margin: 0 auto;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  padding: 8px !important;
+}
+.bh-territory-canvas-wrap {
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+  aspect-ratio: 3 / 4;
+  justify-self: center;
+  align-self: center;
+}
+.bh-territory-canvas { width: 100% !important; height: 100% !important; }
+.bh-move-pad-v2 { width: min(330px, 100%); }
+.bh-power-dock,
+.bh-card-drawer {
+  width: 100%;
+  max-width: 1100px;
+  max-height: 190px;
+  margin: 0 auto;
+  padding: 10px !important;
+  overflow: auto;
+}
+.bh-power-dock > header,
+.bh-card-drawer > header { margin-bottom: 8px; }
+.bh-power-dock > .bh-boost-grid > button,
+.bh-card-drawer > .bh-boost-grid > button { min-height: 66px; }
+
+/* Paket-Chaos V3: zentrale Scannerstation, Ziele darunter, Boosts darunter. */
+.bh-package-main.bh-package-v3 { grid-template-rows: minmax(0, 1fr) auto; }
+.bh-sort-station {
+  width: 100%;
+  max-width: 1000px;
+  height: 100%;
+  margin: 0 auto;
+  grid-template-rows: auto auto minmax(180px, 1fr) auto auto !important;
+  gap: 8px;
+  padding: 10px !important;
+}
+.bh-package-status > span strong { color: var(--accent); }
+.bh-package-stage {
+  width: 100%;
+  max-width: 880px;
+  min-height: 0;
+  margin: 0 auto;
+  padding: 58px 118px 12px 12px;
+  border-radius: 22px;
+}
+.bh-conveyor-label {
+  position: absolute;
+  z-index: 4;
+  left: 14px;
+  top: 12px;
+  display: grid;
+  gap: 1px;
+}
+.bh-conveyor-label span { color: var(--accent); font-size: .62rem; font-weight: 950; letter-spacing: .11em; }
+.bh-conveyor-label small { color: #92a5b8; font-size: .62rem; }
+.bh-package-scanner {
+  position: relative;
+  width: min(480px, 92%);
+  display: grid;
+  place-items: center;
+}
+.bh-scan-line {
+  position: absolute;
+  z-index: 5;
+  left: 5%;
+  right: 5%;
+  top: 18%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #fff, transparent);
+  box-shadow: 0 0 16px var(--pack, #fff);
+  animation: bhScanPackage 2.1s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+@keyframes bhScanPackage { to { top: 82%; } }
+.bh-package.hero { width: 100%; min-height: min(270px, 34dvh); }
+.bh-package-kicker { position: relative; z-index: 1; color: rgba(30,20,5,.64); font-size: .58rem; font-weight: 950; letter-spacing: .12em; }
+.bh-up-next { width: 96px; }
+.bh-sort-bins { width: 100%; max-width: 880px; margin: 0 auto; }
+.bh-fragile-hold,
+.bh-standard-ready { width: 100%; max-width: 880px; margin: 0 auto; }
+
+/* Reaktions-Battle bleibt groß und nutzt den zentralen Bereich. */
+.bh-reaction-main { max-width: 1050px; margin: 0 auto; }
+.bh-reaction-arena { width: 100%; }
+
+/* Startseiten unterhalb der iPhone-Statusleiste. */
+@media (max-width: 850px) {
+  .bh-launcher .bh-header { min-height: 82px !important; padding-top: max(36px, env(safe-area-inset-top)) !important; }
+  .bh-launcher .bh-header > button { align-self: end; }
+
+  .bh-shell.bh-game-shell {
+    width: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden !important;
+  }
+  .bh-game-shell .bh-header {
+    min-height: 62px;
+    padding: max(16px, env(safe-area-inset-top)) 8px 7px !important;
+  }
+  .bh-mobile-score-strip {
+    flex: 0 0 auto;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+    padding: 5px 7px;
+  }
+  .bh-mobile-score-strip > span {
+    grid-template-columns: 7px minmax(0, 1fr) auto;
+    gap: 4px;
+    padding: 6px 6px;
+    border-radius: 10px;
+  }
+  .bh-mobile-score-strip b { font-size: clamp(.53rem, 2.5vw, .66rem); }
+  .bh-mobile-score-strip strong { font-size: clamp(.62rem, 2.8vw, .76rem); }
+  .bh-game-layout > main { padding: 5px !important; }
+  .bh-game-main { grid-template-rows: minmax(0, 1fr); gap: 0; position: relative; }
+  .bh-game-main > section:first-child { height: 100%; }
+  .bh-mobile-boost-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 34px;
+    padding: 6px 9px;
+    border: 1px solid color-mix(in srgb, var(--accent), transparent 46%);
+    border-radius: 10px;
+    color: #06121d;
+    background: var(--accent);
+    font-size: .62rem;
+    font-weight: 950;
+    white-space: nowrap;
+  }
+  .bh-mobile-boost-trigger strong {
+    display: grid;
+    place-items: center;
+    min-width: 19px;
+    height: 19px;
+    border-radius: 999px;
+    background: rgba(0,0,0,.17);
+  }
+
+  .bh-territory-board-wrap {
+    max-width: none;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    padding: 5px !important;
+  }
+  .bh-arena-status { min-height: 42px; grid-template-columns: auto minmax(0, 1fr) auto; }
+  .bh-arena-status b { font-size: 1.55rem; }
+  .bh-arena-status span { font-size: .62rem; }
+  .bh-territory-canvas-wrap {
+    width: auto;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    aspect-ratio: 3 / 4;
+    border-radius: 14px;
+  }
+  .bh-move-pad-v2 { display: none !important; }
+  .bh-power-dock,
+  .bh-card-drawer {
+    display: block !important;
+    position: fixed !important;
+    z-index: 90;
+    left: 7px;
+    right: 7px;
+    bottom: max(7px, env(safe-area-inset-bottom));
+    width: auto;
+    max-width: none;
+    height: auto;
+    max-height: 70dvh;
+    margin: 0;
+    padding: 11px !important;
+    overflow-y: auto;
+    border-radius: 22px !important;
+    background: rgba(5, 14, 25, .985) !important;
+    box-shadow: 0 -24px 70px rgba(0,0,0,.68);
+    backdrop-filter: blur(20px);
+    transform: translateY(calc(100% + 24px));
+    opacity: 0;
+    pointer-events: none;
+    transition: transform .22s ease, opacity .18s ease;
+  }
+  .bh-power-dock.open,
+  .bh-card-drawer.open {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .bh-power-dock > header,
+  .bh-card-drawer > header { display: flex !important; }
+  .bh-boost-grid,
+  .bh-card-drawer .bh-boost-grid { grid-template-columns: 1fr 1fr !important; }
+  .bh-power-dock > .bh-boost-grid > button,
+  .bh-card-drawer > .bh-boost-grid > button {
+    min-height: 74px !important;
+    grid-template-columns: 44px minmax(0,1fr) 27px !important;
+    place-items: center stretch !important;
+    padding: 8px !important;
+  }
+  .bh-power-dock > .bh-boost-grid > button > div,
+  .bh-card-drawer > .bh-boost-grid > button > div { display: block !important; }
+  .bh-power-dock > .bh-boost-grid > button > strong,
+  .bh-card-drawer > .bh-boost-grid > button > strong { position: static !important; width: 27px !important; height: 27px !important; }
+
+  .bh-sort-station {
+    max-width: none;
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto !important;
+    gap: 5px;
+    padding: 5px !important;
+  }
+  .bh-package-status { min-height: 40px; grid-template-columns: auto minmax(0,1fr) auto; gap: 5px; }
+  .bh-package-status b { font-size: 1.38rem; }
+  .bh-package-status > span { font-size: .57rem; line-height: 1.15; text-align: center; white-space: normal; }
+  .bh-route-ribbon { gap: 3px; }
+  .bh-route-ribbon > span { padding: 4px; border-radius: 9px; }
+  .bh-route-ribbon b { font-size: .53rem; }
+  .bh-route-ribbon small { font-size: .46rem; }
+  .bh-package-stage {
+    max-width: none;
+    padding: 46px 5px 5px;
+    border-radius: 15px;
+  }
+  .bh-conveyor-label { left: 8px; top: 6px; }
+  .bh-conveyor-label small { display: none; }
+  .bh-package-scanner { width: min(315px, 92%); }
+  .bh-package.hero { min-height: min(205px, 27dvh); padding: 13px 7px; border-radius: 18px; }
+  .bh-package.hero b { font-size: clamp(2rem, 12vw, 3.2rem); }
+  .bh-package.hero div:not(.bh-package-mark) { font-size: .78rem; }
+  .bh-package.hero small { font-size: .62rem; }
+  .bh-up-next {
+    right: 5px;
+    top: 5px;
+    bottom: auto;
+    width: auto;
+    max-width: 43%;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .bh-up-next > small { display: none; }
+  .bh-package.compact { width: 48px; min-height: 37px; padding: 3px; border-width: 1px; border-radius: 8px; }
+  .bh-package.compact .tape,
+  .bh-package.compact .bh-package-kicker,
+  .bh-package.compact div,
+  .bh-package.compact small { display: none; }
+  .bh-package.compact b { font-size: .5rem; }
+  .bh-package-feedback { bottom: 5px; max-width: 94%; overflow: hidden; text-overflow: ellipsis; font-size: .58rem; }
+  .bh-fragile-hold,
+  .bh-standard-ready { min-height: 47px; padding: 5px 7px; border-radius: 12px; }
+  .bh-fragile-hold::before,
+  .bh-standard-ready > span { width: 34px; height: 34px; }
+  .bh-fragile-hold b,
+  .bh-standard-ready b { font-size: .69rem; }
+  .bh-fragile-hold small,
+  .bh-standard-ready small { font-size: .54rem; }
+  .bh-sort-bins { grid-template-columns: 1fr 1fr !important; gap: 4px; }
+  .bh-sort-bins button { min-height: 58px !important; border-radius: 12px !important; }
+  .bh-sort-bins b { font-size: .92rem; }
+  .bh-sort-bins small { font-size: .45rem; }
+  .bh-sort-bins em { font-size: .55rem; }
+
+  .bh-game-reaction .bh-game-layout > main { padding: 0 !important; }
+  .bh-reaction-arena { grid-template-rows: auto minmax(110px,.72fr) minmax(190px,1.28fr) !important; }
+  .bh-life-row { display: none !important; }
+  .bh-prompt { padding: 8px 6px; }
+  .bh-prompt h2 { font-size: clamp(1.8rem, 9vw, 3.4rem); }
+}
+
+@media (max-width: 390px) {
+  .bh-game-shell .bh-header { min-height: 58px; }
+  .bh-mobile-score-strip { padding-inline: 4px; gap: 3px; }
+  .bh-mobile-score-strip > span { padding-inline: 4px; }
+  .bh-territory-canvas-wrap { max-height: calc(100dvh - 170px); }
+  .bh-package.hero { min-height: min(185px, 24dvh); }
+  .bh-sort-bins button { min-height: 54px !important; }
+}
+
+/* Finale Canvas-Skalierung: Breite bestimmt die Höhe, dadurch keine leere
+   Hochformatfläche ober- oder unterhalb des Grundstück-Rasters. */
+.bh-territory-canvas-wrap {
+  width: min(100%, 680px, calc((100dvh - 230px) * .75)) !important;
+  height: auto !important;
+  aspect-ratio: 3 / 4 !important;
+}
+@media (max-width: 850px) {
+  .bh-territory-canvas-wrap {
+    width: min(100%, calc((100dvh - 175px) * .75)) !important;
+    height: auto !important;
+    max-height: 100% !important;
+  }
+}
+
+
+/* Finaler Mobile-Fix: Power-Ups als lesbare Liste statt abgeschnittener Mini-Karten */
+@media (max-width: 560px) {
+  .bh-power-dock,.bh-card-drawer { left:6px!important;right:6px!important;bottom:max(6px,env(safe-area-inset-bottom))!important;max-height:74dvh!important;padding:10px!important;border-radius:20px!important; }
+  .bh-power-dock>header,.bh-card-drawer>header { position:sticky;top:-10px;z-index:3;align-items:center!important;gap:8px!important;margin:-10px -10px 8px!important;padding:11px!important;background:rgba(5,14,25,.985);border-bottom:1px solid rgba(255,255,255,.08); }
+  .bh-power-dock>header>div,.bh-card-drawer>header>div { min-width:0; }
+  .bh-power-dock>header h3,.bh-card-drawer>header h3 { font-size:1rem!important;margin:0!important; }
+  .bh-power-dock>header p,.bh-card-drawer>header p { font-size:.64rem!important;line-height:1.3!important;margin:2px 0 0!important; }
+  .bh-power-head-actions { flex:0 0 auto; }
+  .bh-power-head-actions small { display:none!important; }
+  .bh-power-dock .bh-boost-grid,.bh-card-drawer .bh-boost-grid { grid-template-columns:1fr!important;gap:7px!important; }
+  .bh-power-dock>.bh-boost-grid>button,.bh-card-drawer>.bh-boost-grid>button {
+    min-height:76px!important;width:100%!important;display:grid!important;grid-template-columns:46px minmax(0,1fr) 30px!important;align-items:center!important;gap:9px!important;padding:9px!important;text-align:left!important;overflow:hidden!important;
+  }
+  .bh-power-dock>.bh-boost-grid>button>span,.bh-card-drawer>.bh-boost-grid>button>span { width:42px!important;height:42px!important;display:grid!important;place-items:center!important;border-radius:12px!important;font-size:1.1rem!important; }
+  .bh-power-dock>.bh-boost-grid>button>div,.bh-card-drawer>.bh-boost-grid>button>div { min-width:0!important;display:grid!important;gap:3px!important; }
+  .bh-power-dock>.bh-boost-grid>button b,.bh-card-drawer>.bh-boost-grid>button b { font-size:.76rem!important;line-height:1.15!important;white-space:normal!important; }
+  .bh-power-dock>.bh-boost-grid>button small,.bh-card-drawer>.bh-boost-grid>button small { display:block!important;color:#aebccc!important;font-size:.62rem!important;line-height:1.28!important;white-space:normal!important;overflow-wrap:anywhere!important; }
+  .bh-power-dock>.bh-boost-grid>button>strong,.bh-card-drawer>.bh-boost-grid>button>strong { min-width:28px!important;width:28px!important;height:28px!important;display:grid!important;place-items:center!important;border-radius:999px!important;font-size:.72rem!important; }
+  .bh-power-dock>.bh-boost-grid>button:disabled,.bh-card-drawer>.bh-boost-grid>button:disabled { opacity:.48!important;filter:none!important; }
+}
+
+/* Finaler Power-up- und Boost-Drawer-Fix · 2026-07-24 */
+@media (max-width: 850px) {
+  .bh-power-dock,
+  .bh-card-drawer {
+    box-sizing: border-box !important;
+    left: 8px !important;
+    right: 8px !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: min(62dvh, 560px) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    padding: 0 10px 12px !important;
+    border-radius: 20px !important;
+    overscroll-behavior: contain !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  .bh-power-dock > header,
+  .bh-card-drawer > header {
+    position: sticky !important;
+    z-index: 5 !important;
+    top: 0 !important;
+    margin: 0 -10px 10px !important;
+    padding: 12px 10px 10px !important;
+    background: rgba(4,13,23,.985) !important;
+    backdrop-filter: blur(14px) !important;
+  }
+  .bh-power-dock .bh-boost-grid,
+  .bh-card-drawer .bh-boost-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  .bh-power-dock > .bh-boost-grid > button,
+  .bh-card-drawer > .bh-boost-grid > button {
+    box-sizing: border-box !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 72px !important;
+    display: grid !important;
+    grid-template-columns: 44px minmax(0,1fr) 30px !important;
+    align-items: center !important;
+    gap: 10px !important;
+    padding: 10px !important;
+    text-align: left !important;
+  }
+  .bh-power-dock > .bh-boost-grid > button > span,
+  .bh-card-drawer > .bh-boost-grid > button > span {
+    width: 44px !important;
+    height: 44px !important;
+    font-size: 1.15rem !important;
+  }
+  .bh-power-dock > .bh-boost-grid > button > div,
+  .bh-card-drawer > .bh-boost-grid > button > div {
+    min-width: 0 !important;
+    display: grid !important;
+    gap: 3px !important;
+  }
+  .bh-power-dock > .bh-boost-grid > button b,
+  .bh-card-drawer > .bh-boost-grid > button b {
+    overflow: hidden !important;
+    font-size: .8rem !important;
+    line-height: 1.15 !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+  }
+  .bh-power-dock > .bh-boost-grid > button small,
+  .bh-card-drawer > .bh-boost-grid > button small {
+    display: block !important;
+    max-width: 100% !important;
+    color: #aab8c8 !important;
+    font-size: .66rem !important;
+    line-height: 1.32 !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+  }
+  .bh-power-dock > .bh-boost-grid > button > strong,
+  .bh-card-drawer > .bh-boost-grid > button > strong {
+    position: static !important;
+    width: 30px !important;
+    min-width: 30px !important;
+    height: 30px !important;
+    font-size: .75rem !important;
+  }
+  .bh-target-list,
+  .bh-inline-hint {
+    width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+}

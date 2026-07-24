@@ -1,1643 +1,1164 @@
 (() => {
   "use strict";
 
-  const BH_VERSION = "2026-07-24-responsive-arena-v5";
-  const BH_DATABASE_ID = "gamekl";
-  const BH_COLLECTION = "lifeBuilderBattleGames";
-  const BH_TICK_MS = 320;
-  const BH_COLORS = ["#ff4f6d", "#4aa8ff", "#ffd84c", "#49dc91"];
-  const BH_COLOR_NAMES = ["Rot", "Blau", "Gelb", "Grün"];
-  const BH_CITIES = ["Berlin", "Hamburg", "München", "Köln"];
-  const BH_GAMES = {
-    territory: {
-      title: "Grundstück-Kampf",
-      short: "Gebiete erobern",
-      icon: "▦",
-      accent: "#45e6b0",
-      description: "Laufe über das Raster, erobere Felder und setze starke Gegenstände taktisch ein. Nach Ablauf der Zeit gewinnt das größte Gebiet."
-    },
-    packages: {
-      title: "Paket-Chaos",
-      short: "Logistik unter Druck",
-      icon: "▣",
-      accent: "#ffbf4b",
-      description: "Sortiere farbige, zerbrechliche und Express-Pakete in die richtigen Städte. Fehler kosten Punkte, Sonderkarten stören deine Gegner."
-    },
-    reaction: {
-      title: "Reaktions-Battle",
-      short: "Schnell denken",
-      icon: "⚡",
-      accent: "#b876ff",
-      description: "Reagiere auf wechselnde Aufgaben, wische, halte, vergleiche und finde das andere Symbol. Wer zuletzt Leben hat, gewinnt."
-    }
-  };
-  const TERRITORY_POWER_META = {
-    shield: { icon: "⬡", label: "Gebietsschutz", text: "Eigene Felder sind 10 Sekunden geschützt." },
-    freeze: { icon: "❄", label: "Einfrieren", text: "Der stärkste Gegner steht 4 Sekunden still." },
-    double: { icon: "×2", label: "Doppelte Eroberung", text: "8 Sekunden werden zusätzliche Felder erobert." },
-    bomb: { icon: "✹", label: "Feld sprengen", text: "Wähle ein gegnerisches Feld und neutralisiere es." },
-    random: { icon: "✦", label: "Zufallsgebiet", text: "Übernimm sofort fünf freie oder gegnerische Felder." }
-  };
-  const PACKAGE_CARD_META = {
-    speed: { icon: "»", label: "Turbo-Band", text: "Beim Gegner stapeln sich 8 Sekunden lang Pakete." },
-    swap: { icon: "⇄", label: "Ziele tauschen", text: "Zwei Farbrouten werden beim Gegner 6 Sekunden vertauscht." },
-    blind: { icon: "◉", label: "Sicht blockieren", text: "Verdeckt dem Gegner 3 Sekunden die Sortierfläche." },
-    stack: { icon: "+3", label: "Paketstapel", text: "Legt sofort drei zusätzliche Pakete aufs Band." }
-  };
+  const FC_VERSION = "2026-07-24-financial-housing-v2";
+  const FC_OVERDRAFT_LIMIT = -10000;
+  const FC_PROTECTED_INCOME_RATE = 0.30;
+  const FC_STARTER_RENT = 65;
+  const FC_STARTER_GRACE_DAYS = 3;
+  const FC_EVICTION_MISSES = 4;
+  const FC_SHELTER_FREE_NIGHTS = 5;
+  const FC_SHELTER_PAID_COST = 12;
+  const FC_HOSTEL_COST = 35;
+  const FC_CAR_COST = 5;
 
-  const rt = {
-    gameType: "territory",
-    view: "launcher",
-    standalone: false,
-    overlay: null,
-    local: null,
-    room: null,
-    roomId: "",
-    roomUnsub: null,
-    publicUnsub: null,
-    publicRooms: [],
-    firebasePromise: null,
-    fb: null,
-    ticker: null,
-    toastTimer: null,
-    pendingPower: "",
-    pendingCard: "",
-    careful: false,
-    holdTimer: null,
-    pointerStart: null,
-    rewardKeys: new Set(),
-    uiTicker: null,
-    packageCardsOpen: false,
-    territoryPowerOpen: false,
-    territoryPointer: null,
-    territoryHoldTimer: null,
-    territoryHoldDelay: null
+  const original = {
+    createState,
+    migrateState,
+    save,
+    render,
+    canAfford,
+    canAffordWithMethod,
+    debitPlayer,
+    payoutFromTreasury,
+    settleTenantRentAfterSleep,
+    settleDailyTaxesAfterSleep,
+    settleDailyDebtCostsAfterSleep,
+    nextDay,
+    sleepAndAdvanceDay,
+    availableHomeProperties,
+    currentAccessibleHomeProperty,
+    hasAccessibleHome,
+    usesEmergencyShelter,
+    isAtOwnHome,
+    isHomeDashboardAvailable,
+    isDailyDashboardAvailable,
+    emergencyShelterDaysUsed,
+    emergencyShelterDaysLeft,
+    isEmergencyShelterAvailable,
+    openHomePropertyDialog,
+    openEmergencyShelterDialog,
+    startTenantLease,
+    renderBank,
+    openPlayerBankDialog,
+    renderDailyActions,
+    updateHomeShortcut,
+    canWorkAtCurrentPlace,
+    canSleepAtCurrentPlace
   };
 
-  const clone = (value) => typeof structuredClone === "function"
-    ? structuredClone(value)
-    : JSON.parse(JSON.stringify(value));
-  const escapeHtml = (value) => typeof window.escapeHtml === "function"
-    ? window.escapeHtml(value)
-    : String(value ?? "").replace(/[&<>\"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[char]));
-  const clampNumber = (value, min, max) => Math.max(min, Math.min(max, Number(value) || 0));
-  const randomItem = (items) => items[Math.floor(Math.random() * items.length)];
-  const shuffle = (items) => {
-    const result = [...items];
-    for (let i = result.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [result[i], result[j]] = [result[j], result[i]];
-    }
-    return result;
-  };
-  const nowMs = () => Date.now();
-
-  function gameMeta(type = rt.gameType) {
-    return BH_GAMES[type] || BH_GAMES.territory;
+  function fcNum(value, fallback = 0) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
   }
 
-  function playerName() {
-    const fallback = `${state?.firstName || ""} ${state?.lastName || ""}`.trim() || "Spieler";
-    try { return rt.fb?.auth?.currentUser?.displayName || fallback; }
-    catch { return fallback; }
+  function fcDay(save = state) {
+    return Math.max(1, Math.floor(fcNum(save?.day, 1)));
   }
 
-  function userUid() {
-    try { return rt.fb?.auth?.currentUser?.uid || ""; }
-    catch { return ""; }
+  function fcMoney(value) {
+    return Math.round(fcNum(value, 0) * 100) / 100;
   }
 
-  function ownPlayerIndex(game = currentGame()) {
-    if (!game) return -1;
-    if (!game.online) return 0;
-    const uid = userUid() || rt.room?.viewerUid || "";
-    return game.players.findIndex((player) => player.uid === uid);
+  function fcEffectiveOverdraftLimit(save = state) {
+    const financial = save?.financialCrisis;
+    if (financial?.insolvencyUntilDay && fcDay(save) <= financial.insolvencyUntilDay) return 0;
+    return FC_OVERDRAFT_LIMIT;
   }
 
-  function isHost() {
-    const uid = userUid();
-    return !!uid && rt.room?.hostUid === uid;
-  }
-
-  function currentGame() {
-    return rt.room?.gameState || rt.local;
-  }
-
-  function newCode() {
-    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-    let code = "";
-    for (let i = 0; i < 6; i += 1) code += alphabet[Math.floor(Math.random() * alphabet.length)];
-    return code;
-  }
-
-  async function firebaseRuntime() {
-    if (rt.firebasePromise) return rt.firebasePromise;
-    rt.firebasePromise = (async () => {
-      const [appMod, authMod, dbMod] = await Promise.all([
-        import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js"),
-        import("https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js"),
-        import("https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js")
-      ]);
-      const config = firebasePhoneConfig;
-      if (!config) throw new Error("Firebase-Konfiguration fehlt.");
-      const app = appMod.getApps().length ? appMod.getApp() : appMod.initializeApp(config);
-      const auth = authMod.getAuth(app);
-      const db = dbMod.getFirestore(app, BH_DATABASE_ID);
-      rt.fb = { ...authMod, ...dbMod, auth, db };
-      return rt.fb;
-    })().catch((error) => {
-      rt.firebasePromise = null;
-      throw error;
-    });
-    return rt.firebasePromise;
-  }
-
-  function requireUser(fb = rt.fb) {
-    const user = fb?.auth?.currentUser;
-    if (!user) throw new Error("Bitte zuerst mit deinem LifeBuilder-Firebase-Account anmelden.");
-    return user;
-  }
-
-  function makePlayers(total, online = false, humans = []) {
-    const players = [];
-    if (online) {
-      humans.slice(0, total).forEach((human, index) => players.push({
-        id: human.uid,
-        uid: human.uid,
-        name: String(human.name || `Spieler ${index + 1}`).slice(0, 30),
-        isBot: false,
-        color: BH_COLORS[index],
-        wins: Number(human.wins || 0),
-        lastActionAtMs: 0
-      }));
-    } else {
-      players.push({
-        id: "local-human",
-        uid: "local-human",
-        name: state?.firstName || "Du",
-        isBot: false,
-        color: BH_COLORS[0],
-        wins: 0,
-        lastActionAtMs: 0
-      });
-    }
-    const botNames = ["Nova Bot", "Mara Bot", "Kian Bot", "Rico Bot", "Lina Bot", "Tarek Bot"];
-    while (players.length < total) {
-      const index = players.length;
-      players.push({
-        id: `bot-${index}-${nowMs()}`,
-        uid: `bot-${index}`,
-        name: botNames[(index - 1 + botNames.length) % botNames.length],
-        isBot: true,
-        color: BH_COLORS[index],
-        wins: 0,
-        lastActionAtMs: 0,
-        botSkill: 0.78 + Math.random() * 0.18
-      });
-    }
-    return players;
-  }
-
-  function commonGame(type, players, settings = {}, online = false, round = 1) {
-    const bestOf = [1, 3, 5].includes(Number(settings.bestOf)) ? Number(settings.bestOf) : 1;
+  function fcDefaultFinancial(save) {
     return {
-      version: BH_VERSION,
-      type,
-      online,
-      status: "playing",
-      round,
-      bestOf,
-      targetWins: Math.ceil(bestOf / 2),
-      players: players.map((player, index) => ({
-        ...player,
-        color: player.color || BH_COLORS[index],
-        wins: Number(player.wins || 0),
-        score: 0
-      })),
-      winnerId: "",
-      winnerName: "",
-      roundWinnerId: "",
-      roundWinnerName: "",
-      createdAtMs: nowMs(),
-      updatedAtMs: nowMs(),
-      log: []
+      version: FC_VERSION,
+      overdraftLimit: FC_OVERDRAFT_LIMIT,
+      protectedIncomeRate: FC_PROTECTED_INCOME_RATE,
+      warningStage: 0,
+      lastWarningDay: 0,
+      limitReachedDays: 0,
+      emergencyGrantClaimed: false,
+      counselingAvailableDay: 1,
+      interestFreezeUntilDay: 0,
+      insolvencyUntilDay: 0,
+      repaymentPlan: null,
+      aid: {
+        foodDay: 0,
+        showerDay: 0,
+        dayWorkDay: 0,
+        bottleDay: 0,
+        busTicketDay: 0,
+        phoneClaimed: false,
+        clothingClaimed: false
+      },
+      stats: {
+        protectedCash: 0,
+        overdraftRepaid: 0,
+        crisisIncome: 0,
+        counselingSavings: 0
+      }
     };
   }
 
-  function initialTerritory(type, players, settings, online, round) {
-    const game = commonGame(type, players, settings, online, round);
-    // Das neue Hochformat-Raster nutzt auf Handys fast die komplette Bildschirmfläche.
-    // Canvas statt hunderter DOM-Buttons hält die Darstellung auch auf schwächeren Geräten flüssig.
-    const cols = 18;
-    const rows = 24;
-    const positions = [
-      cols + 1,
-      cols + (cols - 2),
-      (rows - 2) * cols + 1,
-      (rows - 2) * cols + (cols - 2)
-    ];
-    const owners = Array(cols * rows).fill(-1);
-    game.cols = cols;
-    game.rows = rows;
-    game.durationSec = [120, 180].includes(Number(settings.durationSec)) ? Number(settings.durationSec) : 120;
-    game.endsAtMs = nowMs() + game.durationSec * 1000;
-    game.positions = {};
-    game.inventory = {};
-    game.effects = {};
-    game.lastPowerSpawnAtMs = nowMs();
-    game.powerups = [];
-    game.owners = owners;
-    game.botCursor = 0;
-    game.players.forEach((player, index) => {
-      game.positions[player.id] = positions[index];
-      game.inventory[player.id] = { shield: 0, freeze: 0, double: 0, bomb: 0, random: 0 };
-      game.effects[player.id] = { shieldUntilMs: 0, frozenUntilMs: 0, doubleUntilMs: 0 };
-      const start = positions[index];
-      const x = start % cols;
-      const y = Math.floor(start / cols);
-      for (let dy = -1; dy <= 1; dy += 1) {
-        for (let dx = -1; dx <= 1; dx += 1) {
-          const nx = x + dx;
-          const ny = y + dy;
-          if (nx >= 0 && nx < cols && ny >= 0 && ny < rows) owners[ny * cols + nx] = index;
-        }
-      }
-    });
-    spawnTerritoryPowerups(game, 12);
-    game.log = ["Arena gestartet: Wischen, Steuerkreuz oder WASD benutzen."];
-    return game;
-  }
-
-  function randomPackage(game, playerId) {
-    const id = `${playerId}-${nowMs()}-${Math.random().toString(36).slice(2, 7)}`;
-    const colorIndex = Math.floor(Math.random() * 4);
-    const fragile = Math.random() < 0.28;
-    const express = Math.random() < 0.25;
-    const createdAtMs = nowMs();
+  function fcDefaultHousing(save) {
+    const day = fcDay(save);
     return {
-      id,
-      colorIndex,
-      fragile,
-      express,
-      createdAtMs,
-      expressUntilMs: express ? createdAtMs + 6500 : 0
+      version: FC_VERSION,
+      homeless: false,
+      homelessSinceDay: 0,
+      sleepMode: "shelter",
+      lastSleepMode: "home",
+      shelterNightsUsed: 0,
+      storageUntilDay: 0,
+      storageFees: 0,
+      rentArrears: 0,
+      missedRentPayments: 0,
+      evictionWarning: 0,
+      evictionDay: 0,
+      lastHousingAidDay: 0,
+      friendStays: 0,
+      carStays: 0,
+      benchStays: 0,
+      hostelStays: 0,
+      shelterStays: 0,
+      starterGraceUntilDay: day + FC_STARTER_GRACE_DAYS,
+      history: []
     };
   }
 
-  function initialPackages(type, players, settings, online, round) {
-    const game = commonGame(type, players, settings, online, round);
-    game.durationSec = [90, 120].includes(Number(settings.durationSec)) ? Number(settings.durationSec) : 90;
-    game.endsAtMs = nowMs() + game.durationSec * 1000;
-    game.mapping = shuffle(BH_CITIES);
-    game.queues = {};
-    game.cards = {};
-    game.effects = {};
-    game.correctCount = {};
-    game.errors = {};
-    game.combo = {};
-    game.lastFeedback = {};
-    game.botCursor = 0;
-    game.players.forEach((player) => {
-      game.queues[player.id] = Array.from({ length: 3 }, () => randomPackage(game, player.id));
-      game.cards[player.id] = { speed: 0, swap: 0, blind: 0, stack: 0 };
-      game.effects[player.id] = { speedUntilMs: 0, blindUntilMs: 0, swapUntilMs: 0, swapA: -1, swapB: -1, lastSpeedStackAtMs: 0 };
-      game.correctCount[player.id] = 0;
-      game.errors[player.id] = 0;
-      game.combo[player.id] = 0;
-      game.lastFeedback[player.id] = null;
-    });
-    game.log = ["Sortierstation bereit: Paket prüfen und auf das richtige Ziel tippen."];
-    return game;
+  function fcStarterHome(save = state) {
+    if (!save?.starterHome) return null;
+    return {
+      id: "starter-home-rental",
+      name: save.starterHome.type || "Einraumwohnung",
+      city: save.starterHome.city || save.homeCity || "Essen",
+      district: "Startviertel",
+      rooms: 1,
+      roomNames: Array.isArray(save.starterHome.rooms) ? save.starterHome.rooms : ["Wohn-/Schlafraum", "Küche", "Bad"],
+      sqm: 31,
+      floors: 1,
+      storageType: "Kellerbox",
+      dailyRent: Math.max(0, fcNum(save.starterHome.dailyRent, FC_STARTER_RENT)),
+      isTenantRental: true,
+      isStarterHome: true,
+      rentalTier: "small",
+      eur: 95000
+    };
   }
 
-  function makeReactionChallenge(index = 1) {
-    const type = randomItem(["color", "not-red", "swipe-left", "hold", "larger", "odd"]);
-    const createdAtMs = nowMs();
-    const base = { id: `r-${createdAtMs}-${index}`, index, type, createdAtMs, deadlineMs: createdAtMs + 4200 };
-    if (type === "color") {
-      const target = Math.floor(Math.random() * 4);
-      return { ...base, prompt: `Tippe auf ${BH_COLOR_NAMES[target]}`, options: [0, 1, 2, 3], correct: String(target) };
-    }
-    if (type === "not-red") return { ...base, prompt: "Tippe NICHT auf Rot", options: [0, 1, 2, 3], correct: "not-0" };
-    if (type === "swipe-left") return { ...base, prompt: "Wische nach links", correct: "left" };
-    if (type === "hold") return { ...base, prompt: "Halte den Knopf 0,8 Sekunden", correct: "hold" };
-    if (type === "larger") {
-      const a = 10 + Math.floor(Math.random() * 89);
-      let b = 10 + Math.floor(Math.random() * 89);
-      if (b === a) b += 1;
-      return { ...base, prompt: "Drücke die größere Zahl", options: [a, b], correct: String(Math.max(a, b)) };
-    }
-    const symbols = ["◆", "◆", "◆", "◆"];
-    const oddIndex = Math.floor(Math.random() * 4);
-    symbols[oddIndex] = randomItem(["●", "▲", "■", "✦"]);
-    return { ...base, prompt: "Finde das andere Symbol", options: symbols, correct: String(oddIndex) };
-  }
+  function fcNormalizeSave(save) {
+    if (!save || typeof save !== "object") return save;
 
-  function initialReaction(type, players, settings, online, round) {
-    const game = commonGame(type, players, settings, online, round);
-    game.startLives = [3, 5, 7].includes(Number(settings.lives)) ? Number(settings.lives) : 5;
-    game.challengeNo = 1;
-    game.challenge = makeReactionChallenge(1);
-    game.responses = {};
-    game.lives = {};
-    game.points = {};
-    game.nextChallengeAtMs = 0;
-    game.players.forEach((player) => {
-      game.lives[player.id] = game.startLives;
-      game.points[player.id] = 0;
-    });
-    game.log = ["Reagiere richtig, bevor die Zeit abläuft."];
-    return game;
-  }
+    save.cash = Math.max(0, fcMoney(save.cash));
+    save.bank = Math.max(FC_OVERDRAFT_LIMIT, fcMoney(save.bank));
+    save.debt = Math.max(0, fcMoney(save.debt));
 
-  function createGame(type, players, settings = {}, online = false, round = 1) {
-    if (type === "packages") return initialPackages(type, players, settings, online, round);
-    if (type === "reaction") return initialReaction(type, players, settings, online, round);
-    return initialTerritory("territory", players, settings, online, round);
-  }
-
-  function settingsFromGame(game) {
-    if (game.type === "reaction") return { bestOf: game.bestOf, lives: game.startLives };
-    return { bestOf: game.bestOf, durationSec: game.durationSec };
-  }
-
-  function scoreTerritory(game) {
-    return game.players.map((player, index) => ({ player, score: game.owners.filter((owner) => owner === index).length }));
-  }
-
-  function leaderIndex(game) {
-    if (game.type === "territory") {
-      const scores = scoreTerritory(game);
-      return scores.sort((a, b) => b.score - a.score)[0] ? game.players.indexOf(scores.sort((a, b) => b.score - a.score)[0].player) : 0;
-    }
-    return game.players.reduce((best, player, index) => Number(player.score || 0) > Number(game.players[best]?.score || 0) ? index : best, 0);
-  }
-
-  function finishRound(game, winnerIndex, reason = "") {
-    if (game.status !== "playing") return false;
-    const winner = game.players[winnerIndex] || game.players[0];
-    winner.wins = Number(winner.wins || 0) + 1;
-    game.roundWinnerId = winner.id;
-    game.roundWinnerName = winner.name;
-    game.log = [`${winner.name} gewinnt Runde ${game.round}.${reason ? ` ${reason}` : ""}`, ...(game.log || [])].slice(0, 14);
-    if (winner.wins >= Number(game.targetWins || 1)) {
-      game.status = "seriesOver";
-      game.winnerId = winner.id;
-      game.winnerName = winner.name;
-    } else {
-      game.status = "roundOver";
-    }
-    game.updatedAtMs = nowMs();
-    return true;
-  }
-
-  function tieBreakWinner(game, scores) {
-    const sorted = scores.map((score, index) => ({ score: Number(score || 0), index }))
-      .sort((a, b) => b.score - a.score || Number(game.players[b.index]?.wins || 0) - Number(game.players[a.index]?.wins || 0) || a.index - b.index);
-    return sorted[0]?.index || 0;
-  }
-
-  function finalizeTimedGame(game) {
-    if (game.type === "territory") {
-      const scores = scoreTerritory(game).map((entry) => entry.score);
-      return finishRound(game, tieBreakWinner(game, scores), `Größtes Gebiet: ${Math.max(...scores)} Felder.`);
-    }
-    if (game.type === "packages") {
-      const scores = game.players.map((player) => Number(player.score || 0));
-      return finishRound(game, tieBreakWinner(game, scores), `Beste Logistikleistung: ${Math.max(...scores)} Punkte.`);
-    }
-    return false;
-  }
-
-  function nextRoundGame(game) {
-    const players = game.players.map((player) => ({ ...player, score: 0, lastActionAtMs: 0 }));
-    return createGame(game.type, players, settingsFromGame(game), !!game.online, Number(game.round || 1) + 1);
-  }
-
-  function adjacentCells(game, cell) {
-    const x = cell % game.cols;
-    const y = Math.floor(cell / game.cols);
-    const result = [];
-    if (x > 0) result.push(cell - 1);
-    if (x < game.cols - 1) result.push(cell + 1);
-    if (y > 0) result.push(cell - game.cols);
-    if (y < game.rows - 1) result.push(cell + game.cols);
-    return result;
-  }
-
-  function spawnTerritoryPowerups(game, count = 1) {
-    const types = Object.keys(TERRITORY_POWER_META);
-    game.powerups ||= [];
-    const occupied = new Set(game.powerups.map((entry) => entry.cell));
-    for (let i = 0; i < count; i += 1) {
-      let cell = Math.floor(Math.random() * game.owners.length);
-      let guard = 0;
-      while ((occupied.has(cell) || Object.values(game.positions).includes(cell)) && guard < 50) {
-        cell = Math.floor(Math.random() * game.owners.length);
-        guard += 1;
-      }
-      occupied.add(cell);
-      game.powerups.push({ cell, type: randomItem(types), id: `${nowMs()}-${i}-${Math.random()}` });
-    }
-  }
-
-  function claimTerritoryCell(game, playerIndex, cell, allowProtected = false) {
-    const owner = Number(game.owners[cell]);
-    if (owner >= 0 && owner !== playerIndex && !allowProtected) {
-      const ownerPlayer = game.players[owner];
-      if (Number(game.effects?.[ownerPlayer.id]?.shieldUntilMs || 0) > nowMs()) return false;
-    }
-    game.owners[cell] = playerIndex;
-    return true;
-  }
-
-  function collectPower(game, playerIndex, cell) {
-    const pickupIndex = game.powerups.findIndex((entry) => entry.cell === cell);
-    if (pickupIndex < 0) return;
-    const pickup = game.powerups.splice(pickupIndex, 1)[0];
-    const player = game.players[playerIndex];
-    game.inventory[player.id][pickup.type] = Number(game.inventory[player.id][pickup.type] || 0) + 1;
-    game.log = [`${player.name} sammelt ${TERRITORY_POWER_META[pickup.type].label}.`, ...(game.log || [])].slice(0, 14);
-  }
-
-  function territoryMove(game, playerIndex, targetCell, ignoreCooldown = false) {
-    if (game.status !== "playing") return false;
-    const player = game.players[playerIndex];
-    if (!player) return false;
-    const now = nowMs();
-    const effect = game.effects[player.id] || {};
-    if (Number(effect.frozenUntilMs || 0) > now) return false;
-    const cooldown = game.online ? 380 : 95;
-    if (!ignoreCooldown && now - Number(player.lastActionAtMs || 0) < cooldown) return false;
-    const current = Number(game.positions[player.id]);
-    if (!adjacentCells(game, current).includes(Number(targetCell))) return false;
-    if (!claimTerritoryCell(game, playerIndex, Number(targetCell))) return false;
-    game.positions[player.id] = Number(targetCell);
-    player.lastActionAtMs = now;
-    collectPower(game, playerIndex, Number(targetCell));
-    if (Number(effect.doubleUntilMs || 0) > now) {
-      const extras = shuffle(adjacentCells(game, Number(targetCell))).filter((cell) => game.owners[cell] !== playerIndex);
-      extras.slice(0, 2).forEach((cell) => claimTerritoryCell(game, playerIndex, cell));
-    }
-    game.updatedAtMs = now;
-    return true;
-  }
-
-  function territoryTargetForDirection(game, current, direction) {
-    const x = current % game.cols;
-    const y = Math.floor(current / game.cols);
-    if (direction === "left" && x > 0) return current - 1;
-    if (direction === "right" && x < game.cols - 1) return current + 1;
-    if (direction === "up" && y > 0) return current - game.cols;
-    if (direction === "down" && y < game.rows - 1) return current + game.cols;
-    return current;
-  }
-
-  function territoryMoveDirection(game, playerIndex, direction, steps = 1) {
-    let changed = false;
-    const amount = Math.max(1, Math.min(3, Number(steps || 1)));
-    for (let step = 0; step < amount; step += 1) {
-      const player = game.players[playerIndex];
-      if (!player) break;
-      const current = Number(game.positions[player.id]);
-      const target = territoryTargetForDirection(game, current, direction);
-      if (target === current || !territoryMove(game, playerIndex, target, step > 0)) break;
-      changed = true;
-    }
-    return changed;
-  }
-
-  function strongestOpponentIndex(game, playerIndex) {
-    const scores = game.type === "territory"
-      ? scoreTerritory(game).map((entry) => entry.score)
-      : game.players.map((player) => Number(player.score || 0));
-    const candidates = scores.map((score, index) => ({ score, index })).filter((entry) => entry.index !== playerIndex);
-    candidates.sort((a, b) => b.score - a.score);
-    return candidates[0]?.index ?? ((playerIndex + 1) % game.players.length);
-  }
-
-  function useTerritoryPower(game, playerIndex, type, payload = {}) {
-    const player = game.players[playerIndex];
-    const inventory = game.inventory?.[player.id];
-    if (!inventory || Number(inventory[type] || 0) < 1 || game.status !== "playing") return false;
-    const now = nowMs();
-    if (type === "shield") game.effects[player.id].shieldUntilMs = now + 10000;
-    else if (type === "freeze") {
-      const target = strongestOpponentIndex(game, playerIndex);
-      game.effects[game.players[target].id].frozenUntilMs = now + 4000;
-    } else if (type === "double") game.effects[player.id].doubleUntilMs = now + 8000;
-    else if (type === "random") {
-      const cells = shuffle(game.owners.map((owner, cell) => ({ owner, cell })))
-        .filter((entry) => entry.owner !== playerIndex)
-        .map((entry) => entry.cell);
-      let claimed = 0;
-      for (const cell of cells) {
-        if (claimTerritoryCell(game, playerIndex, cell) && ++claimed >= 5) break;
-      }
-    } else if (type === "bomb") {
-      const cell = Number(payload.cell);
-      const owner = Number(game.owners[cell]);
-      if (!Number.isInteger(cell) || cell < 0 || cell >= game.owners.length || owner < 0 || owner === playerIndex) return false;
-      const ownerPlayer = game.players[owner];
-      if (Number(game.effects[ownerPlayer.id]?.shieldUntilMs || 0) > now) return false;
-      game.owners[cell] = -1;
-    } else return false;
-    inventory[type] -= 1;
-    game.log = [`${player.name} nutzt ${TERRITORY_POWER_META[type].label}.`, ...(game.log || [])].slice(0, 14);
-    game.updatedAtMs = now;
-    return true;
-  }
-
-  function territoryBotAction(game, playerIndex) {
-    const player = game.players[playerIndex];
-    const now = nowMs();
-    if (Number(game.effects[player.id]?.frozenUntilMs || 0) > now || now - Number(player.lastActionAtMs || 0) < 360) return false;
-    const inventory = game.inventory[player.id];
-    const territoryScores = scoreTerritory(game);
-    const ownScore = territoryScores[playerIndex].score;
-    const leader = Math.max(...territoryScores.map((entry) => entry.score));
-    if (inventory.shield && Math.random() < 0.055) return useTerritoryPower(game, playerIndex, "shield");
-    if (inventory.freeze && leader > ownScore + 10 && Math.random() < 0.1) return useTerritoryPower(game, playerIndex, "freeze");
-    if (inventory.double && Math.random() < 0.085) return useTerritoryPower(game, playerIndex, "double");
-    if (inventory.random && Math.random() < 0.065) return useTerritoryPower(game, playerIndex, "random");
-    if (inventory.bomb && Math.random() < 0.065) {
-      const enemyCells = game.owners.map((owner, cell) => ({ owner, cell })).filter((entry) => entry.owner >= 0 && entry.owner !== playerIndex);
-      if (enemyCells.length) return useTerritoryPower(game, playerIndex, "bomb", { cell: randomItem(enemyCells).cell });
-    }
-    const current = Number(game.positions[player.id]);
-    const options = adjacentCells(game, current).map((cell) => {
-      const owner = Number(game.owners[cell]);
-      const pickup = game.powerups.some((entry) => entry.cell === cell);
-      let value = owner === -1 ? 9 : owner === playerIndex ? 1 : 15;
-      if (pickup) value += 26;
-      value += adjacentCells(game, cell).filter((next) => game.owners[next] !== playerIndex).length * 2 + Math.random() * 5;
-      return { cell, value };
-    }).sort((a, b) => b.value - a.value);
-    const best = options.find((option) => {
-      const owner = Number(game.owners[option.cell]);
-      if (owner < 0 || owner === playerIndex) return true;
-      const ownerPlayer = game.players[owner];
-      return Number(game.effects?.[ownerPlayer.id]?.shieldUntilMs || 0) <= now;
-    });
-    if (!best) { player.lastActionAtMs = now; return false; }
-    const delta = best.cell - current;
-    const direction = delta === -1 ? "left" : delta === 1 ? "right" : delta === -game.cols ? "up" : "down";
-    return territoryMoveDirection(game, playerIndex, direction, 2);
-  }
-
-  function effectivePackageMapping(game, playerId) {
-    const mapping = [...game.mapping];
-    const effect = game.effects[playerId] || {};
-    if (Number(effect.swapUntilMs || 0) > nowMs() && effect.swapA >= 0 && effect.swapB >= 0) {
-      [mapping[effect.swapA], mapping[effect.swapB]] = [mapping[effect.swapB], mapping[effect.swapA]];
-    }
-    return mapping;
-  }
-
-  function packageProcess(game, playerIndex, city, careful = false, forceCorrect = null) {
-    if (game.status !== "playing") return false;
-    const player = game.players[playerIndex];
-    const queue = game.queues[player.id] || [];
-    const pack = queue[0];
-    if (!pack) return false;
-    const mapping = effectivePackageMapping(game, player.id);
-    const expected = mapping[pack.colorIndex];
-    const correct = forceCorrect == null ? (city === expected && (!pack.fragile || careful)) : !!forceCorrect;
-    if (correct) {
-      let gain = 12;
-      if (pack.fragile) gain += 5;
-      if (pack.express && nowMs() <= pack.expressUntilMs) gain += 8;
-      game.combo[player.id] = Number(game.combo[player.id] || 0) + 1;
-      gain += Math.min(10, Math.floor(game.combo[player.id] / 3) * 2);
-      player.score = Number(player.score || 0) + gain;
-      game.correctCount[player.id] = Number(game.correctCount[player.id] || 0) + 1;
-      game.lastFeedback[player.id] = { kind: "correct", text: `+${gain} Punkte`, atMs: nowMs() };
-      if (game.correctCount[player.id] % 4 === 0) {
-        const card = randomItem(Object.keys(PACKAGE_CARD_META));
-        game.cards[player.id][card] = Number(game.cards[player.id][card] || 0) + 1;
-        game.log = [`${player.name} erhält ${PACKAGE_CARD_META[card].label}.`, ...(game.log || [])].slice(0, 14);
-      }
-    } else {
-      player.score = Math.max(-75, Number(player.score || 0) - 7);
-      game.combo[player.id] = 0;
-      game.errors[player.id] = Number(game.errors[player.id] || 0) + 1;
-      const cause = pack.fragile && !careful ? "Zerbrechlich nicht gesichert" : `Falsches Ziel – richtig wäre ${expected}`;
-      game.lastFeedback[player.id] = { kind: "wrong", text: `−7 · ${cause}`, atMs: nowMs() };
-    }
-    queue.shift();
-    queue.push(randomPackage(game, player.id));
-    player.lastActionAtMs = nowMs();
-    game.updatedAtMs = nowMs();
-    return true;
-  }
-
-  function usePackageCard(game, playerIndex, card, targetIndex) {
-    const player = game.players[playerIndex];
-    const target = game.players[targetIndex];
-    if (!player || !target || playerIndex === targetIndex || Number(game.cards[player.id]?.[card] || 0) < 1 || game.status !== "playing") return false;
-    const now = nowMs();
-    const effect = game.effects[target.id];
-    if (card === "speed") {
-      effect.speedUntilMs = now + 8000;
-      effect.lastSpeedStackAtMs = 0;
-    } else if (card === "swap") {
-      const pair = shuffle([0, 1, 2, 3]).slice(0, 2);
-      effect.swapA = pair[0];
-      effect.swapB = pair[1];
-      effect.swapUntilMs = now + 6000;
-    } else if (card === "blind") effect.blindUntilMs = now + 3000;
-    else if (card === "stack") {
-      const queue = game.queues[target.id];
-      for (let i = 0; i < 3; i += 1) queue.push(randomPackage(game, target.id));
-    } else return false;
-    game.cards[player.id][card] -= 1;
-    game.log = [`${player.name} setzt ${PACKAGE_CARD_META[card].label} gegen ${target.name} ein.`, ...(game.log || [])].slice(0, 14);
-    game.updatedAtMs = now;
-    return true;
-  }
-
-  function packageBotAction(game, playerIndex) {
-    const player = game.players[playerIndex];
-    const now = nowMs();
-    const queue = game.queues[player.id] || [];
-    if (!queue.length || now - Number(player.lastActionAtMs || 0) < 680 + Math.random() * 650) return false;
-    const cards = game.cards[player.id];
-    const available = Object.keys(cards).filter((key) => Number(cards[key] || 0) > 0);
-    if (available.length && Math.random() < 0.12) {
-      const targetIndex = strongestOpponentIndex(game, playerIndex);
-      if (usePackageCard(game, playerIndex, randomItem(available), targetIndex)) return true;
-    }
-    const pack = queue[0];
-    const mapping = effectivePackageMapping(game, player.id);
-    const accuracy = clampNumber(player.botSkill || 0.86, 0.72, 0.97);
-    const routeCorrect = Math.random() < accuracy;
-    const handledCarefully = !pack.fragile || Math.random() < accuracy;
-    const finalCorrect = routeCorrect && handledCarefully;
-    const city = routeCorrect ? mapping[pack.colorIndex] : randomItem(BH_CITIES.filter((entry) => entry !== mapping[pack.colorIndex]));
-    return packageProcess(game, playerIndex, city, handledCarefully, finalCorrect);
-  }
-
-  function reactionAnswerCorrect(challenge, answer) {
-    if (!challenge) return false;
-    if (challenge.type === "not-red") return String(answer) !== "0" && ["1", "2", "3"].includes(String(answer));
-    return String(answer) === String(challenge.correct);
-  }
-
-  function submitReaction(game, playerIndex, answer) {
-    if (game.status !== "playing" || !game.challenge || nowMs() > Number(game.challenge.deadlineMs || 0)) return false;
-    const player = game.players[playerIndex];
-    if (!player || Number(game.lives[player.id] || 0) <= 0 || game.responses[player.id]) return false;
-    const correct = reactionAnswerCorrect(game.challenge, answer);
-    game.responses[player.id] = { answer: String(answer), correct, atMs: nowMs() };
-    if (correct) game.points[player.id] = Number(game.points[player.id] || 0) + 1;
-    player.lastActionAtMs = nowMs();
-    game.updatedAtMs = nowMs();
-    return true;
-  }
-
-  function resolveReactionChallenge(game) {
-    if (game.status !== "playing" || !game.challenge) return false;
-    const alive = game.players.filter((player) => Number(game.lives[player.id] || 0) > 0);
-    const allAnswered = alive.every((player) => !!game.responses[player.id]);
-    if (!allAnswered && nowMs() < Number(game.challenge.deadlineMs || 0)) return false;
-    alive.forEach((player) => {
-      const response = game.responses[player.id];
-      if (!response?.correct) game.lives[player.id] = Math.max(0, Number(game.lives[player.id] || 0) - 1);
-    });
-    const survivors = game.players.filter((player) => Number(game.lives[player.id] || 0) > 0);
-    if (survivors.length <= 1 || Number(game.challengeNo || 1) >= 25) {
-      let winnerIndex = survivors.length === 1 ? game.players.indexOf(survivors[0]) : -1;
-      if (winnerIndex < 0) {
-        const values = game.players.map((player) => Number(game.lives[player.id] || 0) * 100 + Number(game.points[player.id] || 0));
-        winnerIndex = tieBreakWinner(game, values);
-      }
-      return finishRound(game, winnerIndex, `Verbleibende Leben: ${game.lives[game.players[winnerIndex].id] || 0}.`);
-    }
-    game.challenge = null;
-    game.nextChallengeAtMs = nowMs() + 1100;
-    game.log = [`Aufgabe ${game.challengeNo} ausgewertet.`, ...(game.log || [])].slice(0, 14);
-    game.updatedAtMs = nowMs();
-    return true;
-  }
-
-  function reactionBotTick(game, playerIndex) {
-    const player = game.players[playerIndex];
-    const challenge = game.challenge;
-    if (!challenge || game.responses[player.id] || Number(game.lives[player.id] || 0) <= 0) return false;
-    const elapsed = nowMs() - Number(challenge.createdAtMs || 0);
-    const delay = 520 + (1 - clampNumber(player.botSkill || 0.86, 0.7, 0.98)) * 1800 + Math.random() * 650;
-    if (elapsed < delay) return false;
-    const correct = Math.random() < clampNumber(player.botSkill || 0.86, 0.72, 0.96);
-    let answer = challenge.correct;
-    if (challenge.type === "not-red") answer = correct ? String(randomItem([1, 2, 3])) : "0";
-    else if (!correct) {
-      const options = Array.isArray(challenge.options) ? challenge.options.map((_, index) => String(challenge.type === "larger" ? challenge.options[index] : index)) : ["wrong"];
-      answer = randomItem(options.filter((value) => String(value) !== String(challenge.correct))) || "wrong";
-    }
-    return submitReaction(game, playerIndex, answer);
-  }
-
-  function tickGame(game) {
-    if (!game || game.status !== "playing") return false;
-    const now = nowMs();
-    let changed = false;
-    if (game.type === "territory") {
-      if (now >= Number(game.endsAtMs || 0)) return finalizeTimedGame(game);
-      if (now - Number(game.lastPowerSpawnAtMs || 0) >= 9000 && game.powerups.length < 12) {
-        spawnTerritoryPowerups(game, 2);
-        game.lastPowerSpawnAtMs = now;
-        changed = true;
-      }
-      const bots = game.players.map((player, index) => ({ player, index })).filter((entry) => entry.player.isBot);
-      if (bots.length) {
-        const cursor = Number(game.botCursor || 0) % bots.length;
-        if (territoryBotAction(game, bots[cursor].index)) changed = true;
-        game.botCursor = (cursor + 1) % bots.length;
-      }
-    } else if (game.type === "packages") {
-      if (now >= Number(game.endsAtMs || 0)) return finalizeTimedGame(game);
-      game.players.forEach((player) => {
-        const effect = game.effects[player.id];
-        if (Number(effect.speedUntilMs || 0) > now && now - Number(effect.lastSpeedStackAtMs || 0) >= 2300) {
-          if ((game.queues[player.id] || []).length < 8) game.queues[player.id].push(randomPackage(game, player.id));
-          effect.lastSpeedStackAtMs = now;
-          changed = true;
+    const defaultFinancial = fcDefaultFinancial(save);
+    save.financialCrisis = {
+      ...defaultFinancial,
+      ...(save.financialCrisis || {}),
+      aid: { ...defaultFinancial.aid, ...(save.financialCrisis?.aid || {}) },
+      stats: { ...defaultFinancial.stats, ...(save.financialCrisis?.stats || {}) }
+    };
+    save.financialCrisis.version = FC_VERSION;
+    save.financialCrisis.overdraftLimit = FC_OVERDRAFT_LIMIT;
+    save.financialCrisis.protectedIncomeRate = FC_PROTECTED_INCOME_RATE;
+    save.financialCrisis.warningStage = Math.max(0, Math.min(3, Math.floor(fcNum(save.financialCrisis.warningStage))));
+    save.financialCrisis.limitReachedDays = Math.max(0, Math.floor(fcNum(save.financialCrisis.limitReachedDays)));
+    save.financialCrisis.repaymentPlan = save.financialCrisis.repaymentPlan && typeof save.financialCrisis.repaymentPlan === "object"
+      ? {
+          active: Boolean(save.financialCrisis.repaymentPlan.active),
+          originalAmount: Math.max(0, fcMoney(save.financialCrisis.repaymentPlan.originalAmount)),
+          remaining: Math.max(0, fcMoney(save.financialCrisis.repaymentPlan.remaining)),
+          installment: Math.max(25, fcMoney(save.financialCrisis.repaymentPlan.installment || 50)),
+          startedDay: Math.max(1, Math.floor(fcNum(save.financialCrisis.repaymentPlan.startedDay, fcDay(save)))),
+          lastPaidDay: Math.max(0, Math.floor(fcNum(save.financialCrisis.repaymentPlan.lastPaidDay))),
+          paid: Math.max(0, fcMoney(save.financialCrisis.repaymentPlan.paid))
         }
-      });
-      const bots = game.players.map((player, index) => ({ player, index })).filter((entry) => entry.player.isBot);
-      if (bots.length) {
-        const cursor = Number(game.botCursor || 0) % bots.length;
-        if (packageBotAction(game, bots[cursor].index)) changed = true;
-        game.botCursor = (cursor + 1) % bots.length;
-      }
-    } else if (game.type === "reaction") {
-      if (game.challenge) {
-        game.players.forEach((player, index) => { if (player.isBot && reactionBotTick(game, index)) changed = true; });
-        if (resolveReactionChallenge(game)) changed = true;
-      } else if (now >= Number(game.nextChallengeAtMs || 0)) {
-        game.challengeNo = Number(game.challengeNo || 0) + 1;
-        game.challenge = makeReactionChallenge(game.challengeNo);
-        game.responses = {};
-        game.nextChallengeAtMs = 0;
-        changed = true;
-      }
+      : null;
+
+    const defaultHousing = fcDefaultHousing(save);
+    save.housingCrisis = {
+      ...defaultHousing,
+      ...(save.housingCrisis || {}),
+      history: Array.isArray(save.housingCrisis?.history) ? save.housingCrisis.history.slice(-40) : []
+    };
+    save.housingCrisis.version = FC_VERSION;
+    save.housingCrisis.shelterNightsUsed = Math.max(0, Math.floor(fcNum(save.housingCrisis.shelterNightsUsed)));
+    save.housingCrisis.rentArrears = Math.max(0, fcMoney(save.housingCrisis.rentArrears));
+    save.housingCrisis.storageFees = Math.max(0, fcMoney(save.housingCrisis.storageFees));
+    save.housingCrisis.storageUntilDay = Math.max(0, Math.floor(fcNum(save.housingCrisis.storageUntilDay)));
+    save.housingCrisis.missedRentPayments = Math.max(0, Math.floor(fcNum(save.housingCrisis.missedRentPayments)));
+    save.housingCrisis.evictionWarning = Math.max(0, Math.min(4, Math.floor(fcNum(save.housingCrisis.evictionWarning))));
+    save.housingCrisis.sleepMode = ["shelter", "hostel", "friend", "car", "bench"].includes(save.housingCrisis.sleepMode)
+      ? save.housingCrisis.sleepMode
+      : "shelter";
+
+    save.starterHome ||= {
+      city: save.homeCity || "Essen",
+      type: "Einraumwohnung",
+      rooms: ["Eingang", "Wohn-/Schlafraum", "Küche", "Bad"],
+      rentable: false
+    };
+    save.starterHome.active = save.starterHome.active !== false;
+    save.starterHome.dailyRent = Math.max(0, Math.round(fcNum(save.starterHome.dailyRent, FC_STARTER_RENT)));
+    save.starterHome.lastPaidDay = Math.max(0, Math.floor(fcNum(save.starterHome.lastPaidDay, fcDay(save))));
+    save.starterHome.paidDays = Math.max(0, Math.floor(fcNum(save.starterHome.paidDays, 1)));
+    save.starterHome.totalPaid = Math.max(0, fcMoney(save.starterHome.totalPaid));
+
+    if (save.tenantLease && save.tenantLease.active !== false) save.starterHome.active = false;
+
+    const originalOwned = Array.isArray(save.properties) && save.properties.some((id) => !save.rentedProperties?.[id]);
+    const tenantActive = !!save.tenantLease && save.tenantLease.active !== false;
+    const starterActive = !!save.starterHome.active;
+    if (originalOwned || tenantActive || starterActive) {
+      save.housingCrisis.homeless = false;
+      save.housingCrisis.homelessSinceDay = 0;
+    } else {
+      save.housingCrisis.homeless = true;
+      save.housingCrisis.homelessSinceDay ||= fcDay(save);
     }
-    if (changed) game.updatedAtMs = now;
-    return changed;
+
+    return save;
   }
 
-  async function mutate(mutator) {
-    if (rt.roomId) {
-      const fb = await firebaseRuntime();
-      requireUser(fb);
-      const ref = fb.doc(fb.db, BH_COLLECTION, rt.roomId);
-      let output = null;
-      await fb.runTransaction(fb.db, async (transaction) => {
-        const snapshot = await transaction.get(ref);
-        if (!snapshot.exists()) throw new Error("Der Online-Raum wurde geschlossen.");
-        const room = snapshot.data();
-        if (!room.gameState) throw new Error("Das Spiel wurde noch nicht gestartet.");
-        const game = clone(room.gameState);
-        output = await mutator(game, room);
-        if (output === false || output?.changed === false) return;
-        game.updatedAtMs = nowMs();
-        transaction.update(ref, { gameState: game, status: game.status === "seriesOver" ? "finished" : "playing", winnerName: game.winnerName || "", updatedAtMs: nowMs() });
-      });
-      return output;
+  function fcNormalizeAll() {
+    if (Array.isArray(saveSlots)) {
+      saveSlots = saveSlots.map((slot) => fcNormalizeSave(slot));
+      if (Number.isInteger(selectedSlot) && saveSlots[selectedSlot]) state = saveSlots[selectedSlot];
     }
-    if (!rt.local) return false;
-    const game = clone(rt.local);
-    const output = await mutator(game, null);
-    if (output === false || output?.changed === false) return output;
-    game.updatedAtMs = nowMs();
-    rt.local = game;
-    render();
-    maybeAwardReward(game);
-    return output;
+    if (state) fcNormalizeSave(state);
   }
 
-  function updateVisibleTimers() {
-    rt.overlay?.querySelectorAll("[data-bh-timer]").forEach((node) => {
-      const target = Number(node.dataset.bhTimer || 0);
-      node.textContent = formatTime(target - nowMs());
-    });
+  createState = function fcCreateState(formData) {
+    const save = original.createState(formData);
+    save.starterHome.active = true;
+    save.starterHome.dailyRent = FC_STARTER_RENT;
+    save.starterHome.lastPaidDay = save.day;
+    save.financialCrisis = fcDefaultFinancial(save);
+    save.housingCrisis = fcDefaultHousing(save);
+    return fcNormalizeSave(save);
+  };
+
+  migrateState = function fcMigrateState(save) {
+    return fcNormalizeSave(original.migrateState(save));
+  };
+
+  save = function fcSave() {
+    if (state) fcNormalizeSave(state);
+    return original.save();
+  };
+
+  function fcPositiveBank(save = state) {
+    return Math.max(0, fcMoney(save?.bank));
   }
 
-  function startTicker() {
-    stopTicker();
-    rt.uiTicker = setInterval(updateVisibleTimers, 180);
-    const game = currentGame();
-    const interval = game?.online ? 760 : BH_TICK_MS;
-    rt.ticker = setInterval(() => {
-      const active = currentGame();
-      if (!active || active.status !== "playing") return;
-      if (active.online && !isHost()) return;
-      mutate((next) => tickGame(next)).catch((error) => toast(error.message || error));
-    }, interval);
+  function fcBankHeadroom(save = state) {
+    return Math.max(0, fcMoney(save?.bank) - fcEffectiveOverdraftLimit(save));
   }
 
-  function stopTicker() {
-    clearInterval(rt.ticker);
-    clearInterval(rt.uiTicker);
-    rt.ticker = null;
-    rt.uiTicker = null;
-    clearInterval(rt.territoryHoldTimer);
-    clearTimeout(rt.territoryHoldDelay);
-    rt.territoryHoldTimer = null;
-    rt.territoryHoldDelay = null;
-  }
+  canAffordWithMethod = function fcCanAffordWithMethod(price, method = "auto") {
+    const amount = Math.max(0, fcMoney(price));
+    if (!state) return false;
+    if (method === "cash") return state.cash >= amount;
+    if (method === "card") return state.bank - amount >= fcEffectiveOverdraftLimit(state);
+    return state.cash + fcBankHeadroom() >= amount;
+  };
 
-  function formatTime(ms) {
-    const total = Math.max(0, Math.ceil(Number(ms || 0) / 1000));
-    const min = Math.floor(total / 60);
-    const sec = total % 60;
-    return `${min}:${String(sec).padStart(2, "0")}`;
-  }
+  canAfford = function fcCanAfford(price) {
+    return canAffordWithMethod(price, "auto");
+  };
 
-  function playersHtml(game) {
-    return game.players.map((player, index) => {
-      let score = Number(player.score || 0);
-      if (game.type === "territory") score = game.owners.filter((owner) => owner === index).length;
-      const detail = game.type === "reaction" ? `${game.lives[player.id] || 0} Leben` : `${score} Punkte`;
-      return `<article class="bh-player ${index === ownPlayerIndex(game) ? "own" : ""}" style="--player:${player.color}"><span>${player.isBot ? "BOT" : index + 1}</span><div><b>${escapeHtml(player.name)}</b><small>${detail} · ${player.wins || 0}/${game.targetWins} Rundensiege</small></div></article>`;
-    }).join("");
-  }
+  debitPlayer = function fcDebitPlayer(price, method = "auto") {
+    let remaining = Math.max(0, fcMoney(price));
+    if (!state || remaining <= 0) return 0;
+    if (!canAffordWithMethod(remaining, method)) return 0;
 
-  function territoryCellHtml() {
-    return "";
-  }
-
-  function rgbaFromHex(hex, alpha = 1) {
-    const clean = String(hex || "#ffffff").replace("#", "");
-    const value = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean;
-    const num = Number.parseInt(value, 16);
-    const r = (num >> 16) & 255;
-    const g = (num >> 8) & 255;
-    const b = num & 255;
-    return `rgba(${r},${g},${b},${alpha})`;
-  }
-
-  function drawTerritoryCanvas(canvas, game) {
-    if (!canvas || !game) return;
-    const rect = canvas.getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const width = Math.max(1, Math.round(rect.width * dpr));
-    const height = Math.max(1, Math.round(rect.height * dpr));
-    if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
-    const ctx = canvas.getContext("2d", { alpha: false });
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const w = rect.width;
-    const h = rect.height;
-    ctx.clearRect(0, 0, w, h);
-    const gradient = ctx.createLinearGradient(0, 0, w, h);
-    gradient.addColorStop(0, "#071522");
-    gradient.addColorStop(1, "#030914");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, w, h);
-    const pad = Math.max(7, Math.min(w, h) * 0.018);
-    const cell = Math.min((w - pad * 2) / game.cols, (h - pad * 2) / game.rows);
-    const boardW = cell * game.cols;
-    const boardH = cell * game.rows;
-    const ox = (w - boardW) / 2;
-    const oy = (h - boardH) / 2;
-    canvas.dataset.cellSize = String(cell);
-    canvas.dataset.offsetX = String(ox);
-    canvas.dataset.offsetY = String(oy);
-
-    ctx.fillStyle = "rgba(255,255,255,.025)";
-    ctx.fillRect(ox, oy, boardW, boardH);
-    for (let index = 0; index < game.owners.length; index += 1) {
-      const x = index % game.cols;
-      const y = Math.floor(index / game.cols);
-      const px = ox + x * cell;
-      const py = oy + y * cell;
-      const owner = Number(game.owners[index]);
-      if (owner >= 0 && game.players[owner]) {
-        ctx.fillStyle = rgbaFromHex(game.players[owner].color, .58);
-        ctx.fillRect(px + .6, py + .6, cell - 1.2, cell - 1.2);
-      }
+    if (method === "cash") {
+      state.cash = Math.max(0, fcMoney(state.cash - remaining));
+      return remaining;
     }
-    ctx.strokeStyle = "rgba(170,218,255,.10)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let x = 0; x <= game.cols; x += 1) { ctx.moveTo(ox + x * cell, oy); ctx.lineTo(ox + x * cell, oy + boardH); }
-    for (let y = 0; y <= game.rows; y += 1) { ctx.moveTo(ox, oy + y * cell); ctx.lineTo(ox + boardW, oy + y * cell); }
-    ctx.stroke();
 
-    const now = nowMs();
-    game.powerups.forEach((pickup) => {
-      const x = pickup.cell % game.cols;
-      const y = Math.floor(pickup.cell / game.cols);
-      const cx = ox + (x + .5) * cell;
-      const cy = oy + (y + .5) * cell;
-      ctx.save();
-      ctx.shadowColor = "rgba(255,255,255,.8)";
-      ctx.shadowBlur = cell * .7;
-      ctx.fillStyle = "rgba(245,252,255,.96)";
-      ctx.font = `900 ${Math.max(9, cell * .72)}px system-ui`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(TERRITORY_POWER_META[pickup.type]?.icon || "✦", cx, cy);
-      ctx.restore();
-    });
+    if (method === "card") {
+      state.bank = Math.max(fcEffectiveOverdraftLimit(state), fcMoney(state.bank - remaining));
+      return remaining;
+    }
 
-    game.players.forEach((player, index) => {
-      const pos = Number(game.positions[player.id]);
-      const x = pos % game.cols;
-      const y = Math.floor(pos / game.cols);
-      const cx = ox + (x + .5) * cell;
-      const cy = oy + (y + .5) * cell;
-      const frozen = Number(game.effects[player.id]?.frozenUntilMs || 0) > now;
-      ctx.save();
-      ctx.shadowColor = player.color;
-      ctx.shadowBlur = cell * 1.15;
-      ctx.fillStyle = player.color;
-      ctx.beginPath();
-      ctx.arc(cx, cy, Math.max(5, cell * .43), 0, Math.PI * 2);
-      ctx.fill();
-      ctx.shadowBlur = 0;
-      ctx.lineWidth = Math.max(1.4, cell * .09);
-      ctx.strokeStyle = index === ownPlayerIndex(game) ? "#ffffff" : "rgba(255,255,255,.78)";
-      ctx.stroke();
-      ctx.fillStyle = "#07111d";
-      ctx.font = `1000 ${Math.max(8, cell * .58)}px system-ui`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(frozen ? "❄" : String(index + 1), cx, cy + .3);
-      ctx.restore();
-    });
+    const bankPositive = Math.min(remaining, fcPositiveBank());
+    state.bank = fcMoney(state.bank - bankPositive);
+    remaining -= bankPositive;
 
-    if (rt.pendingPower === "bomb") {
-      ctx.fillStyle = "rgba(255,79,109,.12)";
-      ctx.fillRect(ox, oy, boardW, boardH);
-      ctx.strokeStyle = "rgba(255,105,125,.7)";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(ox + 1, oy + 1, boardW - 2, boardH - 2);
+    const cashPart = Math.min(remaining, Math.max(0, state.cash));
+    state.cash = fcMoney(state.cash - cashPart);
+    remaining -= cashPart;
+
+    if (remaining > 0) state.bank = Math.max(fcEffectiveOverdraftLimit(state), fcMoney(state.bank - remaining));
+    return price;
+  };
+
+  function fcCreditIncome(amount, label = "Einnahme", options = {}) {
+    const value = Math.max(0, fcMoney(amount));
+    if (!state || value <= 0) return 0;
+    fcNormalizeSave(state);
+    const financial = state.financialCrisis;
+    if (state.bank < 0 && options.protected !== false) {
+      const protectedCash = Math.max(1, Math.round(value * financial.protectedIncomeRate * 100) / 100);
+      const bankPart = Math.max(0, value - protectedCash);
+      const previousBank = fcMoney(state.bank);
+      const repaid = Math.min(Math.max(0, -previousBank), bankPart);
+      state.bank = fcMoney(previousBank + bankPart);
+      state.cash = fcMoney(state.cash + protectedCash);
+      financial.stats.protectedCash = fcMoney(financial.stats.protectedCash + protectedCash);
+      financial.stats.overdraftRepaid = fcMoney(financial.stats.overdraftRepaid + repaid);
+      financial.stats.crisisIncome = fcMoney(financial.stats.crisisIncome + value);
+      if (typeof addFeed === "function" && options.feed !== false) addFeed(`${label}: ${euro.format(value)} erhalten · 70% gegen das Minus, 30% als geschütztes Bargeld.`);
+      return value;
+    }
+    state.bank = fcMoney(state.bank + value);
+    if (typeof addFeed === "function" && options.feed === true) addFeed(`${label}: ${euro.format(value)} auf dem Konto.`);
+    return value;
+  }
+
+  payoutFromTreasury = function fcPayoutFromTreasury(amount) {
+    const value = Math.max(0, fcMoney(amount));
+    state.publicTreasury = Math.max(0, fcMoney((state.publicTreasury || 0) - value));
+    return fcCreditIncome(value, "Einnahme", { feed: false });
+  };
+
+  window.LifeBuilderFinance = {
+    version: FC_VERSION,
+    overdraftLimit: FC_OVERDRAFT_LIMIT,
+    normalize: fcNormalizeSave,
+    creditIncome: fcCreditIncome,
+    openCrisisCenter: () => fcOpenCrisisCenter()
+  };
+
+  function fcFinancialStage(save = state) {
+    const bank = fcMoney(save?.bank);
+    if (bank <= FC_OVERDRAFT_LIMIT) return 3;
+    if (bank <= -5000) return 2;
+    if (bank <= -1000) return 1;
+    return 0;
+  }
+
+  function fcStageLabel(stage = fcFinancialStage()) {
+    return ["Stabil", "Geldprobleme", "Überschuldet", "Minusgrenze erreicht"][stage] || "Stabil";
+  }
+
+  function fcUpdateFinancialStage({ daily = false } = {}) {
+    if (!state) return;
+    fcNormalizeSave(state);
+    const financial = state.financialCrisis;
+    const stage = fcFinancialStage();
+    if (daily && stage === 3) financial.limitReachedDays += 1;
+    else if (stage < 3) financial.limitReachedDays = 0;
+
+    if (stage > financial.warningStage || (daily && stage > 0 && financial.lastWarningDay !== fcDay())) {
+      financial.warningStage = stage;
+      financial.lastWarningDay = fcDay();
+      const messages = {
+        1: "Bank-Warnung: Dein Konto ist stärker im Minus. Prüfe günstige Ausgaben und den Krisenplan.",
+        2: "Bank-Warnung: Überschuldung. Neue Kredite und Ratenkäufe sind stark eingeschränkt.",
+        3: "Kontolimit erreicht: Keine weiteren Kartenkäufe. Nur Geldeingänge und Bargeld bleiben verfügbar."
+      };
+      if (messages[stage] && typeof addFeed === "function") addFeed(messages[stage]);
+    }
+    if (stage === 0) {
+      financial.warningStage = 0;
+      financial.lastWarningDay = 0;
     }
   }
 
-  function territoryCanvasCell(canvas, event, game) {
-    const rect = canvas.getBoundingClientRect();
-    const cell = Number(canvas.dataset.cellSize || 0);
-    const ox = Number(canvas.dataset.offsetX || 0);
-    const oy = Number(canvas.dataset.offsetY || 0);
-    if (!cell) return -1;
-    const x = Math.floor((event.clientX - rect.left - ox) / cell);
-    const y = Math.floor((event.clientY - rect.top - oy) / cell);
-    if (x < 0 || y < 0 || x >= game.cols || y >= game.rows) return -1;
-    return y * game.cols + x;
+  function fcPermanentHomes() {
+    const homes = original.availableHomeProperties ? original.availableHomeProperties() : [];
+    return Array.isArray(homes) ? homes : [];
   }
 
-  function territoryHtml(game) {
-    const ownIndex = ownPlayerIndex(game);
-    const ownPlayer = game.players[ownIndex];
-    const inventory = ownPlayer ? game.inventory[ownPlayer.id] : {};
-    const effects = ownPlayer ? game.effects[ownPlayer.id] : {};
-    const powerCount = Object.values(inventory || {}).reduce((sum, value) => sum + Number(value || 0), 0);
-    const status = Number(effects?.frozenUntilMs || 0) > nowMs()
-      ? "❄ Eingefroren"
-      : Number(effects?.doubleUntilMs || 0) > nowMs()
-        ? "×2 Doppelte Eroberung"
-        : Number(effects?.shieldUntilMs || 0) > nowMs()
-          ? "⬡ Gebiet geschützt"
-          : "Wischen oder Feld antippen";
-    return `<div class="bh-game-main bh-territory-main bh-arena-v3">
-      <section class="bh-territory-board-wrap">
-        <div class="bh-board-status bh-arena-status"><b data-bh-timer="${Number(game.endsAtMs || 0)}">${formatTime(Number(game.endsAtMs || 0) - nowMs())}</b><span>${status}</span><button class="bh-mobile-boost-trigger" data-bh-toggle-powers>Boosts <strong>${powerCount}</strong></button></div>
-        <div class="bh-territory-canvas-wrap"><canvas class="bh-territory-canvas" data-bh-territory-canvas aria-label="Grundstück-Kampf Arena"></canvas><div class="bh-canvas-tip">WISCHEN = 2 FELDER · TIPPEN = 1 FELD</div></div>
-        <div class="bh-move-pad bh-move-pad-v2"><button data-bh-move="up" aria-label="Nach oben">▲</button><button data-bh-move="left" aria-label="Nach links">◀</button><button class="center" disabled>●</button><button data-bh-move="right" aria-label="Nach rechts">▶</button><button data-bh-move="down" aria-label="Nach unten">▼</button></div>
-      </section>
-      <section class="bh-power-panel bh-power-dock ${rt.territoryPowerOpen ? "open" : ""}"><header><div><h3>Power-Ups</h3><p>Auf der Arena einsammeln und mit einem Klick aktivieren.</p></div><div class="bh-power-head-actions"><small>${game.owners.filter((owner) => owner === ownIndex).length} Felder</small><button data-bh-toggle-powers>${rt.territoryPowerOpen ? "Schließen" : "Boosts öffnen"}</button></div></header><div class="bh-boost-grid">${Object.entries(TERRITORY_POWER_META).map(([id, meta]) => `<button data-bh-territory-power="${id}" ${Number(inventory?.[id] || 0) > 0 ? "" : "disabled"} class="${rt.pendingPower === id ? "selected" : ""}" title="${meta.text}"><span>${meta.icon}</span><div><b>${meta.label}</b><small>${meta.text}</small></div><strong>${Number(inventory?.[id] || 0)}</strong></button>`).join("")}</div>${rt.pendingPower === "bomb" ? `<div class="bh-inline-hint">Tippe jetzt ein gegnerisches Feld auf der Arena. <button data-bh-cancel-power>Abbrechen</button></div>` : ""}</section>
-    </div>`;
-  }
-
-  function packageCardVisual(pack, compact = false) {
-    const color = BH_COLORS[pack.colorIndex];
-    return `<div class="bh-package ${compact ? "compact" : "hero"}" style="--pack:${color}"><span class="tape"></span><div class="bh-package-mark">${pack.express ? "EXPRESS" : "SCANNER"}</div><small class="bh-package-kicker">FARBCODE</small><b>${BH_COLOR_NAMES[pack.colorIndex]}</b><div>${pack.fragile ? "⚠ ZERBRECHLICH" : "▰ STANDARDPAKET"}</div><small>${pack.express ? `<span data-bh-timer="${pack.expressUntilMs}">${formatTime(pack.expressUntilMs - nowMs())}</span> bis Ablauf` : "Route über die Farbe bestimmen"}</small></div>`;
-  }
-
-  function packageHtml(game) {
-    const ownIndex = ownPlayerIndex(game);
-    const player = game.players[ownIndex];
-    if (!player) return `<p>Du bist nicht mehr Teil dieses Raums.</p>`;
-    const queue = game.queues[player.id] || [];
-    const current = queue[0];
-    const mapping = effectivePackageMapping(game, player.id);
-    const effect = game.effects[player.id] || {};
-    const blind = Number(effect.blindUntilMs || 0) > nowMs();
-    const cards = game.cards[player.id] || {};
-    const cardCount = Object.values(cards).reduce((sum, value) => sum + Number(value || 0), 0);
-    const feedback = game.lastFeedback?.[player.id];
-    const freshFeedback = feedback && nowMs() - Number(feedback.atMs || 0) < 1600;
-    return `<div class="bh-game-main bh-package-main bh-package-v3 ${blind ? "is-blind" : ""}">
-      <section class="bh-logistics-floor bh-sort-station">
-        <div class="bh-board-status bh-package-status"><b data-bh-timer="${Number(game.endsAtMs || 0)}">${formatTime(Number(game.endsAtMs || 0) - nowMs())}</b><span><strong>${Number(player.score || 0)}</strong> Punkte · Combo ${game.combo[player.id] || 0} · Fehler ${game.errors[player.id] || 0}</span><button class="bh-mobile-boost-trigger" data-bh-toggle-cards>Boosts <strong>${cardCount}</strong></button></div>
-        <div class="bh-route-ribbon">${mapping.map((city, index) => `<span style="--route:${BH_COLORS[index]}"><i></i><b>${BH_COLOR_NAMES[index]}</b><small>${city}</small></span>`).join("")}</div>
-        <div class="bh-package-stage ${freshFeedback ? feedback.kind : ""}">
-          <div class="bh-conveyor-label"><span>AKTUELLES PAKET</span><small>Farbe lesen → richtige Stadt wählen</small></div>
-          <div class="bh-up-next"><small>Danach</small>${queue.slice(1, 3).map((pack) => packageCardVisual(pack, true)).join("")}</div>
-          <div class="bh-package-scanner"><span class="bh-scan-line"></span>${current ? packageCardVisual(current, false) : `<div class="bh-package-loading">Förderband wird beladen …</div>`}</div>
-          ${freshFeedback ? `<div class="bh-package-feedback ${feedback.kind}">${escapeHtml(feedback.text)}</div>` : ""}
-        </div>
-        ${current?.fragile ? `<button class="bh-fragile-hold ${rt.careful ? "armed" : ""}" data-bh-fragile-hold><span></span><b>${rt.careful ? "✓ Paket gesichert" : "Zerbrechlich: kurz gedrückt halten"}</b><small>${rt.careful ? "Jetzt die richtige Stadt wählen" : "0,45 Sekunden halten"}</small></button>` : `<div class="bh-standard-ready"><span>✓</span><div><b>Standardpaket bereit</b><small>Direkt die richtige Stadt antippen</small></div></div>`}
-        <div class="bh-city-buttons bh-sort-bins">${BH_CITIES.map((city) => { const route = mapping.indexOf(city); return `<button data-bh-sort-city="${city}" style="--bin:${BH_COLORS[Math.max(0, route)]}"><span></span><small>ROUTE</small><b>${city}</b><em>${route >= 0 ? BH_COLOR_NAMES[route] : "?"}</em></button>`; }).join("")}</div>
-        ${blind ? `<div class="bh-blind-cover"><span>◉</span><b>Sicht blockiert</b><small>Die Sortierstation wird gleich wieder sichtbar.</small></div>` : ""}
-      </section>
-      <section class="bh-power-panel bh-card-drawer ${rt.packageCardsOpen ? "open" : ""}"><header><div><h3>Sonderkarten</h3><p>Nach vier richtigen Paketen erhältst du eine Störkarte.</p></div><button data-bh-toggle-cards>${rt.packageCardsOpen ? "Schließen" : `Boosts öffnen (${cardCount})`}</button></header><div class="bh-boost-grid">${Object.entries(PACKAGE_CARD_META).map(([id, meta]) => `<button data-bh-package-card="${id}" ${Number(cards[id] || 0) > 0 ? "" : "disabled"} class="${rt.pendingCard === id ? "selected" : ""}"><span>${meta.icon}</span><div><b>${meta.label}</b><small>${meta.text}</small></div><strong>${Number(cards[id] || 0)}</strong></button>`).join("")}</div>${rt.pendingCard ? `<div class="bh-target-list"><b>Gegner auswählen</b>${game.players.map((target, index) => index === ownIndex ? "" : `<button data-bh-card-target="${index}">${escapeHtml(target.name)}</button>`).join("")}<button data-bh-cancel-card>Abbrechen</button></div>` : ""}</section>
-    </div>`;
-  }
-
-  function reactionControls(challenge, answered) {
-    if (!challenge) return `<div class="bh-reaction-wait"><span>✓</span><b>Aufgabe ausgewertet</b><small>Die nächste Aufgabe erscheint gleich.</small></div>`;
-    if (challenge.type === "color" || challenge.type === "not-red") {
-      return `<div class="bh-color-controls">${[0, 1, 2, 3].map((index) => `<button style="--choice:${BH_COLORS[index]}" data-bh-reaction-answer="${index}" ${answered ? "disabled" : ""}><span></span>${BH_COLOR_NAMES[index]}</button>`).join("")}</div>`;
+  availableHomeProperties = function fcAvailableHomeProperties() {
+    const homes = fcPermanentHomes();
+    if (state?.starterHome?.active && !state?.tenantLease?.active && !homes.some((home) => home?.id === "starter-home-rental")) {
+      homes.unshift(fcStarterHome(state));
     }
-    if (challenge.type === "larger") return `<div class="bh-number-controls">${challenge.options.map((value) => `<button data-bh-reaction-answer="${value}" ${answered ? "disabled" : ""}>${value}</button>`).join("")}</div>`;
-    if (challenge.type === "odd") return `<div class="bh-symbol-controls">${challenge.options.map((value, index) => `<button data-bh-reaction-answer="${index}" ${answered ? "disabled" : ""}>${value}</button>`).join("")}</div>`;
-    if (challenge.type === "swipe-left") return `<div class="bh-swipe-zone" data-bh-swipe-zone><span>←</span><b>Hier nach links wischen</b><small>Am PC funktioniert auch der Button.</small><button data-bh-reaction-answer="left" ${answered ? "disabled" : ""}>Links ausführen</button></div>`;
-    return `<button class="bh-hold-button" data-bh-hold ${answered ? "disabled" : ""}><span></span><b>Gedrückt halten</b><small>Erst nach 0,8 Sekunden loslassen</small></button>`;
+    return homes.filter(Boolean);
+  };
+
+  currentAccessibleHomeProperty = function fcCurrentAccessibleHomeProperty() {
+    const homes = availableHomeProperties();
+    if (!homes.length) return null;
+    const selected = homes.find((property) => property.id === state.activeHomePropertyId);
+    return selected || homes.find((property) => property.city === (state.worldLocation || state.homeCity)) || homes[0];
+  };
+
+  function fcHasPermanentHome() {
+    return availableHomeProperties().length > 0;
   }
 
-  function reactionHtml(game) {
-    const ownIndex = ownPlayerIndex(game);
-    const player = game.players[ownIndex];
-    if (!player) return `<p>Du bist nicht mehr Teil dieses Raums.</p>`;
-    const response = game.responses[player.id];
-    const challenge = game.challenge;
-    const time = challenge ? Math.max(0, Number(challenge.deadlineMs || 0) - nowMs()) : 0;
-    return `<div class="bh-game-main bh-reaction-main">
-      <section class="bh-reaction-arena ${response ? response.correct ? "answered-correct" : "answered-wrong" : ""}">
-        <div class="bh-reaction-top"><span>Aufgabe ${game.challengeNo}</span><b data-bh-timer="${Number(challenge?.deadlineMs || 0)}">${formatTime(time)}</b></div>
-        <div class="bh-life-row">${game.players.map((entry) => `<div style="--life:${entry.color}"><b>${escapeHtml(entry.name)}</b><span>${"♥".repeat(Number(game.lives[entry.id] || 0))}${"·".repeat(Math.max(0, game.startLives - Number(game.lives[entry.id] || 0)))}</span></div>`).join("")}</div>
-        <div class="bh-prompt"><small>JETZT REAGIEREN</small><h2>${escapeHtml(challenge?.prompt || "Bereit machen …")}</h2>${response ? `<p>${response.correct ? "Richtig – du bist sicher." : "Falsch – bei der Auswertung verlierst du ein Leben."}</p>` : ""}</div>
-        ${reactionControls(challenge, !!response)}
-      </section>
-    </div>`;
+  emergencyShelterDaysUsed = function fcEmergencyShelterDaysUsed() {
+    return Math.max(0, Math.floor(fcNum(state?.housingCrisis?.shelterNightsUsed)));
+  };
+
+  emergencyShelterDaysLeft = function fcEmergencyShelterDaysLeft() {
+    return fcShelterNightsLeft();
+  };
+
+  isEmergencyShelterAvailable = function fcIsEmergencyShelterAvailable() {
+    return !!state && !fcHasPermanentHome();
+  };
+
+  hasAccessibleHome = function fcHasAccessibleHome() {
+    return !!state && (fcHasPermanentHome() || state.housingCrisis?.homeless);
+  };
+
+  usesEmergencyShelter = function fcUsesEmergencyShelter() {
+    return !!state?.housingCrisis?.homeless && state.housingCrisis.sleepMode === "shelter";
+  };
+
+  isAtOwnHome = function fcIsAtOwnHome() {
+    return !!state && state.location === "home" && (state.worldLocation || state.homeCity) === state.homeCity && hasAccessibleHome();
+  };
+
+  isHomeDashboardAvailable = function fcIsHomeDashboardAvailable() {
+    return !!state
+      && isAtOwnHome()
+      && state.homeDashboardActive !== false
+      && !state.localTravel
+      && !state.worldTravel
+      && !state.quickHomeTravel;
+  };
+
+  isDailyDashboardAvailable = function fcIsDailyDashboardAvailable() {
+    return isHomeDashboardAvailable() || (typeof isHotelDashboardAvailable === "function" && isHotelDashboardAvailable());
+  };
+
+  function fcShelterNightsLeft() {
+    return Math.max(0, FC_SHELTER_FREE_NIGHTS - Math.max(0, fcNum(state?.housingCrisis?.shelterNightsUsed)));
   }
 
-  function roundEndHtml(game) {
-    const seriesOver = game.status === "seriesOver";
-    const canNext = !game.online || isHost();
-    return `<div class="bh-result-overlay"><div><span>🏆</span><p>${seriesOver ? "MATCH GEWONNEN" : `RUNDE ${game.round} BEENDET`}</p><h2>${escapeHtml(seriesOver ? game.winnerName : game.roundWinnerName)}</h2><small>${seriesOver ? `Gewinnt Best-of-${game.bestOf}.` : `Der Spielstand lautet ${game.players.map((player) => `${player.name} ${player.wins}`).join(" · ")}.`}</small><section>${playersHtml(game)}</section><div class="bh-result-actions">${!seriesOver && canNext ? `<button data-bh-next-round>Nächste Runde</button>` : ""}${seriesOver && canNext ? `<button data-bh-rematch>Revanche</button>` : ""}<button data-bh-close-game>Zur Spieleauswahl</button></div></div></div>`;
+  function fcHasRelationshipHelp() {
+    return Boolean(state?.finder?.relationshipId || (state?.finder?.matches || []).length >= 2);
   }
 
-  function gameScreenHtml(game) {
-    const meta = gameMeta(game.type);
-    const mode = game.online ? `Online · Raum ${escapeHtml(rt.roomId)}` : "Bot-Partie";
-    const compactScores = game.players.map((player, index) => {
-      const score = game.type === "territory" ? game.owners.filter((owner) => owner === index).length : game.type === "reaction" ? Number(game.lives[player.id] || 0) : Number(player.score || 0);
-      const suffix = game.type === "reaction" ? "♥" : "";
-      return `<span style="--p:${player.color}" class="${index === ownPlayerIndex(game) ? "own" : ""}"><i></i><b>${escapeHtml(player.name)}</b><strong>${score}${suffix}</strong></span>`;
-    }).join("");
-    return `<section class="bh-shell bh-game-shell bh-game-${game.type}" style="--accent:${meta.accent}" data-bh-game-type="${game.type}">
-      <header class="bh-header"><button data-bh-back-game>‹</button><div><p>${mode} · Best-of-${game.bestOf}</p><h2>${meta.title}</h2></div><div class="bh-round-badge">Runde ${game.round}</div></header>
-      <div class="bh-mobile-score-strip" aria-label="Aktueller Spielstand">${compactScores}</div>
-      <div class="bh-game-layout"><main>${game.type === "territory" ? territoryHtml(game) : game.type === "packages" ? packageHtml(game) : reactionHtml(game)}</main><aside><h3>Spielstand</h3><div class="bh-player-list">${playersHtml(game)}</div><section class="bh-log"><h4>Live-Verlauf</h4>${(game.log || []).slice(0, 8).map((line) => `<p>${escapeHtml(line)}</p>`).join("")}</section></aside></div>
-      ${game.status !== "playing" ? roundEndHtml(game) : ""}<div class="bh-toast" data-bh-toast></div>
-    </section>`;
+  function fcHasVehicle() {
+    try { return typeof vehicleCount === "function" && vehicleCount() > 0; }
+    catch { return false; }
   }
 
-  function gameCard(type) {
-    const meta = gameMeta(type);
-    return `<article class="bh-launch-card" style="--accent:${meta.accent}"><span>${meta.icon}</span><div><p>${meta.short}</p><h3>${meta.title}</h3><small>${meta.description}</small></div><button data-bh-local-setup="${type}">Gegen Bots</button><button data-bh-online-menu="${type}">Online</button></article>`;
-  }
-
-  function launcherHtml() {
-    const meta = gameMeta();
-    return `<section class="bh-shell bh-launcher" style="--accent:${meta.accent}"><header class="bh-header"><button data-bh-close>×</button><div><p>LIFEBUILDER · BATTLE APPS</p><h2>Drei eigenständige Spiele</h2></div><div class="bh-live-pill">2–4 Spieler</div></header><div class="bh-launch-hero"><div><span>KL</span><p>BOT · ONLINE · PRIVATCODE</p><h1>LifeBuilder Battle</h1><small>Jedes Spiel kann im Life App Store einzeln installiert werden.</small></div></div><div class="bh-launch-grid">${gameCard("territory")}${gameCard("packages")}${gameCard("reaction")}</div><button class="bh-return-am" data-bh-close>Battle Hub schließen</button></section>`;
-  }
-
-  function singleLauncherHtml() {
-    const meta = gameMeta(rt.gameType);
-    return `<section class="bh-shell bh-launcher bh-single-launcher" style="--accent:${meta.accent}">
-      <header class="bh-header"><button data-bh-close>×</button><div><p>EIGENSTÄNDIGE LIFE APP</p><h2>${meta.title}</h2></div><div class="bh-live-pill">2–4 Spieler</div></header>
-      <div class="bh-single-hero"><span>${meta.icon}</span><div><p>${meta.short}</p><h1>${meta.title}</h1><small>${meta.description}</small></div></div>
-      <div class="bh-single-actions">
-        <button data-bh-local-setup="${rt.gameType}"><span>🤖</span><div><b>Gegen Bots</b><small>2, 3 oder 4 Spieler · Best-of-1/3/5</small></div><i>›</i></button>
-        <button data-bh-online-menu="${rt.gameType}"><span>🌐</span><div><b>Online spielen</b><small>Öffentlich sichtbar oder privat mit Raumcode</small></div><i>›</i></button>
-      </div>
-      <div class="bh-single-tags"><span>Handy</span><span>PC</span><span>Touch</span><span>Tastatur</span></div>
-    </section>`;
-  }
-
-  function defaultHomeView() {
-    return rt.standalone ? "single" : "launcher";
-  }
-
-  function setupHtml(online = false) {
-    const meta = gameMeta();
-    const duration = rt.gameType === "territory"
-      ? `<label>Rundenzeit<select data-bh-duration><option value="120">2 Minuten</option><option value="180">3 Minuten</option></select></label>`
-      : rt.gameType === "packages"
-        ? `<label>Rundenzeit<select data-bh-duration><option value="90">90 Sekunden</option><option value="120">2 Minuten</option></select></label>`
-        : `<label>Leben pro Spieler<select data-bh-lives><option value="3">3 Leben</option><option value="5" selected>5 Leben</option><option value="7">7 Leben</option></select></label>`;
-    return `<section class="bh-shell bh-setup" style="--accent:${meta.accent}"><header class="bh-header"><button data-bh-home>‹</button><div><p>${online ? "ONLINE-MODUS" : "BOT-MODUS"}</p><h2>${meta.title}</h2></div><span class="bh-game-icon">${meta.icon}</span></header><div class="bh-setup-grid"><section><h3>${online ? "Online-Lobby erstellen" : "Partie konfigurieren"}</h3><p>${meta.description}</p><label>Spieleranzahl<select data-bh-player-count><option value="2">1 vs 1</option><option value="3">1 vs 1 vs 1</option><option value="4" selected>1 vs 1 vs 1 vs 1</option></select></label><label>Matchformat<select data-bh-best-of><option value="1">Eine Runde</option><option value="3" selected>Best-of-3</option><option value="5">Best-of-5</option></select></label>${duration}${online ? `<label>Sichtbarkeit<select data-bh-visibility><option value="public">Öffentlich sichtbar</option><option value="private">Privat · nur mit Code</option></select></label><label class="bh-check"><input type="checkbox" data-bh-fill-bots checked><span>Freie Plätze beim Start mit Bots füllen</span></label><button class="bh-primary" data-bh-create-room>Online-Raum erstellen</button>` : `<button class="bh-primary" data-bh-start-local>Bot-Partie starten</button>`}</section>${online ? `<section class="bh-join-panel"><h3>Raum beitreten</h3><div><input data-bh-room-code maxlength="6" placeholder="ABC123"><button data-bh-join-code>Beitreten</button></div><h3>Öffentliche Räume</h3><div class="bh-public-rooms">${publicRoomsHtml()}</div><button class="bh-secondary" data-bh-refresh-rooms>Liste aktualisieren</button></section>` : `<section class="bh-bot-preview"><h3>Strategische Bots</h3><div>${[0, 1, 2, 3].map((index) => `<span style="--bot:${BH_COLORS[index]}">${index === 0 ? "DU" : `BOT ${index}`}</span>`).join("")}</div><p>Bots erkennen Gebietsvorteile, Paketregeln, Expressfristen, Leben, Reaktionszeit und sinnvolle Störkarten.</p></section>`}</div><div class="bh-toast" data-bh-toast></div></section>`;
-  }
-
-  function publicRoomsHtml() {
-    const rooms = rt.publicRooms.filter((room) => room.gameType === rt.gameType && room.status === "lobby" && (room.players?.length || 0) < Number(room.maxPlayers || 4));
-    if (!rooms.length) return `<p>Aktuell wartet kein öffentlicher Raum für ${gameMeta().title}.</p>`;
-    return rooms.map((room) => `<article><span>${room.players?.length || 1}/${room.maxPlayers || 4}</span><div><b>${escapeHtml(room.hostName || "Spieler")}</b><small>Best-of-${room.settings?.bestOf || 1} · ${room.fillBots ? "Bots erlaubt" : "nur Online"}</small></div><button data-bh-join-room="${escapeHtml(room.gameId || room.id)}">Beitreten</button></article>`).join("");
-  }
-
-  function lobbyHtml() {
-    const room = rt.room;
-    const meta = gameMeta(room.gameType);
-    const host = isHost();
-    const players = room.players || [];
-    return `<section class="bh-shell bh-lobby" style="--accent:${meta.accent}"><header class="bh-header"><button data-bh-leave-room>‹</button><div><p>${room.visibility === "private" ? "PRIVATER RAUM" : "ÖFFENTLICHER RAUM"}</p><h2>${meta.title}</h2></div><span class="bh-game-icon">${meta.icon}</span></header><div class="bh-lobby-grid"><section class="bh-code-card"><small>RAUMCODE</small><b>${escapeHtml(rt.roomId)}</b><button data-bh-copy-code>Kopieren</button><p>Andere Spieler sehen öffentliche Räume in ihrer App. Private Räume öffnen sich nur mit diesem Code.</p></section><section class="bh-seat-grid">${Array.from({ length: room.maxPlayers || 4 }, (_, index) => { const player = players[index]; return `<article style="--seat:${BH_COLORS[index]}"><span>${player ? player.isBot ? "BOT" : index + 1 : "+"}</span><div><b>${player ? escapeHtml(player.name) : "Freier Platz"}</b><small>${player ? player.uid === room.hostUid ? "Host" : player.isBot ? "Strategie-Bot" : "Online verbunden" : "Wartet auf Spieler"}</small></div></article>`; }).join("")}</section><section class="bh-lobby-controls">${host ? `<label class="bh-check"><input type="checkbox" data-bh-lobby-fill-bots ${room.fillBots ? "checked" : ""}><span>Freie Plätze mit Bots füllen</span></label><button class="bh-primary" data-bh-start-online ${(players.length >= 2 || room.fillBots) ? "" : "disabled"}>Match starten</button>` : `<div class="bh-wait"><span></span><b>Warte auf den Host</b><small>Das Spiel öffnet sich bei allen Teilnehmern automatisch.</small></div>`}<button class="bh-secondary" data-bh-leave-room>Raum verlassen</button></section></div><div class="bh-toast" data-bh-toast></div></section>`;
-  }
-
-  function render() {
-    const overlay = ensureOverlay();
-    const game = currentGame();
-    if (game && overlay.classList.contains("show") && rt.view === "game") overlay.innerHTML = gameScreenHtml(game);
-    else if (rt.view === "lobby" && rt.room) overlay.innerHTML = lobbyHtml();
-    else if (rt.view === "local-setup") overlay.innerHTML = setupHtml(false);
-    else if (rt.view === "online") overlay.innerHTML = setupHtml(true);
-    else if (rt.view === "single") overlay.innerHTML = singleLauncherHtml();
-    else overlay.innerHTML = launcherHtml();
-    bindOverlay(overlay);
-    if (game && rt.view === "game") requestAnimationFrame(() => afterGameRender(game));
-    if (game?.status === "seriesOver") maybeAwardReward(game);
-  }
-
-  function afterGameRender(game) {
-    if (game.type === "territory") drawTerritoryCanvas(rt.overlay?.querySelector("[data-bh-territory-canvas]"), game);
-  }
-
-  function ensureOverlay() {
-    if (rt.overlay) return rt.overlay;
-    const overlay = document.createElement("div");
-    overlay.className = "bh-overlay";
-    overlay.dataset.bhOverlay = "1";
-    document.body.appendChild(overlay);
-    rt.overlay = overlay;
-    return overlay;
-  }
-
-  function open(type = "territory") {
-    rt.gameType = BH_GAMES[type] ? type : "territory";
-    rt.standalone = false;
-    rt.view = "launcher";
-    const overlay = ensureOverlay();
-    overlay.classList.add("show");
-    document.body.classList.add("bh-open");
-    render();
-  }
-
-  function openSingle(type = "territory", target = "home") {
-    rt.gameType = BH_GAMES[type] ? type : "territory";
-    rt.standalone = true;
-    rt.view = target === "local" ? "local-setup" : target === "online" ? "online" : "single";
-    const overlay = ensureOverlay();
-    overlay.classList.add("show");
-    document.body.classList.add("bh-open");
-    if (rt.view === "online") listenPublicRooms().catch((error) => toast(error.message || error));
-    render();
-  }
-
-  function close() {
-    rt.overlay?.classList.remove("show");
-    document.body.classList.remove("bh-open");
-    rt.pendingPower = "";
-    rt.pendingCard = "";
-    clearTimeout(rt.holdTimer);
-  }
-
-  function toast(message) {
-    const node = rt.overlay?.querySelector("[data-bh-toast]");
-    if (!node) {
-      if (typeof addFeed === "function") addFeed(String(message));
+  function fcEnsureHomelessState(reason = "") {
+    if (!state) return;
+    fcNormalizeSave(state);
+    if (fcHasPermanentHome()) {
+      state.housingCrisis.homeless = false;
+      state.housingCrisis.homelessSinceDay = 0;
       return;
     }
-    node.textContent = String(message || "");
-    node.classList.add("show");
-    clearTimeout(rt.toastTimer);
-    rt.toastTimer = setTimeout(() => node.classList.remove("show"), 2800);
-  }
-
-  function setupSettings(shell) {
-    return {
-      bestOf: Number(shell.querySelector("[data-bh-best-of]")?.value || 3),
-      durationSec: Number(shell.querySelector("[data-bh-duration]")?.value || (rt.gameType === "territory" ? 120 : 90)),
-      lives: Number(shell.querySelector("[data-bh-lives]")?.value || 5)
-    };
-  }
-
-  function startLocal(shell) {
-    const count = clampNumber(shell.querySelector("[data-bh-player-count]")?.value || 4, 2, 4);
-    const players = makePlayers(count, false);
-    rt.roomUnsub?.();
-    rt.roomUnsub = null;
-    rt.room = null;
-    rt.roomId = "";
-    rt.local = createGame(rt.gameType, players, setupSettings(shell), false, 1);
-    rt.view = "game";
-    render();
-    startTicker();
-  }
-
-  async function listenPublicRooms() {
-    const fb = await firebaseRuntime();
-    requireUser(fb);
-    rt.publicUnsub?.();
-    const query = fb.query(fb.collection(fb.db, BH_COLLECTION), fb.where("visibility", "==", "public"), fb.limit(50));
-    rt.publicUnsub = fb.onSnapshot(query, (snapshot) => {
-      rt.publicRooms = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
-        .filter((room) => room.status === "lobby")
-        .sort((a, b) => Number(b.updatedAtMs || 0) - Number(a.updatedAtMs || 0));
-      if (rt.view === "online") render();
-    }, (error) => toast(`Raumliste: ${error.message || error}`));
-  }
-
-  async function createRoom(shell) {
-    const fb = await firebaseRuntime();
-    const user = requireUser(fb);
-    const maxPlayers = clampNumber(shell.querySelector("[data-bh-player-count]")?.value || 4, 2, 4);
-    const visibility = shell.querySelector("[data-bh-visibility]")?.value === "private" ? "private" : "public";
-    const fillBots = !!shell.querySelector("[data-bh-fill-bots]")?.checked;
-    let code = "";
-    let ref = null;
-    for (let i = 0; i < 8; i += 1) {
-      code = newCode();
-      ref = fb.doc(fb.db, BH_COLLECTION, code);
-      if (!(await fb.getDoc(ref)).exists()) break;
+    if (!state.housingCrisis.homeless) {
+      state.housingCrisis.homeless = true;
+      state.housingCrisis.homelessSinceDay = fcDay();
+      state.housingCrisis.storageUntilDay = fcDay() + 5;
+      state.housingCrisis.sleepMode = fcShelterNightsLeft() > 0 ? "shelter" : "bench";
+      state.mood = typeof clamp === "function" ? clamp(fcNum(state.mood, 75) - 10) : Math.max(0, fcNum(state.mood, 75) - 10);
+      if (reason && typeof addFeed === "function") addFeed(reason);
     }
-    const human = { uid: user.uid, name: user.displayName || playerName(), isBot: false };
-    const room = {
-      gameId: code,
-      gameType: rt.gameType,
-      hostUid: user.uid,
-      hostName: human.name,
-      visibility,
-      maxPlayers,
-      fillBots,
-      status: "lobby",
-      settings: setupSettings(shell),
-      playerUids: [user.uid],
-      players: [human],
-      gameState: null,
-      winnerName: "",
-      createdAtMs: nowMs(),
-      updatedAtMs: nowMs(),
-      version: BH_VERSION
-    };
-    await fb.setDoc(ref, room);
-    await watchRoom(code);
-    rt.view = "lobby";
-    render();
+    state.location = "home";
+    state.worldLocation = state.homeCity || state.worldLocation;
+    state.homeDashboardActive = true;
   }
 
-  async function joinRoom(codeRaw) {
-    const code = String(codeRaw || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
-    if (code.length !== 6) throw new Error("Der Raumcode muss sechs Zeichen haben.");
-    const fb = await firebaseRuntime();
-    const user = requireUser(fb);
-    const ref = fb.doc(fb.db, BH_COLLECTION, code);
-    await fb.runTransaction(fb.db, async (transaction) => {
-      const snapshot = await transaction.get(ref);
-      if (!snapshot.exists()) throw new Error("Dieser Raum wurde nicht gefunden.");
-      const room = snapshot.data();
-      if (room.status !== "lobby") throw new Error("Das Match läuft bereits.");
-      const players = Array.isArray(room.players) ? [...room.players] : [];
-      if (players.some((player) => player.uid === user.uid)) return;
-      if (players.length >= Number(room.maxPlayers || 4)) throw new Error("Der Raum ist voll.");
-      players.push({ uid: user.uid, name: user.displayName || playerName(), isBot: false });
-      transaction.update(ref, { players, playerUids: players.map((player) => player.uid), updatedAtMs: nowMs() });
-    });
-    await watchRoom(code);
-    rt.gameType = rt.room?.gameType || rt.gameType;
-    rt.view = "lobby";
-    render();
+  function fcEvict(reason, source = "tenant") {
+    const housing = state.housingCrisis;
+    const homeName = source === "starter"
+      ? (state.starterHome?.type || "Startwohnung")
+      : (state.tenantLease?.property?.name || "Mietwohnung");
+    if (source === "starter") state.starterHome.active = false;
+    else state.tenantLease = null;
+    state.activeHomePropertyId = "";
+    housing.evictionDay = fcDay();
+    housing.evictionWarning = 4;
+    housing.history.push({ day: fcDay(), kind: "eviction", text: `${homeName}: ${reason}` });
+    state.credit = typeof clamp === "function" ? clamp(fcNum(state.credit, 15) - 12) : Math.max(0, fcNum(state.credit, 15) - 12);
+    fcEnsureHomelessState(`${homeName}: Räumung nach mehreren unbezahlten Mieten. Du hast jetzt Zugang zur Krisenhilfe und Notunterkunft.`);
   }
 
-  async function watchRoom(code) {
-    const fb = await firebaseRuntime();
-    const user = requireUser(fb);
-    rt.roomUnsub?.();
-    rt.roomId = code;
-    rt.local = null;
-    const ref = fb.doc(fb.db, BH_COLLECTION, code);
-    rt.roomUnsub = fb.onSnapshot(ref, (snapshot) => {
-      if (!snapshot.exists()) {
-        toast("Der Online-Raum wurde geschlossen.");
-        disconnectRoom(false);
+  function fcActiveRentSource() {
+    if (state?.tenantLease?.active !== false && state?.tenantLease?.property) {
+      return { source: "tenant", rent: Math.max(0, Math.round(fcNum(state.tenantLease.dailyRent))), lease: state.tenantLease, name: state.tenantLease.property.name || "Mietwohnung" };
+    }
+    if (state?.starterHome?.active) {
+      return { source: "starter", rent: Math.max(0, Math.round(fcNum(state.starterHome.dailyRent, FC_STARTER_RENT))), lease: state.starterHome, name: state.starterHome.type || "Startwohnung" };
+    }
+    return null;
+  }
+
+  settleTenantRentAfterSleep = function fcSettleTenantRentAfterSleep() {
+    fcNormalizeSave(state);
+    const active = fcActiveRentSource();
+    if (!active) {
+      fcEnsureHomelessState();
+      return;
+    }
+    const housing = state.housingCrisis;
+    const day = fcDay();
+    if (active.source === "starter" && day <= housing.starterGraceUntilDay) {
+      active.lease.lastPaidDay = day;
+      return;
+    }
+    if (fcNum(active.lease.lastPaidDay) >= day) return;
+    if (active.rent <= 0) {
+      active.lease.lastPaidDay = day;
+      return;
+    }
+
+    if (canAffordWithMethod(active.rent, "auto")) {
+      debitPlayer(active.rent, "auto");
+      if (typeof allocateOutgoingPayment === "function") allocateOutgoingPayment(active.rent, "treasury", 0.19);
+      active.lease.lastPaidDay = day;
+      active.lease.paidDays = Math.max(1, Math.floor(fcNum(active.lease.paidDays, 1))) + 1;
+      active.lease.totalPaid = fcMoney(fcNum(active.lease.totalPaid) + active.rent);
+      if (housing.rentArrears <= 0) {
+        housing.missedRentPayments = 0;
+        housing.evictionWarning = 0;
+      }
+      if (typeof addFeed === "function") addFeed(`${active.name}: ${euro.format(active.rent)} Miete bezahlt.${housing.rentArrears > 0 ? ` Rückstand weiterhin ${euro.format(housing.rentArrears)}.` : ""}`);
+      return;
+    }
+
+    housing.rentArrears = fcMoney(housing.rentArrears + active.rent);
+    housing.missedRentPayments += 1;
+    housing.evictionWarning = Math.min(4, housing.missedRentPayments);
+    active.lease.lastPaidDay = day;
+    const messages = [
+      "",
+      `Erste Mahnung: ${active.name} · ${euro.format(active.rent)} offen.`,
+      `Zweite Mahnung: Mietrückstand ${euro.format(housing.rentArrears)}. Ratenzahlung oder Hilfe nutzen.`,
+      `Letzte Zahlungsfrist: Beim nächsten Ausfall droht die Räumung. Rückstand ${euro.format(housing.rentArrears)}.`,
+      `Räumung: Vier Mietzahlungen konnten nicht geleistet werden.`
+    ];
+    if (typeof addFeed === "function") addFeed(messages[housing.evictionWarning]);
+    if (housing.missedRentPayments >= FC_EVICTION_MISSES) fcEvict("Mietgrenze überschritten", active.source);
+  };
+
+  startTenantLease = function fcStartTenantLease(offerId) {
+    const before = state?.tenantLease;
+    const result = original.startTenantLease(offerId);
+    if (state?.tenantLease && state.tenantLease !== before) {
+      state.starterHome.active = false;
+      state.housingCrisis.homeless = false;
+      state.housingCrisis.homelessSinceDay = 0;
+      state.housingCrisis.missedRentPayments = 0;
+      state.housingCrisis.evictionWarning = 0;
+      state.housingCrisis.rentArrears = 0;
+      save();
+    }
+    return result;
+  };
+
+  function fcUsePositiveFunds(amount) {
+    let remaining = Math.max(0, fcMoney(amount));
+    const cash = Math.min(remaining, Math.max(0, state.cash));
+    state.cash = fcMoney(state.cash - cash);
+    remaining -= cash;
+    if (remaining > 0) {
+      const bank = Math.min(remaining, Math.max(0, state.bank));
+      state.bank = fcMoney(state.bank - bank);
+      remaining -= bank;
+    }
+    return remaining <= 0;
+  }
+
+  function fcPayRentArrears() {
+    const housing = state.housingCrisis;
+    const amount = Math.max(0, fcMoney(housing.rentArrears));
+    if (!amount) return addFeed("Es gibt aktuell keinen Mietrückstand.");
+    if (!canAffordWithMethod(amount, "auto")) return addFeed(`Für den Mietrückstand brauchst du ${euro.format(amount)}. Das Kontolimit darf nicht überschritten werden.`);
+    debitPlayer(amount, "auto");
+    allocateOutgoingPayment(amount, "treasury", 0);
+    housing.rentArrears = 0;
+    housing.missedRentPayments = 0;
+    housing.evictionWarning = 0;
+    addFeed(`Mietrückstand vollständig bezahlt: ${euro.format(amount)}.`);
+    save();
+    fcOpenCrisisCenter("debt");
+  }
+
+  function fcPayStorageFees() {
+    const housing = state.housingCrisis;
+    const amount = Math.max(0, fcMoney(housing.storageFees));
+    if (!amount) return addFeed("Es gibt aktuell keine offenen Lagergebühren.");
+    if (state.cash + Math.max(0, state.bank) < amount) return addFeed(`Für die Lagergebühren brauchst du ${euro.format(amount)} aus Bargeld oder positivem Kontoguthaben.`);
+    fcUsePositiveFunds(amount);
+    if (typeof allocateOutgoingPayment === "function") allocateOutgoingPayment(amount, "treasury", 0);
+    housing.storageFees = 0;
+    addFeed(`Lagergebühren vollständig bezahlt: ${euro.format(amount)}.`);
+    save();
+    render();
+    fcOpenCrisisCenter("debt");
+  }
+
+  function fcChargeSleepMode(mode) {
+    const housing = state.housingCrisis;
+    if (!housing.homeless) return true;
+    const day = fcDay();
+    if (mode === "shelter") {
+      if (fcShelterNightsLeft() > 0) return true;
+      if (state.cash < FC_SHELTER_PAID_COST) return false;
+      state.cash = Math.max(0, fcMoney(state.cash - FC_SHELTER_PAID_COST));
+      if (typeof allocateOutgoingPayment === "function") allocateOutgoingPayment(FC_SHELTER_PAID_COST, "treasury", 0.07);
+      return true;
+    }
+    if (mode === "hostel") {
+      if (state.cash < FC_HOSTEL_COST) return false;
+      state.cash -= FC_HOSTEL_COST;
+      return true;
+    }
+    if (mode === "car") {
+      if (!fcHasVehicle() || state.cash < FC_CAR_COST) return false;
+      state.cash -= FC_CAR_COST;
+      return true;
+    }
+    if (mode === "friend") return fcHasRelationshipHelp();
+    if (mode === "bench") return true;
+    housing.sleepMode = fcShelterNightsLeft() > 0 ? "shelter" : "bench";
+    return true;
+  }
+
+  sleepAndAdvanceDay = function fcSleepAndAdvanceDay(reason = "Du hast geschlafen und bist erholt.") {
+    fcNormalizeSave(state);
+    fcEnsureHomelessState();
+    const housing = state.housingCrisis;
+    if (housing.homeless) {
+      const mode = housing.sleepMode || (fcShelterNightsLeft() > 0 ? "shelter" : "bench");
+      if (!fcChargeSleepMode(mode)) {
+        addFeed(mode === "hostel" ? "Für das Hostel fehlen 35 € Bargeld." : mode === "car" ? "Für Schlafen im Auto brauchst du ein Fahrzeug und 5 € Bargeld." : "Die kostenlose Notunterkunft ist aufgebraucht. Wähle eine andere Schlafmöglichkeit.");
+        fcOpenCrisisCenter("shelter");
         return;
       }
-      const previous = rt.room?.status;
-      rt.room = { id: snapshot.id, viewerUid: user.uid, ...snapshot.data() };
-      rt.gameType = rt.room.gameType || rt.gameType;
-      if (rt.room.gameState && ["playing", "finished"].includes(rt.room.status)) rt.view = "game";
-      else rt.view = "lobby";
-      render();
-      if (previous !== "playing" && rt.room.status === "playing") startTicker();
-      if (rt.room.gameState?.status === "seriesOver") maybeAwardReward(rt.room.gameState);
-    }, (error) => toast(`Raumverbindung: ${error.message || error}`));
-  }
+      housing.lastSleepMode = mode;
+      const labels = { shelter: "Notunterkunft", hostel: "Hostel", friend: "bei Freunden", car: "im Auto", bench: "auf einer Parkbank" };
+      reason = `Du hast ${labels[mode] || "in einer Notunterkunft"} geschlafen.`;
+    } else {
+      housing.lastSleepMode = "home";
+    }
+    return original.sleepAndAdvanceDay(reason);
+  };
 
-  async function startOnline(shell) {
-    if (!isHost()) throw new Error("Nur der Host kann starten.");
-    const fb = await firebaseRuntime();
-    const ref = fb.doc(fb.db, BH_COLLECTION, rt.roomId);
-    await fb.runTransaction(fb.db, async (transaction) => {
-      const snapshot = await transaction.get(ref);
-      if (!snapshot.exists()) throw new Error("Raum nicht gefunden.");
-      const room = snapshot.data();
-      const fillBots = !!shell.querySelector("[data-bh-lobby-fill-bots]")?.checked;
-      const humans = (room.players || []).filter((player) => !player.isBot);
-      if (humans.length < 2 && !fillBots) throw new Error("Mindestens zwei Online-Spieler werden benötigt.");
-      const players = makePlayers(Number(room.maxPlayers || 4), true, humans);
-      const gameState = createGame(room.gameType, players, room.settings || {}, true, 1);
-      transaction.update(ref, {
-        fillBots,
-        players: players.map((player) => ({ uid: player.uid, name: player.name, isBot: player.isBot })),
-        playerUids: humans.map((player) => player.uid),
-        gameState,
-        status: "playing",
-        updatedAtMs: nowMs()
-      });
-    });
-    rt.view = "game";
+  nextDay = function fcNextDay(reason, options = {}) {
+    const beforeEnergy = fcNum(state?.energy, 50);
+    const beforeMood = fcNum(state?.mood, 50);
+    const mode = state?.housingCrisis?.lastSleepMode || "home";
+    const result = original.nextDay(reason, options);
+    if (!state) return result;
+    fcNormalizeSave(state);
+    const housing = state.housingCrisis;
+    fcEnsureHomelessState();
+
+    if (housing.homeless) {
+      const effects = {
+        shelter: { recovery: 24, mood: -2, health: 0 },
+        hostel: { recovery: 38, mood: 2, health: 2 },
+        friend: { recovery: 32, mood: 1, health: 1 },
+        car: { recovery: 19, mood: -3, health: -1 },
+        bench: { recovery: 10, mood: -8, health: -3 }
+      }[mode] || { recovery: 18, mood: -3, health: -1 };
+      state.energy = typeof clamp === "function" ? clamp(Math.min(fcNum(state.energy), beforeEnergy + effects.recovery)) : Math.max(0, Math.min(100, beforeEnergy + effects.recovery));
+      state.mood = typeof clamp === "function" ? clamp(fcNum(state.mood, beforeMood) + effects.mood) : Math.max(0, Math.min(100, fcNum(state.mood, beforeMood) + effects.mood));
+      state.health = typeof clamp === "function" ? clamp(fcNum(state.health, 100) + effects.health) : Math.max(0, Math.min(100, fcNum(state.health, 100) + effects.health));
+      if (mode === "shelter") { housing.shelterNightsUsed += 1; housing.shelterStays += 1; state.phoneBattery = 100; }
+      if (mode === "hostel") { housing.hostelStays += 1; state.phoneBattery = 100; }
+      if (mode === "friend") housing.friendStays += 1;
+      if (mode === "car") housing.carStays += 1;
+      if (mode === "bench") {
+        housing.benchStays += 1;
+        if (state.cash > 0 && Math.random() < 0.12) {
+          const loss = Math.min(state.cash, Math.max(2, Math.round(Math.random() * 18)));
+          state.cash -= loss;
+          addFeed(`Unsichere Nacht: ${euro.format(loss)} Bargeld verloren.`);
+        }
+      }
+    }
+
+    if (fcDay() > housing.storageUntilDay && housing.homeless) {
+      const storageDaily = 20;
+      if (state.cash + Math.max(0, state.bank) >= storageDaily) {
+        fcUsePositiveFunds(storageDaily);
+        if (typeof allocateOutgoingPayment === "function") allocateOutgoingPayment(storageDaily, "treasury", 0);
+        addFeed("Lagergebühr für große Gegenstände bezahlt: 20 €. Wichtige Dokumente und Questgegenstände bleiben geschützt.");
+      } else {
+        housing.storageFees = fcMoney(housing.storageFees + storageDaily);
+        addFeed(`Lagergebühr offen: ${euro.format(housing.storageFees)}. Dokumente und Questgegenstände bleiben geschützt.`);
+      }
+    }
+
+    fcUpdateFinancialStage({ daily: true });
+    save();
     render();
-    startTicker();
+    return result;
+  };
+
+  settleDailyTaxesAfterSleep = function fcSettleDailyTaxesAfterSleep() {
+    const amount = typeof dailyTaxCharge === "function" ? Math.max(0, dailyTaxCharge()) : 0;
+    if (!amount) return;
+    const payable = Math.min(amount, fcBankHeadroom());
+    if (payable > 0) {
+      state.bank = fcMoney(state.bank - payable);
+      state.taxAccount = fcMoney((state.taxAccount || 0) + payable);
+    }
+    const missing = fcMoney(amount - payable);
+    if (missing > 0) state.taxLiability = fcMoney((state.taxLiability || 0) + missing);
+    addFeed(`Tagessteuern: ${euro.format(amount)}${missing > 0 ? ` · offen ${euro.format(missing)}` : ""}. Das Konto bleibt mindestens bei -10.000 €.`);
+  };
+
+  settleDailyDebtCostsAfterSleep = function fcSettleDailyDebtCostsAfterSleep() {
+    fcNormalizeSave(state);
+    const financial = state.financialCrisis;
+    const day = fcDay();
+    const freeze = day <= fcNum(financial.interestFreezeUntilDay);
+    const debtInterest = freeze ? 0 : Math.round(Math.max(0, state.debt || 0) * 0.0006);
+    const overdraftInterest = freeze || state.bank <= FC_OVERDRAFT_LIMIT ? 0 : Math.round(Math.max(0, -state.bank) * 0.0008);
+    const propertyBills = Math.min(180, Math.max(0, (state.properties || []).length * 6));
+    const amount = debtInterest + overdraftInterest + propertyBills;
+    if (!amount) return;
+    const payable = Math.min(amount, fcBankHeadroom());
+    if (payable > 0) {
+      state.bank = fcMoney(state.bank - payable);
+      state.publicTreasury = fcMoney((state.publicTreasury || 0) + payable);
+    }
+    const missing = fcMoney(amount - payable);
+    if (missing > 0 && state.bank > FC_OVERDRAFT_LIMIT) state.debt = fcMoney(state.debt + missing);
+    addFeed(`Tageskosten: ${euro.format(amount)}${freeze ? " · Zinsstopp aktiv" : ""}${missing > 0 ? ` · ${euro.format(missing)} konnten nicht mehr belastet werden` : ""}.`);
+  };
+
+  function fcSelectedModeMeta() {
+    const mode = state.housingCrisis.sleepMode;
+    return {
+      shelter: { label: "Notunterkunft", cost: fcShelterNightsLeft() > 0 ? "kostenlos" : `${FC_SHELTER_PAID_COST} €`, text: "Dusche, Handy laden und ordentliche Erholung.", available: true },
+      hostel: { label: "Billighostel", cost: `${FC_HOSTEL_COST} €`, text: "Sicher, gute Erholung und Handyaufladung.", available: state.cash >= FC_HOSTEL_COST },
+      friend: { label: "Freunde / Partner", cost: "kostenlos", text: "Gute Erholung, nur bei ausreichenden Kontakten.", available: fcHasRelationshipHelp() },
+      car: { label: "Im Auto", cost: `${FC_CAR_COST} €`, text: "Etwas sicherer als die Straße, aber wenig Erholung.", available: fcHasVehicle() && state.cash >= FC_CAR_COST },
+      bench: { label: "Straße / Parkbank", cost: "kostenlos", text: "Immer verfügbar, aber starke Nachteile und kleines Verlustrisiko.", available: true }
+    }[mode] || { label: "Notunterkunft", cost: "kostenlos", text: "", available: true };
   }
 
-  async function leaveRoom() {
-    if (!rt.roomId) return disconnectRoom();
-    try {
-      const fb = await firebaseRuntime();
-      const user = requireUser(fb);
-      const ref = fb.doc(fb.db, BH_COLLECTION, rt.roomId);
-      await fb.runTransaction(fb.db, async (transaction) => {
-        const snapshot = await transaction.get(ref);
-        if (!snapshot.exists()) return;
-        const room = snapshot.data();
-        if (room.status !== "lobby") return;
-        if (room.hostUid === user.uid) transaction.delete(ref);
-        else {
-          const players = (room.players || []).filter((player) => player.uid !== user.uid);
-          transaction.update(ref, { players, playerUids: players.map((player) => player.uid), updatedAtMs: nowMs() });
-        }
-      });
-    } catch (error) { toast(error.message || error); }
-    disconnectRoom();
+  function fcSelectSleepMode(mode) {
+    const valid = ["shelter", "hostel", "friend", "car", "bench"];
+    if (!valid.includes(mode)) return;
+    const previous = state.housingCrisis.sleepMode;
+    state.housingCrisis.sleepMode = mode;
+    const meta = fcSelectedModeMeta();
+    if (!meta.available) {
+      state.housingCrisis.sleepMode = previous;
+      return addFeed(`${meta.label} ist aktuell nicht verfügbar.`);
+    }
+    state.location = "home";
+    state.worldLocation = state.homeCity || state.worldLocation;
+    state.homeDashboardActive = true;
+    addFeed(`${meta.label} als Schlafplatz ausgewählt.`);
+    save();
+    render();
+    fcOpenCrisisCenter("shelter");
   }
 
-  function disconnectRoom(refresh = true) {
-    rt.roomUnsub?.();
-    rt.roomUnsub = null;
-    rt.room = null;
-    rt.roomId = "";
-    rt.view = defaultHomeView();
-    stopTicker();
-    if (refresh) render();
+  function fcClaimAid(kind) {
+    const data = state.financialCrisis;
+    const aid = data.aid;
+    const day = fcDay();
+    if (kind === "food") {
+      if (aid.foodDay === day) return addFeed("Die kostenlose Mahlzeit wurde heute schon abgeholt.");
+      aid.foodDay = day;
+      state.hunger = typeof clamp === "function" ? clamp(fcNum(state.hunger) + 38) : Math.min(100, fcNum(state.hunger) + 38);
+      state.thirst = typeof clamp === "function" ? clamp(fcNum(state.thirst) + 30) : Math.min(100, fcNum(state.thirst) + 30);
+      addFeed("Essensausgabe genutzt: Hunger und Durst verbessert.");
+    }
+    if (kind === "shower") {
+      if (aid.showerDay === day) return addFeed("Die öffentliche Dusche wurde heute schon genutzt.");
+      aid.showerDay = day;
+      state.mood = typeof clamp === "function" ? clamp(fcNum(state.mood) + 4) : Math.min(100, fcNum(state.mood) + 4);
+      state.health = typeof clamp === "function" ? clamp(fcNum(state.health) + 2) : Math.min(100, fcNum(state.health) + 2);
+      state.phoneBattery = Math.max(fcNum(state.phoneBattery), 75);
+      addFeed("Öffentliche Dusche und Ladestation genutzt.");
+    }
+    if (kind === "grant") {
+      if (data.emergencyGrantClaimed) return addFeed("Die einmalige Notfallzahlung wurde bereits genutzt.");
+      data.emergencyGrantClaimed = true;
+      state.cash = fcMoney(state.cash + 180);
+      addFeed("Einmalige Notfallzahlung: 180 € Bargeld erhalten.");
+    }
+    if (kind === "bus") {
+      if (day - fcNum(aid.busTicketDay) < 3) return addFeed("Ein kostenloses Busticket gibt es höchstens alle drei Spieltage.");
+      aid.busTicketDay = day;
+      if (typeof addInventoryItem === "function") addInventoryItem("Sozialticket", 1);
+      else state.items.push("Sozialticket");
+      addFeed("Kostenloses Sozialticket erhalten.");
+    }
+    if (kind === "phone") {
+      if (aid.phoneClaimed || (typeof ownedPhoneItem === "function" && ownedPhoneItem())) return addFeed("Du besitzt bereits ein Handy oder hast die Handyhilfe schon genutzt.");
+      aid.phoneClaimed = true;
+      state.items.push("Basic Phone KL-1");
+      state.phoneSim ||= "Sim.KL Basis";
+      state.phoneBattery = 100;
+      addFeed("Hilfsstelle: Basishandy und einfache SIM erhalten.");
+    }
+    if (kind === "clothes") {
+      if (aid.clothingClaimed) return addFeed("Arbeitskleidung wurde bereits ausgegeben.");
+      aid.clothingClaimed = true;
+      state.wardrobe ||= [];
+      if (!state.wardrobe.includes("Arbeitskleidung Sozialstelle")) state.wardrobe.push("Arbeitskleidung Sozialstelle");
+      addFeed("Saubere Arbeitskleidung erhalten.");
+    }
+    save();
+    render();
+    fcOpenCrisisCenter("aid");
   }
 
-  async function nextRound() {
-    await mutate((game) => {
-      if (game.status !== "roundOver") return false;
-      const replacement = nextRoundGame(game);
-      Object.keys(game).forEach((key) => delete game[key]);
-      Object.assign(game, replacement);
-      return true;
+  function fcCrisisWork(kind) {
+    const aid = state.financialCrisis.aid;
+    const day = fcDay();
+    if (state.energy < 12) return addFeed("Du brauchst mehr Energie für diese Arbeit.");
+    if (kind === "daywork") {
+      if (aid.dayWorkDay === day) return addFeed("Der Tagelöhnerjob wurde heute schon gemacht.");
+      aid.dayWorkDay = day;
+      const amount = 140 + Math.floor(Math.random() * 81);
+      state.cash = fcMoney(state.cash + amount);
+      state.energy = typeof clamp === "function" ? clamp(fcNum(state.energy) - 22) : Math.max(0, fcNum(state.energy) - 22);
+      if (typeof recordIncome === "function") recordIncome("salary", amount);
+      addFeed(`Tagelöhnerjob abgeschlossen: ${euro.format(amount)} Bargeld.`);
+    } else {
+      if (aid.bottleDay === day) return addFeed("Pfand wurde heute schon gesammelt.");
+      aid.bottleDay = day;
+      const amount = 25 + Math.floor(Math.random() * 41);
+      state.cash = fcMoney(state.cash + amount);
+      state.energy = typeof clamp === "function" ? clamp(fcNum(state.energy) - 10) : Math.max(0, fcNum(state.energy) - 10);
+      if (typeof recordIncome === "function") recordIncome("survival", amount);
+      addFeed(`Pfand gesammelt: ${euro.format(amount)} Bargeld.`);
+    }
+    save();
+    render();
+    fcOpenCrisisCenter("aid");
+  }
+
+  function fcStartRepaymentPlan() {
+    const financial = state.financialCrisis;
+    if (state.bank >= 0) return addFeed("Für eine Dispo-Umschuldung muss das Konto im Minus sein.");
+    if (financial.repaymentPlan?.active) return addFeed("Es läuft bereits ein Rückzahlungsplan.");
+    const amount = Math.max(0, -state.bank);
+    state.bank = 0;
+    state.debt = fcMoney(state.debt + amount);
+    financial.repaymentPlan = {
+      active: true,
+      originalAmount: amount,
+      remaining: amount,
+      installment: Math.max(50, Math.ceil(amount / 20)),
+      startedDay: fcDay(),
+      lastPaidDay: 0,
+      paid: 0
+    };
+    state.credit = typeof clamp === "function" ? clamp(fcNum(state.credit) - 8) : Math.max(0, fcNum(state.credit) - 8);
+    addFeed(`Umschuldung abgeschlossen: ${euro.format(amount)} Dispo wurden in einen festen Ratenplan umgewandelt.`);
+    save();
+    render();
+    fcOpenCrisisCenter("debt");
+  }
+
+  function fcPayInstallment() {
+    const plan = state.financialCrisis.repaymentPlan;
+    if (!plan?.active) return addFeed("Es läuft kein Rückzahlungsplan.");
+    const amount = Math.min(plan.remaining, plan.installment);
+    if (state.cash + Math.max(0, state.bank) < amount) return addFeed(`Für die Rate brauchst du ${euro.format(amount)} aus Bargeld oder positivem Kontoguthaben.`);
+    fcUsePositiveFunds(amount);
+    plan.remaining = fcMoney(plan.remaining - amount);
+    plan.paid = fcMoney(plan.paid + amount);
+    plan.lastPaidDay = fcDay();
+    state.debt = Math.max(0, fcMoney(state.debt - amount));
+    if (plan.remaining <= 0) {
+      plan.active = false;
+      state.credit = typeof clamp === "function" ? clamp(fcNum(state.credit) + 8) : Math.min(100, fcNum(state.credit) + 8);
+      addFeed("Rückzahlungsplan vollständig abgeschlossen. Bonität verbessert.");
+    } else addFeed(`Rate bezahlt: ${euro.format(amount)} · Rest ${euro.format(plan.remaining)}.`);
+    save();
+    render();
+    fcOpenCrisisCenter("debt");
+  }
+
+  function fcCounseling() {
+    const financial = state.financialCrisis;
+    const day = fcDay();
+    if (day < financial.counselingAvailableDay) return addFeed(`Schuldnerberatung wieder ab Spieltag ${financial.counselingAvailableDay}.`);
+    const totalDebt = Math.max(0, state.debt) + Math.max(0, -state.bank) + Math.max(0, state.housingCrisis.rentArrears) + Math.max(0, state.housingCrisis.storageFees);
+    if (!totalDebt) return addFeed("Aktuell gibt es keine Schulden für die Beratung.");
+    const relief = Math.min(500, Math.max(50, Math.round(totalDebt * 0.05)));
+    let remaining = relief;
+    if (state.housingCrisis.rentArrears > 0) {
+      const used = Math.min(remaining, state.housingCrisis.rentArrears);
+      state.housingCrisis.rentArrears -= used;
+      remaining -= used;
+    }
+    if (remaining > 0 && state.debt > 0) {
+      const used = Math.min(remaining, state.debt);
+      state.debt -= used;
+      remaining -= used;
+    }
+    if (remaining > 0 && state.bank < 0) state.bank = Math.min(0, fcMoney(state.bank + remaining));
+    financial.interestFreezeUntilDay = day + 3;
+    financial.counselingAvailableDay = day + 7;
+    financial.stats.counselingSavings = fcMoney(financial.stats.counselingSavings + relief);
+    addFeed(`Schuldnerberatung: ${euro.format(relief)} Entlastung und drei Tage Zinsstopp.`);
+    save();
+    render();
+    fcOpenCrisisCenter("debt");
+  }
+
+  function fcStartInsolvency() {
+    const financial = state.financialCrisis;
+    const totalDebt = Math.max(0, state.debt) + Math.max(0, -state.bank) + Math.max(0, state.housingCrisis.rentArrears) + Math.max(0, state.housingCrisis.storageFees);
+    if (totalDebt < 15000 && financial.limitReachedDays < 5) return addFeed("Privatinsolvenz ist erst ab 15.000 € Gesamtschulden oder nach fünf Tagen an der Minusgrenze verfügbar.");
+    if (!confirm("Privatinsolvenz starten? Das Konto wird auf 0 gesetzt, 70% der Schulden entfallen, aber Bonität und Kreditfunktionen bleiben 20 Spieltage stark eingeschränkt.")) return;
+    const residual = Math.round(totalDebt * 0.30);
+    state.bank = 0;
+    state.debt = residual;
+    state.housingCrisis.rentArrears = 0;
+    state.housingCrisis.storageFees = 0;
+    state.housingCrisis.missedRentPayments = 0;
+    financial.repaymentPlan = null;
+    financial.insolvencyUntilDay = fcDay() + 20;
+    financial.interestFreezeUntilDay = fcDay() + 5;
+    financial.limitReachedDays = 0;
+    state.credit = 5;
+    addFeed(`Privatinsolvenz gestartet: Restschuld ${euro.format(residual)} · Kreditfunktionen bis Tag ${financial.insolvencyUntilDay} eingeschränkt.`);
+    save();
+    render();
+    fcOpenCrisisCenter("debt");
+  }
+
+  function fcHousingStatusLabel() {
+    if (fcHasPermanentHome()) return currentAccessibleHomeProperty()?.name || "Eigene Unterkunft";
+    const meta = fcSelectedModeMeta();
+    return `Ohne festen Wohnsitz · ${meta.label}`;
+  }
+
+  function fcCrisisPanelHtml(activeSection = "overview") {
+    fcNormalizeSave(state);
+    fcEnsureHomelessState();
+    const financial = state.financialCrisis;
+    const housing = state.housingCrisis;
+    const stage = fcFinancialStage();
+    const limit = fcEffectiveOverdraftLimit();
+    const used = Math.max(0, -state.bank);
+    const limitPercent = Math.min(100, Math.round(used / Math.abs(FC_OVERDRAFT_LIMIT) * 100));
+    const plan = financial.repaymentPlan;
+    const modeMeta = fcSelectedModeMeta();
+    const totalDebt = Math.max(0, state.debt) + Math.max(0, -state.bank) + Math.max(0, housing.rentArrears) + Math.max(0, housing.storageFees);
+    const sections = [
+      ["overview", "Übersicht"], ["aid", "Soforthilfe"], ["shelter", "Unterkunft"], ["debt", "Schulden"]
+    ];
+
+    const overview = `<section class="fc-grid two">
+      <article class="fc-card status"><small>FINANZSTATUS</small><h3>${fcStageLabel(stage)}</h3><strong>${euro.format(state.bank)}</strong><p>Konto bis maximal ${euro.format(FC_OVERDRAFT_LIMIT)}. Bargeld kann nie negativ werden.</p><div class="fc-meter danger"><i style="width:${limitPercent}%"></i></div><span>${limitPercent}% des Dispos genutzt</span></article>
+      <article class="fc-card housing"><small>WOHNSITUATION</small><h3>${fcHousingStatusLabel()}</h3><strong>${housing.homeless ? `seit Tag ${housing.homelessSinceDay}` : "gesichert"}</strong><p>${housing.homeless ? "Arbeit, Handy und Krisenhilfe bleiben verfügbar. Wähle einen Schlafplatz und arbeite dich zurück." : "Bei vier unbezahlten Miettagen droht die Räumung. Mahnungen erscheinen vorher."}</p></article>
+      <article class="fc-card"><small>GESAMTSCHULDEN</small><h3>${euro.format(totalDebt)}</h3><p>Bankminus ${euro.format(Math.max(0, -state.bank))} · Kredite ${euro.format(state.debt)} · Miete ${euro.format(housing.rentArrears)} · Lager ${euro.format(housing.storageFees)}</p></article>
+      <article class="fc-card"><small>GESCHÜTZTE EINNAHMEN</small><h3>30% Bargeld</h3><p>Solange das Konto im Minus ist, gehen 70% normaler Einnahmen gegen das Minus. 30% bleiben für Essen, Fahrt und Notfälle als Bargeld.</p></article>
+    </section>`;
+
+    const aid = `<section class="fc-grid two">
+      <article class="fc-card action"><span>🍲</span><div><h3>Kostenlose Mahlzeit</h3><p>Einmal pro Spieltag. Hunger und Durst steigen.</p></div><button data-fc-aid="food" ${financial.aid.foodDay === fcDay() ? "disabled" : ""}>${financial.aid.foodDay === fcDay() ? "Heute genutzt" : "Abholen"}</button></article>
+      <article class="fc-card action"><span>🚿</span><div><h3>Dusche & Ladestation</h3><p>Sauber werden, Stimmung verbessern und Handy laden.</p></div><button data-fc-aid="shower" ${financial.aid.showerDay === fcDay() ? "disabled" : ""}>${financial.aid.showerDay === fcDay() ? "Heute genutzt" : "Nutzen"}</button></article>
+      <article class="fc-card action"><span>🧰</span><div><h3>Tagelöhnerjob</h3><p>Ohne Adresse möglich. 140–220 € Bargeld, kostet Energie.</p></div><button data-fc-work="daywork" ${financial.aid.dayWorkDay === fcDay() ? "disabled" : ""}>Arbeiten</button></article>
+      <article class="fc-card action"><span>♻</span><div><h3>Pfand sammeln</h3><p>25–65 € Bargeld. Immer ohne Wohnung möglich.</p></div><button data-fc-work="bottles" ${financial.aid.bottleDay === fcDay() ? "disabled" : ""}>Sammeln</button></article>
+      <article class="fc-card action"><span>💶</span><div><h3>Einmalige Notfallzahlung</h3><p>180 € Bargeld, damit der Spieler nie vollständig festhängt.</p></div><button data-fc-aid="grant" ${financial.emergencyGrantClaimed ? "disabled" : ""}>${financial.emergencyGrantClaimed ? "Bereits erhalten" : "Beantragen"}</button></article>
+      <article class="fc-card action"><span>🚌</span><div><h3>Sozialticket</h3><p>Kostenloses Busticket höchstens alle drei Spieltage.</p></div><button data-fc-aid="bus">Abholen</button></article>
+      <article class="fc-card action"><span>📱</span><div><h3>Basishandy & SIM</h3><p>Nur falls kein Handy vorhanden ist. Einmalige Hilfe.</p></div><button data-fc-aid="phone" ${financial.aid.phoneClaimed ? "disabled" : ""}>Ausgeben</button></article>
+      <article class="fc-card action"><span>🦺</span><div><h3>Arbeitskleidung</h3><p>Saubere Kleidung für Bewerbungen und einfache Jobs.</p></div><button data-fc-aid="clothes" ${financial.aid.clothingClaimed ? "disabled" : ""}>Ausgeben</button></article>
+    </section>`;
+
+    const shelterOptions = [
+      ["shelter", "Notunterkunft", fcShelterNightsLeft() > 0 ? `${fcShelterNightsLeft()} kostenlose Nächte` : `${FC_SHELTER_PAID_COST} € pro Nacht`, "Ordentliche Erholung, Dusche und Handyaufladung.", true],
+      ["hostel", "Billighostel", `${FC_HOSTEL_COST} € Bargeld`, "Sehr gute Erholung, sicherer Schlaf und Handyaufladung.", state.cash >= FC_HOSTEL_COST],
+      ["friend", "Freunde / Partner", "kostenlos", "Gute Erholung. Voraussetzung: Beziehung oder genügend Kontakte.", fcHasRelationshipHelp()],
+      ["car", "Im Auto", `${FC_CAR_COST} € Bargeld`, "Mittlere Sicherheit, wenig Erholung. Fahrzeug erforderlich.", fcHasVehicle() && state.cash >= FC_CAR_COST],
+      ["bench", "Straße / Parkbank", "kostenlos", "Immer verfügbar, aber schlechte Erholung und kleines Verlustrisiko.", true]
+    ];
+    const shelter = `<section class="fc-shelter-layout"><article class="fc-card selected-shelter"><small>HEUTE NACHT</small><h3>${modeMeta.label}</h3><strong>${modeMeta.cost}</strong><p>${modeMeta.text}</p><button class="primary" data-fc-sleep-now ${typeof isReady === "function" && !isReady("sleep") ? "disabled" : ""}>${typeof isReady === "function" && !isReady("sleep") ? `Warten ${waitText("sleep")}` : "Jetzt schlafen"}</button></article><div class="fc-grid two">${shelterOptions.map(([id, label, cost, text, available]) => `<article class="fc-card action ${housing.sleepMode === id ? "selected" : ""}"><span>${{ shelter: "⌂", hostel: "H", friend: "♥", car: "🚗", bench: "▰" }[id]}</span><div><h3>${label}</h3><strong>${cost}</strong><p>${text}</p></div><button data-fc-mode="${id}" ${available ? "" : "disabled"}>${housing.sleepMode === id ? "Ausgewählt" : available ? "Auswählen" : "Nicht verfügbar"}</button></article>`).join("")}</div></section>`;
+
+    const debt = `<section class="fc-grid two">
+      <article class="fc-card"><small>MIETRÜCKSTAND</small><h3>${euro.format(housing.rentArrears)}</h3><p>${housing.missedRentPayments}/4 Ausfälle · Mahnstufe ${housing.evictionWarning}. Vor einer Räumung erscheinen mehrere Warnungen.</p><button data-fc-pay-rent ${housing.rentArrears <= 0 ? "disabled" : ""}>Rückstand bezahlen</button></article>
+      <article class="fc-card"><small>GEGENSTANDSLAGER</small><h3>${euro.format(housing.storageFees)}</h3><p>Nach der Räumung fünf Tage kostenlos, danach 20 € pro Spieltag. Ausweis, Führerschein, Reisepass und Questgegenstände bleiben geschützt.</p><button data-fc-pay-storage ${housing.storageFees <= 0 ? "disabled" : ""}>Lagergebühren bezahlen</button></article>
+      <article class="fc-card"><small>DISPO-UMSCHULDUNG</small><h3>${state.bank < 0 ? euro.format(-state.bank) : "Kein Minus"}</h3><p>Wandelt das Bankminus in einen festen Ratenplan um. Das Konto startet danach wieder bei 0 €.</p><button data-fc-plan-start ${state.bank >= 0 || plan?.active ? "disabled" : ""}>Ratenplan starten</button></article>
+      <article class="fc-card"><small>RÜCKZAHLUNGSPLAN</small><h3>${plan?.active ? `${euro.format(plan.remaining)} Rest` : "Nicht aktiv"}</h3><p>${plan?.active ? `Rate ${euro.format(plan.installment)} · bezahlt ${euro.format(plan.paid)}` : "Feste Rate statt unkontrolliertem Dispo."}</p><button data-fc-plan-pay ${!plan?.active ? "disabled" : ""}>Rate zahlen</button></article>
+      <article class="fc-card"><small>SCHULDNERBERATUNG</small><h3>Zinsstopp & Entlastung</h3><p>Bis zu 500 € Entlastung und drei Spieltage Zinsstopp. Wieder ab Tag ${financial.counselingAvailableDay}.</p><button data-fc-counsel ${fcDay() < financial.counselingAvailableDay ? "disabled" : ""}>Beratung nutzen</button></article>
+      <article class="fc-card danger-card"><small>LETZTER AUSWEG</small><h3>Privatinsolvenz</h3><p>Ab 15.000 € Gesamtschulden oder fünf Tagen an der Minusgrenze. 70% Schuldennachlass, aber 20 Tage starke Kreditsperre.</p><button data-fc-insolvency>Prüfen</button></article>
+      <article class="fc-card"><small>WOHNUNGSSUCHE</small><h3>Zurück in eine Wohnung</h3><p>Neue Mietwohnung suchen. Die erste Miete darf das Konto nicht unter -10.000 € drücken.</p><button data-fc-rental-market>Mietangebote öffnen</button></article>
+    </section>`;
+
+    const content = { overview, aid, shelter, debt }[activeSection] || overview;
+    return `<div class="fc-center" data-fc-section="${activeSection}"><nav class="fc-tabs">${sections.map(([id, label]) => `<button class="${activeSection === id ? "active" : ""}" data-fc-section-open="${id}">${label}</button>`).join("")}</nav>${content}<p class="fc-note">Wichtig: Bargeld bleibt immer mindestens 0 €. Das Bankkonto stoppt bei -10.000 €. Der Spieler kann jederzeit über Soforthilfe, Arbeit und Unterkunft weiterspielen.</p></div>`;
+  }
+
+  function fcBindDialog() {
+    const root = els.dialog.querySelector(".fc-center");
+    if (!root) return;
+    root.querySelectorAll("[data-fc-section-open]").forEach((button) => button.addEventListener("click", () => fcOpenCrisisCenter(button.dataset.fcSectionOpen)));
+    root.querySelectorAll("[data-fc-aid]").forEach((button) => button.addEventListener("click", () => fcClaimAid(button.dataset.fcAid)));
+    root.querySelectorAll("[data-fc-work]").forEach((button) => button.addEventListener("click", () => fcCrisisWork(button.dataset.fcWork)));
+    root.querySelectorAll("[data-fc-mode]").forEach((button) => button.addEventListener("click", () => fcSelectSleepMode(button.dataset.fcMode)));
+    root.querySelector("[data-fc-sleep-now]")?.addEventListener("click", () => {
+      if (typeof isReady === "function" && !isReady("sleep")) return addFeed(`Schlafen ist erst in ${waitText("sleep")} wieder möglich.`);
+      els.dialog.close();
+      sleepAndAdvanceDay();
     });
-    startTicker();
-  }
-
-  async function rematch() {
-    await mutate((game) => {
-      if (game.status !== "seriesOver") return false;
-      const players = game.players.map((player) => ({ ...player, wins: 0, score: 0 }));
-      const replacement = createGame(game.type, players, settingsFromGame(game), !!game.online, 1);
-      Object.keys(game).forEach((key) => delete game[key]);
-      Object.assign(game, replacement);
-      return true;
+    root.querySelector("[data-fc-pay-rent]")?.addEventListener("click", fcPayRentArrears);
+    root.querySelector("[data-fc-pay-storage]")?.addEventListener("click", fcPayStorageFees);
+    root.querySelector("[data-fc-plan-start]")?.addEventListener("click", fcStartRepaymentPlan);
+    root.querySelector("[data-fc-plan-pay]")?.addEventListener("click", fcPayInstallment);
+    root.querySelector("[data-fc-counsel]")?.addEventListener("click", fcCounseling);
+    root.querySelector("[data-fc-insolvency]")?.addEventListener("click", fcStartInsolvency);
+    root.querySelector("[data-fc-rental-market]")?.addEventListener("click", () => {
+      els.dialog.close();
+      if (typeof openTenantRentalMarket === "function") openTenantRentalMarket();
     });
-    startTicker();
   }
 
-  function moveByDirection(direction) {
-    const game = currentGame();
-    if (!game || game.type !== "territory") return;
-    const ownIndex = ownPlayerIndex(game);
-    if (ownIndex < 0) return;
-    const steps = game.online ? 2 : 2;
-    mutate((next) => territoryMoveDirection(next, ownIndex, direction, steps));
+  function fcOpenCrisisCenter(section = "overview") {
+    if (!state) return;
+    fcNormalizeSave(state);
+    fcEnsureHomelessState();
+    if (typeof clearDialogDynamic === "function") clearDialogDynamic();
+    els.dialog.classList.add("financial-crisis-dialog");
+    els.dialogTitle.textContent = "Finanzen & Wohnhilfe";
+    els.dialogText.textContent = "Kontolimit, Schuldenabbau, Mietmahnungen, Notunterkunft und Wege zurück in eine Wohnung.";
+    const holder = document.createElement("div");
+    holder.innerHTML = fcCrisisPanelHtml(section);
+    els.dialog.append(...holder.childNodes);
+    fcBindDialog();
+    if (!els.dialog.open) els.dialog.showModal();
   }
 
-  function startTerritoryHold(direction) {
-    moveByDirection(direction);
-    clearInterval(rt.territoryHoldTimer);
-    clearTimeout(rt.territoryHoldDelay);
-    rt.territoryHoldDelay = setTimeout(() => {
-      rt.territoryHoldTimer = setInterval(() => moveByDirection(direction), currentGame()?.online ? 520 : 190);
-    }, 320);
+  function fcAppendBankPanel() {
+    if (!els.bankActions || els.bankActions.querySelector("[data-fc-bank-panel]")) return;
+    const stage = fcFinancialStage();
+    const housing = state.housingCrisis;
+    const panel = document.createElement("section");
+    panel.className = "shop-section fc-bank-panel";
+    panel.dataset.fcBankPanel = "1";
+    panel.innerHTML = `<h3>Finanzen & Wohnhilfe</h3><p class="muted">Kontolimit ${euro.format(FC_OVERDRAFT_LIMIT)} · Status ${fcStageLabel(stage)} · ${housing.homeless ? "ohne festen Wohnsitz" : "Unterkunft gesichert"}.</p><div class="fc-bank-summary"><span><small>Konto</small><b>${euro.format(state.bank)}</b></span><span><small>Bargeld</small><b>${euro.format(state.cash)}</b></span><span><small>Mietrückstand</small><b>${euro.format(housing.rentArrears)}</b></span></div><button class="primary-button" data-fc-open-center>Finanz- und Wohnhilfe öffnen</button>`;
+    els.bankActions.prepend(panel);
+    panel.querySelector("[data-fc-open-center]").addEventListener("click", () => fcOpenCrisisCenter());
   }
 
-  function stopTerritoryHold() {
-    clearInterval(rt.territoryHoldTimer);
-    clearTimeout(rt.territoryHoldDelay);
-    rt.territoryHoldTimer = null;
-    rt.territoryHoldDelay = null;
-  }
+  renderBank = function fcRenderBank() {
+    const result = original.renderBank();
+    fcAppendBankPanel();
+    return result;
+  };
 
-  function maybeAwardReward(game) {
-    if (!game || game.status !== "seriesOver") return;
-    const ownIndex = ownPlayerIndex(game);
-    const own = game.players[ownIndex];
-    if (!own) return;
-    const key = `${game.online ? rt.roomId : game.createdAtMs}:${game.type}:${game.winnerId}`;
-    if (rt.rewardKeys.has(key)) return;
-    rt.rewardKeys.add(key);
-    state ||= {};
-    state.battleKlRewards ||= { day: 0, paidWins: 0, seen: [] };
-    const rewards = state.battleKlRewards;
-    const day = Number(state.day || 1);
-    if (Number(rewards.day || 0) !== day) { rewards.day = day; rewards.paidWins = 0; rewards.seen = []; }
-    if (rewards.seen.includes(key)) return;
-    rewards.seen.push(key);
-    rewards.seen = rewards.seen.slice(-50);
-    const winner = game.winnerId === own.id;
-    const xp = winner ? 25 : 8;
-    if (typeof awardGameXp === "function") awardGameXp(xp, gameMeta(game.type).title);
-    else if (typeof addXp === "function") addXp(xp, gameMeta(game.type).title);
-    if (winner && Number(rewards.paidWins || 0) < 3) {
-      state.bank = Number(state.bank || 0) + 300;
-      rewards.paidWins = Number(rewards.paidWins || 0) + 1;
-      if (typeof improveMood === "function") improveMood(2, `${gameMeta(game.type).title} gewonnen`);
-      if (typeof addFeed === "function") addFeed(`${gameMeta(game.type).title}: Siegprämie 300 € und ${xp} EP. Tageslimit ${rewards.paidWins}/3.`);
-    } else if (typeof addFeed === "function") {
-      addFeed(`${gameMeta(game.type).title}: ${xp} EP für das Match.`);
+  openPlayerBankDialog = function fcOpenPlayerBankDialog() {
+    const result = original.openPlayerBankDialog();
+    const button = document.createElement("button");
+    button.className = "mini-button gold";
+    button.textContent = "Finanz- und Wohnhilfe";
+    button.onclick = () => fcOpenCrisisCenter();
+    els.dialog.append(button);
+    return result;
+  };
+
+  renderDailyActions = function fcRenderDailyActions() {
+    const result = original.renderDailyActions();
+    if (!els.dailyActions || els.dailyActions.querySelector("[data-fc-daily]")) return result;
+    const stage = fcFinancialStage();
+    const shouldShow = stage > 0 || state.housingCrisis.homeless || state.housingCrisis.rentArrears > 0;
+    if (!shouldShow) return result;
+    const card = document.createElement("article");
+    card.className = "item-card fc-daily-card";
+    card.dataset.fcDaily = "1";
+    card.innerHTML = `<div><small>KRISENHILFE</small><h3>${state.housingCrisis.homeless ? "Ohne festen Wohnsitz" : fcStageLabel(stage)}</h3><p>${state.housingCrisis.homeless ? "Unterkunft, Essen, Tagelöhnerjob und Schuldnerberatung sind verfügbar." : `Konto ${euro.format(state.bank)} · Mietrückstand ${euro.format(state.housingCrisis.rentArrears)}.`}</p></div><button class="mini-button gold">Öffnen</button>`;
+    card.querySelector("button").addEventListener("click", () => fcOpenCrisisCenter());
+    els.dailyActions.prepend(card);
+    return result;
+  };
+
+  updateHomeShortcut = function fcUpdateHomeShortcut() {
+    const result = original.updateHomeShortcut();
+    const shortcut = document.querySelector("[data-home-shortcut]");
+    if (!shortcut || !state?.housingCrisis?.homeless) return result;
+    const meta = fcSelectedModeMeta();
+    shortcut.disabled = false;
+    shortcut.innerHTML = `<span class="home-shortcut-label"><span class="desktop-label">${meta.label}</span><span class="mobile-label">Hilfe</span></span><b>⌂</b>`;
+    shortcut.title = "Unterkunft und Krisenhilfe öffnen";
+    return result;
+  };
+
+  canWorkAtCurrentPlace = function fcCanWorkAtCurrentPlace() {
+    if (state?.housingCrisis?.homeless && state.location === "home") return true;
+    return original.canWorkAtCurrentPlace();
+  };
+
+  canSleepAtCurrentPlace = function fcCanSleepAtCurrentPlace() {
+    if (state?.housingCrisis?.homeless && state.location === "home") return true;
+    return original.canSleepAtCurrentPlace();
+  };
+
+  openHomePropertyDialog = function fcOpenHomePropertyDialog() {
+    fcNormalizeSave(state);
+    fcEnsureHomelessState();
+    if (state.housingCrisis.homeless && !fcHasPermanentHome()) return fcOpenCrisisCenter("shelter");
+    return original.openHomePropertyDialog();
+  };
+
+  openEmergencyShelterDialog = function fcOpenEmergencyShelterDialog() {
+    fcNormalizeSave(state);
+    fcEnsureHomelessState("Du nutzt vorübergehend die Wohn- und Krisenhilfe.");
+    return fcOpenCrisisCenter("shelter");
+  };
+
+  function fcUpdateGlobalBanner() {
+    if (!state) return;
+    fcNormalizeSave(state);
+    fcUpdateFinancialStage();
+    fcEnsureHomelessState();
+    const dashboard = document.querySelector(".dashboard");
+    if (!dashboard) return;
+    let banner = dashboard.querySelector("[data-fc-banner]");
+    const stage = fcFinancialStage();
+    const visible = stage > 0 || state.housingCrisis.homeless || state.housingCrisis.rentArrears > 0;
+    if (!visible) {
+      banner?.remove();
+      return;
     }
-    if (typeof save === "function") save();
+    if (!banner) {
+      banner = document.createElement("button");
+      banner.type = "button";
+      banner.className = "fc-global-banner";
+      banner.dataset.fcBanner = "1";
+      banner.addEventListener("click", () => fcOpenCrisisCenter());
+      const statusPanel = dashboard.querySelector(".status-panel");
+      statusPanel?.insertAdjacentElement("afterend", banner);
+    }
+    const title = state.housingCrisis.homeless ? "Ohne festen Wohnsitz" : fcStageLabel(stage);
+    const text = state.housingCrisis.homeless
+      ? `${fcSelectedModeMeta().label} · Krisenhilfe, Essen und Arbeit verfügbar`
+      : `Konto ${euro.format(state.bank)} · Grenze ${euro.format(FC_OVERDRAFT_LIMIT)}${state.housingCrisis.rentArrears ? ` · Miete offen ${euro.format(state.housingCrisis.rentArrears)}` : ""}`;
+    banner.innerHTML = `<span>${state.housingCrisis.homeless ? "⌂" : "€"}</span><div><b>${title}</b><small>${text}</small></div><i>Hilfe öffnen ›</i>`;
+    document.body.classList.toggle("fc-homeless", state.housingCrisis.homeless);
+    document.body.classList.toggle("fc-bank-negative", state.bank < 0);
   }
 
-  function bindOverlay(shell) {
-    shell.querySelectorAll("[data-bh-close]").forEach((button) => button.addEventListener("click", close));
-    shell.querySelector("[data-bh-home]")?.addEventListener("click", () => { rt.view = defaultHomeView(); render(); });
-    shell.querySelectorAll("[data-bh-local-setup]").forEach((button) => button.addEventListener("click", () => { rt.gameType = button.dataset.bhLocalSetup; rt.view = "local-setup"; render(); }));
-    shell.querySelectorAll("[data-bh-online-menu]").forEach((button) => button.addEventListener("click", () => { rt.gameType = button.dataset.bhOnlineMenu; rt.view = "online"; listenPublicRooms().catch((error) => toast(error.message || error)); render(); }));
-    shell.querySelector("[data-bh-start-local]")?.addEventListener("click", () => startLocal(shell));
-    shell.querySelector("[data-bh-create-room]")?.addEventListener("click", () => createRoom(shell).catch((error) => toast(error.message || error)));
-    shell.querySelector("[data-bh-join-code]")?.addEventListener("click", () => joinRoom(shell.querySelector("[data-bh-room-code]")?.value).catch((error) => toast(error.message || error)));
-    shell.querySelectorAll("[data-bh-join-room]").forEach((button) => button.addEventListener("click", () => joinRoom(button.dataset.bhJoinRoom).catch((error) => toast(error.message || error))));
-    shell.querySelector("[data-bh-refresh-rooms]")?.addEventListener("click", () => listenPublicRooms().catch((error) => toast(error.message || error)));
-    shell.querySelector("[data-bh-start-online]")?.addEventListener("click", () => startOnline(shell).catch((error) => toast(error.message || error)));
-    shell.querySelectorAll("[data-bh-leave-room]").forEach((button) => button.addEventListener("click", leaveRoom));
-    shell.querySelector("[data-bh-copy-code]")?.addEventListener("click", async () => { try { await navigator.clipboard.writeText(rt.roomId); toast("Raumcode kopiert."); } catch { toast(`Raumcode: ${rt.roomId}`); } });
-    shell.querySelector("[data-bh-back-game]")?.addEventListener("click", () => { rt.territoryPowerOpen = false; rt.packageCardsOpen = false; rt.pendingPower = ""; rt.pendingCard = ""; rt.view = rt.roomId ? "lobby" : defaultHomeView(); if (!rt.roomId) stopTicker(); render(); });
-    shell.querySelector("[data-bh-close-game]")?.addEventListener("click", () => { if (rt.roomId) disconnectRoom(false); rt.local = null; rt.view = defaultHomeView(); stopTicker(); render(); });
-    shell.querySelector("[data-bh-next-round]")?.addEventListener("click", () => nextRound().catch((error) => toast(error.message || error)));
-    shell.querySelector("[data-bh-rematch]")?.addEventListener("click", () => rematch().catch((error) => toast(error.message || error)));
+  render = function fcRender() {
+    if (state) fcNormalizeSave(state);
+    const result = original.render();
+    fcUpdateGlobalBanner();
+    return result;
+  };
 
-    shell.querySelectorAll("[data-bh-cell]").forEach((button) => button.addEventListener("click", () => {
-      const game = currentGame();
-      const ownIndex = ownPlayerIndex(game);
-      const cell = Number(button.dataset.bhCell);
-      if (rt.pendingPower === "bomb") {
-        mutate((next) => useTerritoryPower(next, ownIndex, "bomb", { cell })).then((ok) => { if (ok !== false) { rt.pendingPower = ""; render(); } }).catch((error) => toast(error.message || error));
-      } else mutate((next) => territoryMove(next, ownIndex, cell)).catch((error) => toast(error.message || error));
-    }));
-    shell.querySelectorAll("[data-bh-move]").forEach((button) => {
-      const begin = (event) => { event.preventDefault(); startTerritoryHold(button.dataset.bhMove); };
-      button.addEventListener("pointerdown", begin);
-      button.addEventListener("pointerup", stopTerritoryHold);
-      button.addEventListener("pointercancel", stopTerritoryHold);
-      button.addEventListener("pointerleave", stopTerritoryHold);
-    });
-    const territoryCanvas = shell.querySelector("[data-bh-territory-canvas]");
-    if (territoryCanvas) {
-      territoryCanvas.addEventListener("pointerdown", (event) => {
-        rt.territoryPointer = { x: event.clientX, y: event.clientY, at: nowMs() };
-        territoryCanvas.setPointerCapture?.(event.pointerId);
-      });
-      territoryCanvas.addEventListener("pointerup", (event) => {
-        const game = currentGame();
-        const start = rt.territoryPointer;
-        rt.territoryPointer = null;
-        if (!game || !start) return;
-        if (rt.pendingPower === "bomb") {
-          const cell = territoryCanvasCell(territoryCanvas, event, game);
-          if (cell >= 0) mutate((next) => useTerritoryPower(next, ownPlayerIndex(game), "bomb", { cell })).then((ok) => { if (ok !== false) { rt.pendingPower = ""; render(); } });
-          return;
-        }
-        const dx = event.clientX - start.x;
-        const dy = event.clientY - start.y;
-        if (Math.max(Math.abs(dx), Math.abs(dy)) > 24) moveByDirection(Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down"));
-        else {
-          const ownIndex = ownPlayerIndex(game);
-          const player = game.players[ownIndex];
-          const tapped = territoryCanvasCell(territoryCanvas, event, game);
-          const current = Number(game.positions[player?.id]);
-          if (tapped >= 0 && player) {
-            const tx = tapped % game.cols, ty = Math.floor(tapped / game.cols), cx = current % game.cols, cy = Math.floor(current / game.cols);
-            const direction = Math.abs(tx - cx) > Math.abs(ty - cy) ? (tx < cx ? "left" : "right") : (ty < cy ? "up" : "down");
-            moveByDirection(direction);
-          }
-        }
-      });
-    }
-    shell.querySelectorAll("[data-bh-toggle-powers]").forEach((button) => button.addEventListener("click", () => { rt.territoryPowerOpen = !rt.territoryPowerOpen; render(); }));
-    shell.querySelectorAll("[data-bh-territory-power]").forEach((button) => button.addEventListener("click", () => {
-      const type = button.dataset.bhTerritoryPower;
-      if (type === "bomb") { rt.pendingPower = rt.pendingPower === "bomb" ? "" : "bomb"; rt.territoryPowerOpen = false; render(); return; }
-      const game = currentGame();
-      mutate((next) => useTerritoryPower(next, ownPlayerIndex(game), type)).then(() => { rt.territoryPowerOpen = false; render(); }).catch((error) => toast(error.message || error));
-    }));
-    shell.querySelector("[data-bh-cancel-power]")?.addEventListener("click", () => { rt.pendingPower = ""; rt.territoryPowerOpen = false; render(); });
-
-    shell.querySelectorAll("[data-bh-toggle-cards]").forEach((button) => button.addEventListener("click", () => { rt.packageCardsOpen = !rt.packageCardsOpen; render(); }));
-    const fragileHold = shell.querySelector("[data-bh-fragile-hold]");
-    if (fragileHold) {
-      let armedTimer = null;
-      const begin = (event) => {
-        event.preventDefault();
-        fragileHold.classList.add("holding");
-        clearTimeout(armedTimer);
-        armedTimer = setTimeout(() => { rt.careful = true; fragileHold.classList.remove("holding"); fragileHold.classList.add("armed"); fragileHold.querySelector("b").textContent = "✓ Paket gesichert"; fragileHold.querySelector("small").textContent = "Jetzt das richtige Ziel wählen"; }, 450);
-      };
-      const cancel = () => { clearTimeout(armedTimer); fragileHold.classList.remove("holding"); };
-      fragileHold.addEventListener("pointerdown", begin);
-      fragileHold.addEventListener("pointerup", cancel);
-      fragileHold.addEventListener("pointercancel", cancel);
-      fragileHold.addEventListener("pointerleave", cancel);
-    }
-    shell.querySelectorAll("[data-bh-sort-city]").forEach((button) => button.addEventListener("click", () => {
-      const game = currentGame();
-      const ownIndex = ownPlayerIndex(game);
-      const careful = rt.careful;
-      rt.careful = false;
-      mutate((next) => packageProcess(next, ownIndex, button.dataset.bhSortCity, careful)).catch((error) => toast(error.message || error));
-    }));
-    shell.querySelectorAll("[data-bh-package-card]").forEach((button) => button.addEventListener("click", () => { rt.pendingCard = button.dataset.bhPackageCard; rt.packageCardsOpen = true; render(); }));
-    shell.querySelectorAll("[data-bh-card-target]").forEach((button) => button.addEventListener("click", () => {
-      const game = currentGame();
-      const ownIndex = ownPlayerIndex(game);
-      mutate((next) => usePackageCard(next, ownIndex, rt.pendingCard, Number(button.dataset.bhCardTarget))).then(() => { rt.pendingCard = ""; rt.packageCardsOpen = false; render(); }).catch((error) => toast(error.message || error));
-    }));
-    shell.querySelector("[data-bh-cancel-card]")?.addEventListener("click", () => { rt.pendingCard = ""; render(); });
-
-    shell.querySelectorAll("[data-bh-reaction-answer]").forEach((button) => button.addEventListener("click", () => {
-      const game = currentGame();
-      mutate((next) => submitReaction(next, ownPlayerIndex(game), button.dataset.bhReactionAnswer)).catch((error) => toast(error.message || error));
-    }));
-    const hold = shell.querySelector("[data-bh-hold]");
-    if (hold) {
-      const begin = (event) => {
-        event.preventDefault();
-        hold.classList.add("holding");
-        clearTimeout(rt.holdTimer);
-        rt.holdTimer = setTimeout(() => {
-          const game = currentGame();
-          mutate((next) => submitReaction(next, ownPlayerIndex(game), "hold")).catch((error) => toast(error.message || error));
-          hold.classList.remove("holding");
-        }, 800);
-      };
-      const cancel = () => { clearTimeout(rt.holdTimer); hold.classList.remove("holding"); };
-      hold.addEventListener("pointerdown", begin);
-      hold.addEventListener("pointerup", cancel);
-      hold.addEventListener("pointercancel", cancel);
-      hold.addEventListener("pointerleave", cancel);
-    }
-    const swipe = shell.querySelector("[data-bh-swipe-zone]");
-    if (swipe) {
-      swipe.addEventListener("pointerdown", (event) => { rt.pointerStart = { x: event.clientX, y: event.clientY }; swipe.setPointerCapture?.(event.pointerId); });
-      swipe.addEventListener("pointerup", (event) => {
-        if (!rt.pointerStart) return;
-        const dx = event.clientX - rt.pointerStart.x;
-        const dy = Math.abs(event.clientY - rt.pointerStart.y);
-        rt.pointerStart = null;
-        if (dx < -55 && dy < 70) {
-          const game = currentGame();
-          mutate((next) => submitReaction(next, ownPlayerIndex(game), "left")).catch((error) => toast(error.message || error));
-        }
-      });
-    }
-  }
-
-  document.addEventListener("keydown", (event) => {
-    if (!rt.overlay?.classList.contains("show") || rt.view !== "game") return;
-    const game = currentGame();
-    if (!game || game.status !== "playing") return;
-    const key = event.key.toLowerCase();
-    if (game.type === "territory" && ["arrowup", "arrowdown", "arrowleft", "arrowright", "w", "a", "s", "d"].includes(key)) {
+  document.addEventListener("click", (event) => {
+    const home = event.target.closest?.("[data-home-shortcut]");
+    if (home && state?.housingCrisis?.homeless) {
       event.preventDefault();
-      const map = { arrowup: "up", w: "up", arrowdown: "down", s: "down", arrowleft: "left", a: "left", arrowright: "right", d: "right" };
-      moveByDirection(map[key]);
+      event.stopImmediatePropagation();
+      fcOpenCrisisCenter("shelter");
     }
-    if (game.type === "reaction" && game.challenge?.type === "swipe-left" && key === "arrowleft") {
-      event.preventDefault();
-      mutate((next) => submitReaction(next, ownPlayerIndex(game), "left")).catch((error) => toast(error.message || error));
-    }
-  });
+  }, true);
 
-  window.LifeBuilderBattleHub = { open, openSingle, close, version: BH_VERSION };
-  window.addEventListener("resize", () => { const game = currentGame(); if (game?.type === "territory") requestAnimationFrame(() => drawTerritoryCanvas(rt.overlay?.querySelector("[data-bh-territory-canvas]"), game)); });
-  window.addEventListener("beforeunload", () => {
-    rt.roomUnsub?.();
-    rt.publicUnsub?.();
-    stopTicker();
-  });
+  fcNormalizeAll();
+  if (state) {
+    fcUpdateFinancialStage();
+    fcEnsureHomelessState();
+    original.save();
+    setTimeout(() => {
+      try { render(); } catch (error) { console.warn("Finanz- und Wohnsystem konnte die Ansicht nicht sofort aktualisieren", error); }
+    }, 0);
+  }
 })();
