@@ -1,35 +1,16 @@
-{
-  "id": "./",
-  "name": "LifeBuilder 2026",
-  "short_name": "LifeBuilder",
-  "description": "Mobile Lebenssimulation mit Karriere, Unternehmen, Stadt, Casino und Online-Funktionen.",
-  "lang": "de-DE",
-  "dir": "ltr",
-  "start_url": "./",
-  "scope": "./",
-  "display": "standalone",
-  "display_override": ["standalone", "minimal-ui"],
-  "orientation": "portrait-primary",
-  "background_color": "#07100d",
-  "theme_color": "#13201b",
-  "icons": [
-    {
-      "src": "assets/icons/app-icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "assets/icons/app-icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "assets/icons/app-icon-maskable-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
-    }
-  ]
-}
+GITHUB-UPLOAD
+
+1. Den gesamten Inhalt dieses ZIPs direkt in das Repository LifeGame2026 hochladen.
+2. Vorhandene Dateien ersetzen.
+3. Diese zwei ALTEN Dateien im GitHub-Repository manuell löschen, falls sie dort noch vorhanden sind:
+   - online-mod-menu.js
+   - online-mod-menu.css
+4. Die neuen Dateien müssen vorhanden sein:
+   - online-settings-menu.js
+   - online-settings-menu.css
+   - financial-crisis.js
+   - financial-crisis.css
+5. Auf das grüne GitHub-Pages-Deployment warten.
+6. Die Webseite einmal vollständig neu laden, am PC mit Strg + F5.
+
+Es werden für dieses Update keine neuen Firebase-Regeln und keine Firebase Functions benötigt.

@@ -1,0 +1,112 @@
+{
+  "globals": {
+    "finance": "object",
+    "settings": "object",
+    "am": "object",
+    "battle": "object",
+    "weed": "object"
+  },
+  "create": {
+    "cash": 120,
+    "bank": 680,
+    "starter": true,
+    "homeless": false
+  },
+  "finance": {
+    "blocked": true,
+    "bank": -4300,
+    "cash": 400
+  },
+  "business": {
+    "weedInBusiness": true,
+    "weedInStore": false
+  },
+  "weedStart": {
+    "summary": {
+      "capital": 500,
+      "danger": 5,
+      "plants": 0,
+      "slots": 3,
+      "grams": 0
+    },
+    "cash": 500,
+    "overlay": true
+  },
+  "weedGrow": {
+    "waterings": 36,
+    "thresholds": [
+      5,
+      11,
+      18,
+      26,
+      36
+    ],
+    "supplies": {
+      "pot": 0,
+      "soil": 0,
+      "water": 14
+    },
+    "capital": 425
+  },
+  "weedHarvest": {
+    "plants": 0,
+    "grams": 63,
+    "pot": 1
+  },
+  "aerger": [
+    {
+      "n": 2,
+      "players": 2,
+      "status": "playing",
+      "overlay": true
+    },
+    {
+      "n": 3,
+      "players": 3,
+      "status": "playing",
+      "overlay": true
+    },
+    {
+      "n": 4,
+      "players": 4,
+      "status": "playing",
+      "overlay": true
+    }
+  ],
+  "battleGames": [
+    {
+      "type": "territory",
+      "overlay": true,
+      "gameShell": true,
+      "text": "‹\n\nBot-Partie · Best-of-3\n\nGrundstück-Kampf\nRunde 1\nTest\n9\nNova Bot\n9\n2:00\nWisch"
+    },
+    {
+      "type": "packages",
+      "overlay": true,
+      "gameShell": true,
+      "text": "‹\n\nBot-Partie · Best-of-3\n\nPaket-Chaos\nRunde 1\nTest\n0\nNova Bot\n0\n1:30\n0 Punkte ·"
+    },
+    {
+      "type": "reaction",
+      "overlay": true,
+      "gameShell": true,
+      "text": "‹\n\nBot-Partie · Best-of-3\n\nReaktions-Battle\nRunde 1\nTest\n5♥\nNova Bot\n5♥\nAUFGABE "
+    }
+  ],
+  "eviction": {
+    "homeless": true,
+    "misses": 4,
+    "arrears": 260,
+    "ui": true
+  },
+  "nextDay": {
+    "before": 8,
+    "after": 9,
+    "bank": -10000,
+    "cash": 0,
+    "homeless": true
+  },
+  "visibleOldName": false,
+  "pageErrors": [],
+  "consoleBad": []
+}

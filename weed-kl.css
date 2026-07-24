@@ -1,4 +1,4 @@
-/* Weed.KL · standalone business simulation · 2026-07-24 */
+/* Weed Business · integrated Business-App simulation · 2026-07-24 */
 :root {
   --wk-bg: #06110d;
   --wk-panel: #0d1d17;
@@ -632,4 +632,93 @@ button[disabled] { cursor: not-allowed; opacity: .42; }
   .wk-plant-card { grid-template-columns: minmax(0,1fr) 96px; }
   .wk-plant-visual { height: 116px; }
   .wk-customer-card { padding: 11px; }
+}
+
+
+/* Weed.KL V2: schnellere Wachstumsstufen, Animationen und neue Verbesserungen */
+.wk-plant-card { position: relative; isolation: isolate; overflow: hidden; }
+.wk-plant-card::before {
+  content: ""; position: absolute; inset: -40%; z-index: -1; opacity: .16;
+  background: conic-gradient(from 0deg, transparent, var(--wk-accent), transparent 36%);
+  animation: wkAmbientSpin 14s linear infinite;
+}
+.wk-plant-card.mature { box-shadow: 0 0 0 1px color-mix(in srgb, var(--wk-accent) 35%, transparent), 0 18px 50px color-mix(in srgb, var(--wk-accent) 18%, transparent); }
+.wk-plant-card.mature .wk-plant-visual { animation: wkPlantBreathe 2.4s ease-in-out infinite; }
+.wk-plant-visual .stem { transform-origin: 50% 100%; animation: wkStemSway 3.2s ease-in-out infinite; }
+.wk-plant-visual .leaf { transform-origin: 50% 80%; animation: wkLeafSway 2.4s ease-in-out infinite alternate; }
+.wk-plant-visual .l2 { animation-delay: -.5s; }.wk-plant-visual .l3 { animation-delay: -1s; }.wk-plant-visual .l4 { animation-delay: -1.5s; }
+.wk-anim-water .wk-plant-visual { animation: wkWaterBounce .65s ease; }
+.wk-anim-stage-up { animation: wkStageFlash 1s ease; }
+.wk-anim-harvest .wk-plant-visual { animation: wkHarvestShake .65s ease; }
+.wk-anim-planted { animation: wkPlantedPop .7s cubic-bezier(.2,.9,.25,1.25); }
+.wk-fx-burst { position: absolute; inset: 50% auto auto 50%; pointer-events: none; z-index: 20; }
+.wk-fx-burst i { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: var(--wk-accent, #74efae); animation: wkParticle 1s ease-out forwards; transform: rotate(calc(var(--i) * 45deg)) translateY(-8px); }
+.wk-fx-burst.harvest i { background: #f6d567; }.wk-fx-burst.stage-up i { background: #fff; box-shadow: 0 0 12px var(--wk-accent); }
+.wk-milestones { display: grid; gap: 10px; margin-top: 16px; padding: 14px; border: 1px solid rgba(126,239,177,.18); border-radius: 18px; background: rgba(3,18,12,.48); }
+.wk-milestones > header { display: flex; justify-content: space-between; align-items: end; gap: 10px; }
+.wk-milestones > header small { color: #75efb0; font-weight: 950; letter-spacing: .12em; }.wk-milestones h3 { margin: 2px 0 0; }
+.wk-milestones > header > span { color: rgba(255,255,255,.5); font-size: .67rem; }
+.wk-milestones > div { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+.wk-milestones article { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 11px; border: 1px solid rgba(255,255,255,.08); border-radius: 13px; background: rgba(255,255,255,.035); }
+.wk-milestones article.ready { border-color: rgba(117,239,176,.45); box-shadow: inset 0 0 20px rgba(117,239,176,.08); }
+.wk-milestones article.claimed { opacity: .6; }.wk-milestones article div { display:grid; gap:3px; }.wk-milestones article small { color: rgba(255,255,255,.55); }
+.wk-milestones button { min-height: 36px; }
+@keyframes wkAmbientSpin { to { transform: rotate(360deg); } }
+@keyframes wkPlantBreathe { 50% { transform: scale(1.035); filter: drop-shadow(0 0 14px var(--wk-accent)); } }
+@keyframes wkStemSway { 0%,100% { transform: rotate(-1.5deg); } 50% { transform: rotate(1.5deg); } }
+@keyframes wkLeafSway { from { transform: rotate(-4deg) scale(.98); } to { transform: rotate(5deg) scale(1.03); } }
+@keyframes wkWaterBounce { 30% { transform: translateY(-6px) scale(1.04); } 65% { transform: translateY(2px) scale(.98); } }
+@keyframes wkStageFlash { 0%,100% { filter: none; } 40% { filter: brightness(1.5); box-shadow: 0 0 35px var(--wk-accent); } }
+@keyframes wkHarvestShake { 20%,60% { transform: rotate(-3deg); } 40%,80% { transform: rotate(3deg); } }
+@keyframes wkPlantedPop { from { transform: scale(.8); opacity: .2; } to { transform: scale(1); opacity: 1; } }
+@keyframes wkParticle { to { opacity: 0; transform: rotate(calc(var(--i) * 45deg)) translateY(-70px) scale(.2); } }
+@media (max-width: 700px) {
+  .wk-milestones > div { grid-template-columns: 1fr; }
+  .wk-upgrade-grid { grid-template-columns: 1fr !important; }
+  .wk-plant-card { min-height: 360px; }
+  .wk-plant-visual { min-height: 170px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wk-plant-card::before,.wk-plant-visual,.wk-plant-visual .stem,.wk-plant-visual .leaf { animation: none !important; }
+}
+
+
+/* Weed Business V3: echtes Bargeld als Quelle, Betriebskapital und eigene Gefahr */
+.wk-header-stats span.danger { border-color:rgba(255,123,120,.25); }
+.wk-header-stats span.danger b { color:#ff9a8e; }
+.wk-business-capital,.wk-danger-panel,.wk-starter-card {
+  display:grid;gap:12px;padding:15px;border:1px solid var(--wk-line);border-radius:18px;background:linear-gradient(145deg,rgba(18,47,35,.92),rgba(5,15,10,.96));
+}
+.wk-business-capital { grid-template-columns:minmax(0,1fr) auto;align-items:center; }
+.wk-capital-copy { min-width:0;display:grid;gap:4px; }
+.wk-capital-copy small,.wk-danger-panel small,.wk-starter-card small { color:var(--wk-green);font-size:.62rem;font-weight:950;letter-spacing:.1em; }
+.wk-capital-copy strong { font-size:clamp(1.45rem,4vw,2.2rem); }
+.wk-capital-copy p,.wk-danger-panel p,.wk-starter-card p { margin:0;color:var(--wk-muted);font-size:.7rem;line-height:1.4; }
+.wk-capital-actions { display:grid;grid-template-columns:repeat(2,minmax(100px,1fr));gap:7px; }
+.wk-capital-actions button,.wk-danger-actions button,.wk-starter-card button { min-height:40px;padding:8px 10px;border:1px solid rgba(114,239,173,.24);border-radius:11px;background:rgba(114,239,173,.08);color:#eafff2;font-weight:900; }
+.wk-capital-actions button:nth-last-child(-n+1){border-color:rgba(240,199,94,.28);background:rgba(240,199,94,.08)}
+.wk-danger-panel { grid-template-columns:minmax(0,1fr) 180px;align-items:center;border-color:rgba(255,190,87,.2); }
+.wk-danger-panel.critical { border-color:rgba(255,105,96,.52);box-shadow:0 0 30px rgba(255,74,74,.11); }
+.wk-danger-panel > div:first-child { display:grid;gap:4px; }
+.wk-danger-panel strong { font-size:1.55rem;color:#ffc66d; }
+.wk-danger-meter { grid-column:1/-1;height:13px;overflow:hidden;border-radius:999px;background:rgba(255,255,255,.07); }
+.wk-danger-meter i { display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#59e69a,#efce54 50%,#ff775f 78%,#d52e44);transition:width .25s ease; }
+.wk-danger-actions { grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px; }
+.wk-starter-card { grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;border-color:rgba(240,199,94,.22); }
+.wk-starter-card>span { display:grid;place-items:center;width:52px;height:52px;border-radius:15px;background:rgba(240,199,94,.1);font-size:1.6rem; }
+.wk-starter-card h3 { margin:2px 0 3px; }
+.wk-starter-card>strong { color:var(--wk-gold);white-space:nowrap; }
+.wk-starter-card>button { border-color:rgba(240,199,94,.35);background:linear-gradient(145deg,#f0c75e,#c6942f);color:#211603; }
+@media(max-width:700px){
+  .wk-header-stats { grid-template-columns:1fr 1fr;display:grid; }
+  .wk-header-stats span:nth-child(2){display:none!important}
+  .wk-header-stats span.danger{display:grid!important}
+  .wk-business-capital,.wk-danger-panel{grid-template-columns:1fr;padding:11px;gap:9px}
+  .wk-capital-actions{grid-template-columns:1fr 1fr}
+  .wk-capital-actions button{min-width:0;padding:7px 4px;font-size:.62rem}
+  .wk-danger-actions{grid-template-columns:1fr 1fr 1fr;gap:4px}
+  .wk-danger-actions button{min-width:0;padding:7px 2px;font-size:.56rem}
+  .wk-starter-card{grid-template-columns:42px minmax(0,1fr) auto;padding:11px;gap:8px}
+  .wk-starter-card>span{width:40px;height:40px;border-radius:11px;font-size:1.25rem}
+  .wk-starter-card>button{grid-column:1/-1;width:100%}
 }

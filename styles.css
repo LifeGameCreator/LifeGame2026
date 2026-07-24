@@ -15230,3 +15230,75 @@ dialog.character-dialog[open] .character-hub-content {
   .finder-own-profile-overlay { padding: 6px; }
   .finder-own-profile-modal { max-height: calc(100dvh - 24px); border-radius: 15px; }
 }
+
+
+/* Finalfix 2026-07-24: Einstellungen, Business-Weed und tägliche Geschenke */
+@media (max-width: 700px) {
+  #settingsView .setup-head {
+    display: grid !important;
+    grid-template-columns: 48px minmax(0, 1fr) !important;
+    align-items: center !important;
+    gap: 12px !important;
+  }
+  #settingsView .setup-head .icon-button {
+    width: 46px !important;
+    min-width: 46px !important;
+    max-width: 46px !important;
+    height: 46px !important;
+    min-height: 46px !important;
+    padding: 0 !important;
+    border-radius: 14px !important;
+    font-size: 1.25rem !important;
+  }
+  #settingsView .setup-head > div { min-width: 0 !important; }
+  #settingsView .setup-head h2 { font-size: 1.35rem !important; }
+}
+
+.business-main-actions {
+  grid-template-columns: minmax(72px,.65fr) minmax(112px,1fr) minmax(112px,1fr) !important;
+}
+.business-main-actions .business-weed-button {
+  border-color: rgba(92,231,151,.38) !important;
+  background: linear-gradient(145deg,rgba(45,137,88,.34),rgba(9,46,29,.88)) !important;
+  color: #a2ffd0 !important;
+  font-size: .68rem !important;
+}
+.business-weed-entry {
+  display: grid;
+  grid-template-columns: 52px minmax(0,1fr) auto;
+  align-items: center;
+  gap: 11px;
+  padding: 12px;
+  border: 1px solid rgba(91,231,151,.22);
+  border-radius: 16px;
+  background: radial-gradient(circle at 10% 30%,rgba(91,231,151,.14),transparent 35%),rgba(7,28,18,.86);
+}
+.business-weed-entry > span { display:grid;place-items:center;width:48px;height:48px;border-radius:14px;background:rgba(91,231,151,.12);font-size:1.55rem; }
+.business-weed-entry div { min-width:0;display:grid;gap:3px; }
+.business-weed-entry small { color:#75efb0;font-size:.58rem;font-weight:950;letter-spacing:.08em; }
+.business-weed-entry b { font-size:.82rem; }
+.business-weed-entry p { margin:0;color:var(--muted);font-size:.65rem;line-height:1.35; }
+.business-weed-entry button { min-height:38px;padding:7px 10px;border:1px solid rgba(91,231,151,.3);border-radius:11px;background:#5be797;color:#07170e;font-weight:950; }
+@media(max-width:560px){
+  .business-main-actions{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:5px!important}
+  .business-main-actions button{min-width:0!important;padding:6px 4px!important;font-size:.58rem!important;white-space:normal!important}
+  .business-weed-entry{grid-template-columns:42px minmax(0,1fr);padding:9px;gap:8px}
+  .business-weed-entry>span{width:40px;height:40px;border-radius:11px;font-size:1.25rem}
+  .business-weed-entry>button{grid-column:1/-1;width:100%;min-height:40px}
+}
+
+/* PC/Tablet-Kalender: jede Belohnung bleibt vollständig in ihrer Karte. Handy-Regeln bleiben unberührt. */
+@media (min-width: 701px) {
+  .device-shell.device-active-dailygifts .daily-gifts-app { max-width: 980px; margin-inline: auto; }
+  .device-shell.device-active-dailygifts .daily-gift-grid { grid-template-columns: repeat(3,minmax(0,1fr)) !important; gap: 9px !important; align-items: stretch; }
+  .device-shell.device-active-dailygifts .daily-gift-card { min-height: 128px; grid-template-rows:auto minmax(2.4em,1fr) auto; gap:8px; padding:10px; overflow:hidden; border-radius:15px; }
+  .device-shell.device-active-dailygifts .daily-gift-card header { min-width:0; }
+  .device-shell.device-active-dailygifts .daily-gift-card header b { font-size:.72rem; white-space:nowrap; }
+  .device-shell.device-active-dailygifts .daily-gift-card header span { width:34px;height:34px;display:grid;place-items:center;flex:0 0 34px;border-radius:10px;background:rgba(255,255,255,.08);font-size:1.05rem;overflow:hidden; }
+  .device-shell.device-active-dailygifts .daily-gift-card > strong { min-height:0;font-size:.72rem;line-height:1.25;overflow-wrap:anywhere; }
+  .device-shell.device-active-dailygifts .daily-gift-card .mini-button { width:100%;min-height:34px;font-size:.68rem; }
+  .device-shell.device-active-dailygifts .daily-gift-card.special { grid-column:1/-1;min-height:92px;grid-template-columns:auto minmax(0,1fr) 160px;grid-template-rows:auto;align-items:center; }
+  .device-shell.device-active-dailygifts .daily-gift-card.special header { min-width:110px; }
+  .device-shell.device-active-dailygifts .daily-gift-card.special .mini-button { max-width:160px;justify-self:end; }
+  .device-shell.device-tablet.device-active-dailygifts .daily-gift-grid { grid-template-columns:repeat(5,minmax(0,1fr)) !important; }
+}
