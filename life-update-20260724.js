@@ -423,7 +423,7 @@
   function installDriverOffice() {
     try {
       if (!mapPlaces.some((place) => place.id === "licenseoffice")) {
-        mapPlaces.push({ id: "licenseoffice", name: "Führerscheinstelle", icon: "F", x: 12, y: 8, kind: "Behörde", cost: 3, minutes: 16 });
+        mapPlaces.push({ id: "licenseoffice", name: "Führerscheinstelle", icon: "F", x: 20, y: 8, kind: "Behörde", cost: 3, minutes: 16 });
       }
       if (!routes.some((route) => route.includes("licenseoffice"))) routes.push(["market", "licenseoffice"]);
     } catch (error) {

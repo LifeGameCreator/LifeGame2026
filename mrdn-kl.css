@@ -853,3 +853,5 @@ body.am-game-open { overflow: hidden; }
     overflow-wrap: anywhere !important;
   }
 }
+
+.am-center .mrdn-logo{font-size:2.15px!important;letter-spacing:.02em!important;opacity:.72}.am-center text.small{display:none!important}

@@ -529,7 +529,12 @@
       const snapshot = await fb.getDoc(ref);
       if (!snapshot.exists()) return null;
       const raw = snapshot.data() || {};
-      const save = safeObject(raw.state || raw.save || raw.gameState || raw);
+      let decoded = null;
+      if (typeof raw.stateJson === "string" && raw.stateJson.trim()) {
+        try { decoded = JSON.parse(raw.stateJson); } catch (parseError) { console.warn("Einstellungsmenü: stateJson ist ungültig", uid, slot, parseError); }
+      }
+      const save = safeObject(decoded || raw.state || raw.save || raw.gameState || raw);
+      if (Object.keys(save).length) save.slot = slot;
       return Object.keys(save).length ? save : null;
     } catch (error) {
       console.warn("Einstellungsmenü: direkter Charakter-Slot konnte nicht gelesen werden", uid, slot, error?.message || error);
@@ -559,7 +564,7 @@
       const received = safeObject(response.player);
       const receivedProfile = safeObject(received.profile);
       const receivedSave = safeObject(received.save);
-      const mergedSave = directSave ? { ...receivedSave, ...directSave, slot: normalizedSlot } : { ...receivedSave, slot: normalizedSlot };
+      const mergedSave = directSave ? { ...directSave, slot: normalizedSlot } : { ...receivedSave, slot: normalizedSlot };
       const displayName = summary?.displayName || mergedSave.firstName && `${mergedSave.firstName} ${mergedSave.lastName || ""}`.trim() || receivedProfile.displayName || `Charakter ${normalizedSlot + 1}`;
       selectedPlayer = {
         ...received,

@@ -9,10 +9,10 @@
   const AM_BOT_DELAY = 760;
 
   const AM_COLORS = [
-    { id: "rot", label: "Rot", hex: "#ff4d5f", dark: "#7d1724", start: 0, base: [15.5, 15.5] },
-    { id: "blau", label: "Blau", hex: "#4da3ff", dark: "#164c83", start: 10, base: [84.5, 15.5] },
-    { id: "gelb", label: "Gelb", hex: "#ffd84d", dark: "#826b13", start: 20, base: [84.5, 84.5] },
-    { id: "gruen", label: "Grün", hex: "#45d58a", dark: "#17643f", start: 30, base: [15.5, 84.5] }
+    { id: "rot", label: "Rot", hex: "#ff4d5f", dark: "#7d1724", start: 0, base: [10.8, 10.8] },
+    { id: "blau", label: "Blau", hex: "#4da3ff", dark: "#164c83", start: 10, base: [89.2, 10.8] },
+    { id: "gelb", label: "Gelb", hex: "#ffd84d", dark: "#826b13", start: 20, base: [89.2, 89.2] },
+    { id: "gruen", label: "Grün", hex: "#45d58a", dark: "#17643f", start: 30, base: [10.8, 89.2] }
   ];
 
   const AM_EXTRAS = [
@@ -928,7 +928,7 @@
       <g class="am-center" filter="url(#amSoftShadow)">
         <circle cx="50" cy="50" r="6.25" fill="#06101d" stroke="#83eaff" stroke-width=".65"/>
         <circle cx="50" cy="50" r="5.1" fill="none" stroke="rgba(190,137,255,.34)" stroke-width=".35"/>
-        <text x="50" y="48.8" text-anchor="middle" class="mrdn-logo">MRDN</text><text x="50" y="52.5" text-anchor="middle" class="small">.KL</text>
+        <text x="50" y="50.6" text-anchor="middle" class="mrdn-logo">MRDN.KL</text>
       </g>
       <g filter="url(#amGlow)">${pawns}</g>
     </svg>`;
@@ -1272,7 +1272,7 @@
     const online = amRuntime.onlineDoc?.gameState;
     const active = online || local;
     return `<div class="am-app-home">
-      <section class="am-app-hero"><span>MRDN</span><div><p>BRETTSPIEL · BOT · ONLINE</p><h4>MRDN.KL</h4><small>Das taktische 2–4-Spieler-Brettspiel mit Points, Extras, öffentlichen Räumen und Privatcodes.</small></div></section>
+      <section class="am-app-hero"><span>🎲</span><div><p>BRETTSPIEL · BOT · ONLINE</p><h4>MRDN.KL</h4><small>Das taktische 2–4-Spieler-Brettspiel mit Points, Extras, öffentlichen Räumen und Privatcodes.</small></div></section>
       ${active ? `<button class="am-resume-card" data-am-app="resume"><span>▶</span><div><b>${active.online ? `Online-Partie · Raum ${amEscape(amRuntime.onlineId)}` : "Botpartie fortsetzen"}</b><small>${active.status === "finished" ? `${amEscape(active.winnerName)} hat gewonnen.` : `${amEscape(active.players[active.turnIndex]?.name)} ist am Zug.`}</small></div></button>` : ""}
       <div class="am-battle-hub-title"><h4>Spielmodus</h4><small>2–4 SPIELER</small></div>
       <div class="am-mode-grid am-mode-grid-standalone">
@@ -1637,7 +1637,7 @@
     {
       id: AM_APP_ID,
       label: "MRDN.KL",
-      icon: "MRDN",
+      icon: "M",
       minTier: 1,
       status: "available",
       description: "Taktisches Brettspiel für 2–4 Spieler mit Bots, Online-Lobbys, Privatcodes, Points und Extras."
@@ -1679,7 +1679,7 @@
         min: 1,
         data: true,
         label: "MRDN.KL",
-        icon: "MRDN",
+        icon: "M",
         text: "Taktisches Brettspiel mit Point-Shop – gegen Bots oder online für zwei bis vier Spieler.",
         layoutClass: "device-downloaded-app am-app-icon",
         locked: missingTier,

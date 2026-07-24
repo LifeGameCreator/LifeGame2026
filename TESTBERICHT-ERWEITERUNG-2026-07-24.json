@@ -1,0 +1,50 @@
+{
+  "version": "2026-07-24-expansion-b1",
+  "generatedAtMs": 1784909879301,
+  "javascriptFiles": [
+    "app.js",
+    "weed-kl.js",
+    "mrdn-kl.js",
+    "online-events.js",
+    "life-expansion-20260724b.js",
+    "webrtc-config.js",
+    "support-tickets.js",
+    "financial-crisis.js",
+    "life-update-20260724.js",
+    "battle-hub-kl.js",
+    "online-settings-menu.js"
+  ],
+  "cssFiles": [
+    "online-settings-menu.css",
+    "styles.css",
+    "financial-crisis.css",
+    "battle-hub-kl.css",
+    "weed-kl.css",
+    "life-expansion-20260724b.css",
+    "life-update-20260724.css",
+    "mrdn-kl.css"
+  ],
+  "indexReferencesChecked": 25,
+  "missingReferences": [],
+  "features": {
+    "mrdnCornerBases": true,
+    "mrdnCompactCenterLogo": true,
+    "mrdnCompactAppIcon": true,
+    "characterSlotStateJsonParser": true,
+    "strictFirebaseCharacterSlotPackage": true,
+    "pcWardrobeLayoutFix": true,
+    "drivingSkillFuelReductionMaxPercent": 36,
+    "skillInfo": true,
+    "animalShelter": true,
+    "petLevelCap": 10,
+    "realYearAging": true,
+    "auctionHouse": true,
+    "specialItems": 500,
+    "collectionBook": true,
+    "phoneDiagnostics": true
+  },
+  "limitations": [
+    "Echte 3er-Sprachkonferenzen benötigen einen Konferenzserver/SFU und sind nicht als reine GitHub-Pages-Funktion enthalten.",
+    "Für zuverlässige WebRTC-Anrufe zwischen unterschiedlichen Netzen muss ein TURN-Server konfiguriert werden."
+  ]
+}
