@@ -648,7 +648,9 @@ const mapPlaces = [
   { id: "bank", name: "Bankfiliale", icon: "€", x: 36, y: 55, kind: "Termin", cost: 3, minutes: 18 },
   { id: "jobcenter", name: "Jobcenter", icon: "J", x: 68, y: 31, kind: "Behörde", cost: 4, minutes: 24 },
   { id: "airport", name: "Flughafen", icon: "✈", x: 90, y: 10, kind: "Fernreise", cost: 7, minutes: 36 },
-  { id: "market", name: "Supermarkt", icon: "S", x: 20, y: 18, kind: "Einkaufen", cost: 3, minutes: 14 },
+  { id: "market", name: "Supermarkt", icon: "S", x: 20, y: 22, kind: "Einkaufen", cost: 3, minutes: 14 },
+  { id: "licenseoffice", name: "Führerscheinstelle", icon: "F", x: 28, y: 7, kind: "Behörde", cost: 3, minutes: 16 },
+  { id: "animal-shelter", name: "Tierheim", icon: "🐾", x: 52, y: 6, kind: "Tiere", cost: 2, minutes: 12 },
   { id: "gas", name: "Tankstelle", icon: "T", x: 12, y: 53, kind: "Auto", cost: 2, minutes: 10 },
   { id: "blackcorner", name: "Schwarze Ecke", icon: "?", x: 44, y: 30, kind: "Riskant", cost: 3, minutes: 18 },
   { id: "hospital", name: "Krankenhaus", icon: "+", x: 75, y: 53, kind: "Gesundheit", cost: 5, minutes: 28 },
@@ -659,7 +661,7 @@ const mapPlaces = [
 const routes = [
   ["home", "gas"], ["gas", "market"], ["market", "blackcorner"], ["blackcorner", "jobcenter"], ["market", "bank"], ["bank", "jobcenter"],
   ["home", "hotel"], ["hotel", "station"], ["home", "station"], ["station", "workshop"], ["jobcenter", "hospital"], ["hospital", "workshop"], ["bank", "station"],
-  ["jobcenter", "airport"]
+  ["jobcenter", "airport"], ["market", "licenseoffice"], ["blackcorner", "animal-shelter"], ["market", "animal-shelter"], ["airport", "animal-shelter"]
 ];
 
 const fuelOptions = [
@@ -9626,6 +9628,10 @@ function renderMap() {
   const roads = routes.map(([fromId, toId]) => {
     const from = mapPlaces.find((place) => place.id === fromId);
     const to = mapPlaces.find((place) => place.id === toId);
+    if (!from || !to) {
+      console.warn("Ungültige Kartenroute übersprungen", { fromId, toId });
+      return "";
+    }
     const dx = to.x - from.x;
     const dy = to.y - from.y;
     const length = Math.sqrt(dx * dx + dy * dy);
@@ -9705,6 +9711,12 @@ function localPlaceActionsHtml() {
     ],
     workshop: [
       card("Werkstatt betreten", state.carDamaged ? "Dein Auto ist beschädigt. Reparatur in der Werkstatt möglich." : "Aktuell ist kein Fahrzeugschaden gemeldet.", "Betreten", "repair-car", !state.carDamaged, "local-action")
+    ],
+    licenseoffice: [
+      card("Führerschein Klasse B", "Fünf einfache Theoriefragen und anschließend eine animierte praktische Prüfung.", "Prüfung öffnen", "driving-school", false, "local-action")
+    ],
+    "animal-shelter": [
+      card("Tierheim & Tiermarkt", "Viele Tiere, verschiedene Altersstufen und täglich wechselnde Angebote.", "Öffnen", "pet-shelter", false, "local-action")
     ],
     home: [
       card("Wohnung betreten", "Zuhause kannst du dich sammeln und später deine Wohnung ausbauen.", "Betreten", "home-rest", false, "local-action")
@@ -9919,6 +9931,14 @@ function beginQuickHomeTravel(mode) {
 }
 
 function handleLocalPlaceAction(action) {
+  if (action === "driving-school") {
+    if (window.LifeBuilderUpdate20260724?.openDrivingSchool) return window.LifeBuilderUpdate20260724.openDrivingSchool();
+    return addFeed("Die Führerscheinstelle wird noch geladen. Öffne die Karte gleich erneut.");
+  }
+  if (action === "pet-shelter") {
+    if (window.LifeBuilderExpansion?.openPetShelter) return window.LifeBuilderExpansion.openPetShelter();
+    return addFeed("Das Tierheim wird noch geladen. Öffne die Karte gleich erneut.");
+  }
   if (String(action || "").startsWith("finder-meet:")) return openFinderMeetDialog(String(action).split(":")[1]);
   if (action === "market") return openLocalMarketDialog();
   if (action === "furniture") return openLocalFurnitureDialog();

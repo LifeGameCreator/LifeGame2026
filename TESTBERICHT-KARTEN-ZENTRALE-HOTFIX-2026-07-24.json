@@ -1,0 +1,235 @@
+{
+  "version": "2026-07-24-map-central-hotfix-v2",
+  "createdAt": "2026-07-24T18:17:04Z",
+  "checks": {
+    "javascript": [
+      {
+        "file": "app.js",
+        "ok": true,
+        "stderr": ""
+      },
+      {
+        "file": "battle-hub-kl.js",
+        "ok": true,
+        "stderr": ""
+      },
+      {
+        "file": "financial-crisis.js",
+        "ok": true,
+        "stderr": ""
+      },
+      {
+        "file": "life-expansion-20260724b.js",
+        "ok": true,
+        "stderr": ""
+      },
+      {
+        "file": "life-update-20260724.js",
+        "ok": true,
+        "stderr": ""
+      },
+      {
+        "file": "mrdn-kl.js",
+        "ok": true,
+        "stderr": ""
+      },
+      {
+        "file": "online-events.js",
+        "ok": true,
+        "stderr": ""
+      },
+      {
+        "file": "online-settings-menu.js",
+        "ok": true,
+        "stderr": ""
+      },
+      {
+        "file": "support-tickets.js",
+        "ok": true,
+        "stderr": ""
+      },
+      {
+        "file": "webrtc-config.js",
+        "ok": true,
+        "stderr": ""
+      },
+      {
+        "file": "weed-kl.js",
+        "ok": true,
+        "stderr": ""
+      }
+    ],
+    "css": [
+      {
+        "file": "battle-hub-kl.css",
+        "braceBalance": 0,
+        "ok": true
+      },
+      {
+        "file": "financial-crisis.css",
+        "braceBalance": 0,
+        "ok": true
+      },
+      {
+        "file": "life-expansion-20260724b.css",
+        "braceBalance": 0,
+        "ok": true
+      },
+      {
+        "file": "life-update-20260724.css",
+        "braceBalance": 0,
+        "ok": true
+      },
+      {
+        "file": "mrdn-kl.css",
+        "braceBalance": 0,
+        "ok": true
+      },
+      {
+        "file": "online-settings-menu.css",
+        "braceBalance": 0,
+        "ok": true
+      },
+      {
+        "file": "styles.css",
+        "braceBalance": 0,
+        "ok": true
+      },
+      {
+        "file": "weed-kl.css",
+        "braceBalance": 0,
+        "ok": true
+      }
+    ],
+    "localReferences": [
+      {
+        "reference": "manifest.webmanifest?v=20260724-map-central-hotfix-v2",
+        "exists": true
+      },
+      {
+        "reference": "assets/icons/apple-touch-icon.png?v=20260724-map-central-hotfix-v2",
+        "exists": true
+      },
+      {
+        "reference": "assets/icons/favicon-32.png?v=20260724-map-central-hotfix-v2",
+        "exists": true
+      },
+      {
+        "reference": "assets/icons/favicon-16.png?v=20260724-map-central-hotfix-v2",
+        "exists": true
+      },
+      {
+        "reference": "styles.css?v=20260724-map-central-hotfix-v2",
+        "exists": true
+      },
+      {
+        "reference": "financial-crisis.css?v=20260724-map-central-hotfix-v2",
+        "exists": true
+      },
+      {
+        "reference": "online-settings-menu.css?v=20260724-map-central-hotfix-v2",
+        "exists": true
+      },
+      {
+        "reference": "mrdn-kl.css?v=20260724-map-central-hotfix-v2",
+        "exists": true
+      },
+      {
+        "reference": "battle-hub-kl.css?v=20260724-map-central-hotfix-v2",
+        "exists": true
+      },
+      {
+        "reference": "weed-kl.css?v=20260724-map-central-hotfix-v2",
+        "exists": true
+      },
+      {
+        "reference": "life-update-20260724.css?v=20260724-map-central-hotfix-v2",
+        "exists": true
+      },
+      {
+        "reference": "life-expansion-20260724b.css?v=20260724-expansion-b2",
+        "exists": true
+      },
+      {
+        "reference": "assets/life-city.png",
+        "exists": true
+      },
+      {
+        "reference": "assets/life-city.png",
+        "exists": true
+      },
+      {
+        "reference": "webrtc-config.js?v=20260724-map-central-hotfix-v2",
+        "exists": true
+      },
+      {
+        "reference": "app.js?v=20260724-map-central-hotfix-v2",
+        "exists": true
+      },
+      {
+        "reference": "financial-crisis.js?v=20260724-map-central-hotfix-v2",
+        "exists": true
+      },
+      {
+        "reference": "online-events.js?v=20260724-map-central-hotfix-v2",
+        "exists": true
+      },
+      {
+        "reference": "support-tickets.js?v=20260724-map-central-hotfix-v2",
+        "exists": true
+      },
+      {
+        "reference": "online-settings-menu.js?v=20260724-map-central-hotfix-v2",
+        "exists": true
+      },
+      {
+        "reference": "mrdn-kl.js?v=20260724-map-central-hotfix-v2",
+        "exists": true
+      },
+      {
+        "reference": "battle-hub-kl.js?v=20260724-map-central-hotfix-v2",
+        "exists": true
+      },
+      {
+        "reference": "weed-kl.js?v=20260724-map-central-hotfix-v2",
+        "exists": true
+      },
+      {
+        "reference": "life-update-20260724.js?v=20260724-map-central-hotfix-v2",
+        "exists": true
+      },
+      {
+        "reference": "life-expansion-20260724b.js?v=20260724-expansion-b2",
+        "exists": true
+      }
+    ],
+    "map": {
+      "placeCount": 13,
+      "places": [
+        "airport",
+        "animal-shelter",
+        "bank",
+        "blackcorner",
+        "gas",
+        "home",
+        "hospital",
+        "hotel",
+        "jobcenter",
+        "licenseoffice",
+        "market",
+        "station",
+        "workshop"
+      ],
+      "routeCount": 18,
+      "invalidRoutes": [],
+      "licenseOfficePresent": true,
+      "animalShelterPresent": true
+    },
+    "centralAuctionHandler": true,
+    "expansionVersion": true,
+    "allTxtInsideTxtFolder": true
+  },
+  "limitations": [
+    "Kein echter Browser-Live-Test gegen den veröffentlichten GitHub-Pages-Spielstand in dieser Laufzeit. Syntax, Referenzen, Karten-IDs, Routen und Erweiterungsinitialisierung wurden automatisiert geprüft."
+  ]
+}

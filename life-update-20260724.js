@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const UPDATE_VERSION = "2026-07-24-mrdn-fuehrerschein-level-tutorial-v1";
+  const UPDATE_VERSION = "2026-07-24-map-central-hotfix-v2";
   const PATCH_SEEN_KEY = `lifebuilder-patch-seen:${UPDATE_VERSION}`;
   const DRIVER_APPLICATION_FEE = 3200;
   const DRIVER_THEORY_RETRY_FEE = 450;
@@ -423,9 +423,10 @@
   function installDriverOffice() {
     try {
       if (!mapPlaces.some((place) => place.id === "licenseoffice")) {
-        mapPlaces.push({ id: "licenseoffice", name: "Führerscheinstelle", icon: "F", x: 20, y: 8, kind: "Behörde", cost: 3, minutes: 16 });
+        mapPlaces.push({ id: "licenseoffice", name: "Führerscheinstelle", icon: "F", x: 28, y: 7, kind: "Behörde", cost: 3, minutes: 16 });
       }
       if (!routes.some((route) => route.includes("licenseoffice"))) routes.push(["market", "licenseoffice"]);
+      if (typeof renderMap === "function" && state && !document.getElementById("gameScreen")?.classList.contains("hidden")) renderMap();
     } catch (error) {
       console.error("Führerscheinstelle konnte nicht zur Karte hinzugefügt werden", error);
     }
@@ -518,7 +519,8 @@
       if (upcoming) {
         event.preventDefault();
         event.stopImmediatePropagation();
-        showNotice("Zentrale", "Wird noch hinzugefügt.");
+        if (window.LifeBuilderExpansion?.openAuction) return window.LifeBuilderExpansion.openAuction();
+        showNotice("Zentrale", "Das Auktionshaus wird noch geladen. Bitte in einem Moment erneut öffnen.");
         return;
       }
       const weed = event.target.closest("[data-business-weed]");
