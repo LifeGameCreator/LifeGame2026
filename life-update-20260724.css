@@ -1,0 +1,283 @@
+/* LifeBuilder Update: MRDN.KL, Führerscheinstelle, Neuheiten und Level-Tutorials */
+
+.dashboard-shortcut.realestate { grid-column: auto !important; }
+.dashboard-shortcut.upcoming {
+  background:
+    radial-gradient(circle at 50% 28%, rgba(126,182,255,.18), transparent 36%),
+    linear-gradient(180deg, rgba(22,35,49,.96), rgba(10,16,22,.96));
+}
+.dashboard-shortcut.upcoming b { color: #8fc5ff; font-size: 1.55rem; text-shadow: 0 0 13px rgba(126,182,255,.35); }
+.dashboard-shortcut.level-locked::after {
+  content: "🔒";
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  font-size: .58rem;
+  opacity: .8;
+}
+.dashboard-shortcut { position: relative; }
+
+.whats-new-settings-button {
+  border-color: rgba(116,238,192,.4) !important;
+  background: linear-gradient(135deg, rgba(18,62,48,.96), rgba(16,35,29,.98)) !important;
+  color: #9ff4ce !important;
+}
+
+.life-update-toast {
+  position: fixed;
+  z-index: 50020;
+  left: 50%;
+  bottom: max(22px, env(safe-area-inset-bottom));
+  width: min(520px, calc(100vw - 28px));
+  display: grid;
+  gap: 4px;
+  padding: 15px 18px;
+  border: 1px solid rgba(116,238,192,.46);
+  border-radius: 17px;
+  color: #eafff5;
+  background: rgba(5,17,14,.97);
+  box-shadow: 0 18px 55px rgba(0,0,0,.5), 0 0 25px rgba(116,238,192,.12);
+  transform: translate(-50%, 25px);
+  opacity: 0;
+  transition: .22s ease;
+  pointer-events: none;
+}
+.life-update-toast.show { transform: translate(-50%, 0); opacity: 1; }
+.life-update-toast b { color: #75eec0; font-size: 1rem; }
+.life-update-toast span { color: #b6c8c0; line-height: 1.4; }
+
+.life-guide-overlay,
+.driver-school-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50000;
+  display: none;
+  place-items: center;
+  padding: max(18px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom));
+  background: rgba(0,7,10,.82);
+  backdrop-filter: blur(13px);
+}
+.life-guide-overlay.show,
+.driver-school-overlay.show { display: grid; }
+body.life-guide-open,
+body.driver-school-open { overflow: hidden !important; }
+
+.life-guide-card,
+.driver-school-card {
+  width: min(820px, 100%);
+  max-height: min(86dvh, 820px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(116,238,192,.35);
+  border-radius: 24px;
+  color: #ecfff6;
+  background:
+    radial-gradient(circle at 85% 0, rgba(116,238,192,.14), transparent 32%),
+    linear-gradient(155deg, #0b1c17, #07100e 64%, #081614);
+  box-shadow: 0 32px 90px rgba(0,0,0,.62), 0 0 45px rgba(116,238,192,.08);
+}
+.life-guide-card > header,
+.driver-school-card > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex: 0 0 auto;
+  padding: 20px 22px;
+  border-bottom: 1px solid rgba(255,255,255,.09);
+}
+.life-guide-card header > div,
+.driver-school-card header > div { min-width: 0; flex: 1; }
+.life-guide-card header small,
+.driver-school-card header small { color: #75eec0; font-weight: 1000; letter-spacing: .15em; }
+.life-guide-card header h2,
+.driver-school-card header h2 { margin: 3px 0; font-size: clamp(1.55rem, 4vw, 2.25rem); }
+.life-guide-card header p { margin: 4px 0 0; color: #a9bbb4; line-height: 1.42; }
+.life-guide-card header button,
+.driver-school-card header button {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.14);
+  color: #fff;
+  background: rgba(255,255,255,.055);
+  font-size: 1.45rem;
+}
+.driver-school-card header > span { font-size: 2.3rem; }
+.life-guide-scroll,
+.driver-school-card > main {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 18px 22px 24px;
+}
+.life-guide-section {
+  display: grid;
+  grid-template-columns: 52px minmax(0,1fr);
+  gap: 14px;
+  padding: 16px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 17px;
+  background: rgba(255,255,255,.035);
+}
+.life-guide-section > span {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: rgba(116,238,192,.12);
+  font-size: 1.6rem;
+}
+.life-guide-section h3 { margin: 0 0 7px; color: #a3f7d3; }
+.life-guide-section ul { margin: 0; padding-left: 19px; display: grid; gap: 7px; color: #c1d0ca; line-height: 1.4; }
+.life-guide-card footer { padding: 14px 22px 20px; border-top: 1px solid rgba(255,255,255,.08); }
+.life-guide-card footer button { width: 100%; }
+
+.driver-school-card { width: min(700px, 100%); border-color: rgba(126,182,255,.38); }
+.driver-school-card header small { color: #8fc5ff; }
+.driver-welcome,
+.driver-theory,
+.driver-practical,
+.driver-result { display: grid; gap: 16px; }
+.driver-welcome h3,
+.driver-theory h3,
+.driver-result h3 { margin: 0; font-size: clamp(1.35rem, 4vw, 2rem); }
+.driver-welcome p,
+.driver-theory small,
+.driver-result p { margin: 0; color: #b7c6c0; line-height: 1.5; }
+.driver-road-preview {
+  position: relative;
+  height: 150px;
+  overflow: hidden;
+  border: 1px solid rgba(126,182,255,.3);
+  border-radius: 20px;
+  background:
+    linear-gradient(90deg, transparent 0 48%, rgba(255,255,255,.58) 48% 52%, transparent 52%) center/70px 100% repeat-x,
+    linear-gradient(180deg, #1a2730, #0b1116);
+}
+.driver-road-preview::before,
+.driver-road-preview::after { content: ""; position: absolute; left: 0; right: 0; height: 20px; background: #214d36; }
+.driver-road-preview::before { top: 0; }
+.driver-road-preview::after { bottom: 0; }
+.driver-road-preview b {
+  position: absolute;
+  left: 12%;
+  top: 50%;
+  z-index: 2;
+  font-size: 2.5rem;
+  transform: translateY(-50%);
+  animation: driverPreviewCar 2.7s ease-in-out infinite alternate;
+}
+@keyframes driverPreviewCar { to { left: 78%; transform: translateY(-50%) rotate(3deg); } }
+.driver-fee { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-radius: 15px; background: rgba(126,182,255,.1); }
+.driver-fee small { color: #a5b8c8; }
+.driver-fee b { color: #8fc5ff; font-size: 1.25rem; }
+.driver-progress-label,
+.driver-practical-stats { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.driver-progress-label span,
+.driver-practical-stats span { color: #8fc5ff; font-weight: 950; }
+.driver-progress { height: 11px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.08); }
+.driver-progress.large { height: 15px; }
+.driver-progress i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #4da3ff, #75eec0); transition: width .12s linear; }
+.driver-answers { display: grid; gap: 10px; }
+.driver-answers button {
+  min-height: 58px;
+  padding: 12px 16px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 15px;
+  color: #ebfff6;
+  background: rgba(255,255,255,.045);
+  text-align: left;
+  font-weight: 850;
+}
+.driver-answers button:hover { border-color: #75eec0; background: rgba(116,238,192,.1); }
+.driver-route {
+  --driver-progress: 0%;
+  position: relative;
+  height: 250px;
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid rgba(126,182,255,.3);
+  background:
+    linear-gradient(90deg, transparent 0 48%, rgba(255,255,255,.4) 48% 52%, transparent 52%) center/78px 100% repeat-x,
+    linear-gradient(180deg, #17242d, #0a1116);
+}
+.driver-route .road-line { position: absolute; inset: 20px; border: 3px dashed rgba(255,255,255,.25); border-radius: 24px; }
+.driver-route b {
+  position: absolute;
+  z-index: 3;
+  left: clamp(8%, var(--driver-progress), 84%);
+  top: 50%;
+  font-size: 3rem;
+  transform: translate(-50%,-50%);
+  transition: left .1s linear, top .25s ease, transform .25s ease;
+  filter: drop-shadow(0 5px 8px rgba(0,0,0,.45));
+}
+.driver-route.direction-up b { top: 28%; transform: translate(-50%,-50%) rotate(-90deg); }
+.driver-route.direction-left b { top: 52%; transform: translate(-50%,-50%) rotate(180deg); }
+.driver-route.direction-down b { top: 72%; transform: translate(-50%,-50%) rotate(90deg); }
+.driver-route em { position: absolute; left: 50%; bottom: 17px; transform: translateX(-50%); padding: 7px 12px; border-radius: 999px; color: #c9dded; background: rgba(0,0,0,.58); font-style: normal; font-size: .78rem; white-space: nowrap; }
+.driver-result { justify-items: center; padding: 24px 10px; text-align: center; }
+.driver-result > span { display: grid; place-items: center; width: 88px; height: 88px; border-radius: 50%; background: rgba(116,238,192,.13); color: #75eec0; font-size: 2.8rem; }
+.driver-result.failed > span { background: rgba(255,91,112,.13); color: #ff7186; }
+.driver-result button { width: min(360px,100%); }
+
+.driver-office-place .item-card { border-color: rgba(126,182,255,.24); }
+
+/* MRDN.KL compact branding and local end-game action */
+.am-board-center .mrdn-logo,
+.am-board-svg .mrdn-logo { font-size: 4.1px; font-weight: 1000; letter-spacing: .25px; fill: #9ff3ff; }
+.am-end-local { border-color: rgba(255,86,112,.5) !important; color: #ff9cab !important; background: rgba(90,18,32,.64) !important; }
+
+@media (max-width: 760px) {
+  .dashboard-shortcut span .desktop-label { display: none !important; }
+  .dashboard-shortcut span .mobile-label { display: inline !important; }
+  .dashboard-shortcut.realestate b,
+  .dashboard-shortcut.upcoming b { font-size: 1.24rem; }
+  .life-guide-overlay,
+  .driver-school-overlay { padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom)); align-items: stretch; }
+  .life-guide-card,
+  .driver-school-card { width: 100%; height: 100%; max-height: none; border-radius: 20px; }
+  .life-guide-card > header,
+  .driver-school-card > header { padding: 15px 15px 13px; }
+  .life-guide-scroll,
+  .driver-school-card > main { padding: 13px 14px 22px; }
+  .life-guide-section { grid-template-columns: 43px minmax(0,1fr); padding: 13px; gap: 11px; }
+  .life-guide-section > span { width: 43px; height: 43px; font-size: 1.3rem; }
+  .life-guide-section ul { font-size: .9rem; }
+  .driver-road-preview { height: 125px; }
+  .driver-route { height: min(38dvh, 300px); }
+  .driver-route b { font-size: 2.5rem; }
+  .am-head-actions { display: grid !important; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 6px !important; }
+  .am-head-actions button { min-width: 0 !important; width: 100%; font-size: .68rem !important; padding: 8px 6px !important; }
+  .am-head-actions [data-am-minimize] { grid-column: 1 / -1; }
+}
+
+@media (min-width: 761px) {
+  .dashboard-shortcut span .mobile-label { display: none !important; }
+}
+
+@media (max-width: 520px) {
+  .am-head-actions {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    width: min(230px, 61vw);
+  }
+  .am-head-actions button[data-am-fullscreen] { display: grid !important; place-items: center; }
+  .am-head-actions [data-am-minimize] { grid-column: auto !important; }
+  .am-head-copy { min-width: 0; }
+  .am-head-copy h2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
+.map-pin[data-place="licenseoffice"] span {
+  left: -7px !important;
+  transform: none !important;
+  white-space: normal !important;
+  width: 112px;
+  max-width: 112px !important;
+  line-height: 1.05;
+}

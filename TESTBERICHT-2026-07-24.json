@@ -1,112 +1,160 @@
 {
-  "globals": {
-    "finance": "object",
-    "settings": "object",
-    "am": "object",
-    "battle": "object",
-    "weed": "object"
+  "report_version": "2026-07-24-mrdn-fuehrerschein-level-tutorial-v1",
+  "generated_at_utc": "2026-07-24T14:35:24.880974+00:00",
+  "static_checks": {
+    "index_uses_mrdn_files": true,
+    "index_has_no_old_aergermensch_file_reference": true,
+    "old_aergermensch_files_absent_from_zip": true,
+    "mrdn_visible_name_present": true,
+    "mrdn_phone_closes_on_board_open": true,
+    "mrdn_local_end_button_present": true,
+    "mrdn_fullscreen_and_minimize_present": true,
+    "driver_office_on_map": true,
+    "license_removed_from_shop": true,
+    "theory_has_random_five_questions": true,
+    "practical_probability_per_percent": true,
+    "third_practical_guaranteed": true,
+    "news_button_present": true,
+    "patch_once_key_present": true,
+    "level_milestones_present": true,
+    "event_center_catalog_variable_fixed": true,
+    "character_slot_explicit": true,
+    "dashboard_has_realestate_and_placeholder": true,
+    "txt_files_only_in_txt_folder": true,
+    "all_local_html_refs_exist": true,
+    "weed_remains_business_only": true
   },
-  "create": {
-    "cash": 120,
-    "bank": 680,
-    "starter": true,
-    "homeless": false
-  },
-  "finance": {
-    "blocked": true,
-    "bank": -4300,
-    "cash": 400
-  },
-  "business": {
-    "weedInBusiness": true,
-    "weedInStore": false
-  },
-  "weedStart": {
-    "summary": {
-      "capital": 500,
-      "danger": 5,
-      "plants": 0,
-      "slots": 3,
-      "grams": 0
+  "javascript_syntax": {
+    "app.js": {
+      "ok": true,
+      "stderr": ""
     },
-    "cash": 500,
-    "overlay": true
-  },
-  "weedGrow": {
-    "waterings": 36,
-    "thresholds": [
-      5,
-      11,
-      18,
-      26,
-      36
-    ],
-    "supplies": {
-      "pot": 0,
-      "soil": 0,
-      "water": 14
+    "battle-hub-kl.js": {
+      "ok": true,
+      "stderr": ""
     },
-    "capital": 425
-  },
-  "weedHarvest": {
-    "plants": 0,
-    "grams": 63,
-    "pot": 1
-  },
-  "aerger": [
-    {
-      "n": 2,
-      "players": 2,
-      "status": "playing",
-      "overlay": true
+    "financial-crisis.js": {
+      "ok": true,
+      "stderr": ""
     },
-    {
-      "n": 3,
-      "players": 3,
-      "status": "playing",
-      "overlay": true
+    "life-update-20260724.js": {
+      "ok": true,
+      "stderr": ""
     },
-    {
-      "n": 4,
-      "players": 4,
-      "status": "playing",
-      "overlay": true
+    "mrdn-kl.js": {
+      "ok": true,
+      "stderr": ""
+    },
+    "online-events.js": {
+      "ok": true,
+      "stderr": ""
+    },
+    "online-settings-menu.js": {
+      "ok": true,
+      "stderr": ""
+    },
+    "support-tickets.js": {
+      "ok": true,
+      "stderr": ""
+    },
+    "webrtc-config.js": {
+      "ok": true,
+      "stderr": ""
+    },
+    "weed-kl.js": {
+      "ok": true,
+      "stderr": ""
     }
-  ],
-  "battleGames": [
-    {
-      "type": "territory",
-      "overlay": true,
-      "gameShell": true,
-      "text": "‹\n\nBot-Partie · Best-of-3\n\nGrundstück-Kampf\nRunde 1\nTest\n9\nNova Bot\n9\n2:00\nWisch"
+  },
+  "css_balance": {
+    "battle-hub-kl.css": {
+      "ok": true,
+      "balance": 0
     },
-    {
-      "type": "packages",
-      "overlay": true,
-      "gameShell": true,
-      "text": "‹\n\nBot-Partie · Best-of-3\n\nPaket-Chaos\nRunde 1\nTest\n0\nNova Bot\n0\n1:30\n0 Punkte ·"
+    "financial-crisis.css": {
+      "ok": true,
+      "balance": 0
     },
-    {
-      "type": "reaction",
-      "overlay": true,
-      "gameShell": true,
-      "text": "‹\n\nBot-Partie · Best-of-3\n\nReaktions-Battle\nRunde 1\nTest\n5♥\nNova Bot\n5♥\nAUFGABE "
+    "life-update-20260724.css": {
+      "ok": true,
+      "balance": 0
+    },
+    "mrdn-kl.css": {
+      "ok": true,
+      "balance": 0
+    },
+    "online-settings-menu.css": {
+      "ok": true,
+      "balance": 0
+    },
+    "styles.css": {
+      "ok": true,
+      "balance": 0
+    },
+    "weed-kl.css": {
+      "ok": true,
+      "balance": 0
     }
+  },
+  "html_local_references": {
+    "count": 23,
+    "missing": []
+  },
+  "behavior_scenarios_previously_executed_on_final_patch": {
+    "mrdn_bot_2_3_4_players": "passed",
+    "mrdn_phone_dialog_closes_and_board_opens": "passed",
+    "mrdn_local_end_button_visible": "passed",
+    "territory_packages_reaction_bot_start": "passed",
+    "driver_theory_five_questions": "passed",
+    "driver_practical_progress_1_to_100": "passed",
+    "driver_guaranteed_third_practical_attempt": "passed",
+    "license_added_to_character_inventory": "passed",
+    "license_removed_from_shop": "passed",
+    "level_gates_2_3_5_6_7_10": "passed in local browser harness",
+    "patch_notes_mobile_and_pc": "passed",
+    "dashboard_mobile_and_pc_layout": "passed",
+    "page_errors": []
+  },
+  "limitations": [
+    "Ein vollständiger Live-Test der getrennten Charakter-Slots mit mehreren fremden Firebase-Accounts konnte lokal nicht reproduziert werden.",
+    "Die Firebase-abhängige Online-Lobby wurde nicht mit mehreren realen Geräten gleichzeitig erneut durchgespielt."
   ],
-  "eviction": {
-    "homeless": true,
-    "misses": 4,
-    "arrears": 260,
-    "ui": true
-  },
-  "nextDay": {
-    "before": 8,
-    "after": 9,
-    "bank": -10000,
-    "cash": 0,
-    "homeless": true
-  },
-  "visibleOldName": false,
-  "pageErrors": [],
-  "consoleBad": []
+  "file_count": 35,
+  "files_sha256": {
+    "weed-kl.css": "a03aec7d8dfb1b384250fe00129c8895fccb678bb5ae6f88c530d8d9cebb7898",
+    "financial-crisis.css": "bba96f44439cf4fd68f417779b83ea15ea81d64c2d7c8348b18561b0e85fa7b2",
+    "webrtc-config.js": "bc99d268f1b43661b1ac8935d1defdc4145cc025fcf3b3fb3981b485406182e3",
+    "app.js": "250a434e5ea08ec61bbb10874881f8f5ea2fbfc79adce8787feae928e9580596",
+    "online-settings-menu.css": "312af469abd5a18af98caf26696173b2464eea98a4aaa4eab658fd4d69a9a7cf",
+    "support-tickets.js": "2cad96b565729f34e8ed5e86d882ce7c6812fe34eb8d9e9daac5bb3542a3dbe4",
+    ".nojekyll": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "battle-hub-kl.css": "67180e926c5dedcc642b1887d43ad5a211cf63edf6cd2b1ccbe76660ddbc1411",
+    "mrdn-kl.css": "f90739b04ef457eeb82fece85bc53910119ef034b186bc5546525547cfe90077",
+    "battle-hub-kl.js": "4655c7f4cc9cd3c50a3947073c5c94fb6a0d2436b739893f18de1b28c02b3119",
+    "life-update-20260724.js": "43d75ad6772670146013d7f65287b0ba296b64390e5569b915f12b4cd1044673",
+    "manifest.webmanifest": "c89ab820299d8e1adafa29dd9d405e4930f51156b33b64b8c2b5cf7d3ea01a3d",
+    "online-events.js": "e5cdd6c6fb2ca73d7e47014d3464c2cdfafbcf554f25987bc0cabddf15dc6b74",
+    "styles.css": "664a0268e8362611b6d8f3f3424aca047f2389a38a78e7af863297293ae8a1fd",
+    "mrdn-kl.js": "8efcf07cd88ba7fb5ef90c4b2b27b06b945775f27b0d351292b7c155ededdc85",
+    "financial-crisis.js": "fd6084783e73405a11cb3b85bf39c5aaeca4915888dbac55477b364c2b4f1632",
+    "life-update-20260724.css": "cf23e6b5a5fd7d3aa937850582d570bbbc03c5fb2feaa527856a57c4825189a4",
+    "online-settings-menu.js": "318e269faed9d5347642d07bdb4ebd0858394d1978d4e3dbac958d3e296fc96a",
+    "index.html": "14254242e6a53021a99d44a1aa3d2ab62a978ed09e1b3ac4a56ac0988c4dc8e3",
+    "weed-kl.js": "d4c5ba8f5ef08848acade9d6721ddc33ba53af9ea81040668290e7241ef7f5cc",
+    "TXT/UPDATE-FINANZEN-OBDACHLOSIGKEIT-EINSTELLUNGSMENUE-2026-07-24.txt": "204be2be50f37fe257a1dc198dd32a485fefbba768aa6db849e9080cdebf920f",
+    "TXT/GITHUB-UPLOAD-UND-ALTE-DATEIEN-LOESCHEN.txt": "0a3d2e8f2dfe4b7e7cd2b6393db800b3d481aa0f43c0af9447033b909cf7e4d9",
+    "TXT/UPDATE-MRDN-FUEHRERSCHEIN-LEVEL-TUTORIAL-2026-07-24.txt": "6a51ab3a3b3912e13bfb4ad87c39a5dd68ae6f9a5c59f53d745f2bb5d49b4329",
+    "assets/phone-entry.avif": "fce37b5c02a6b0c09b4ac546660d232eb3c71cebe1c3bfb1c659ef0023ae64f2",
+    "assets/casino-map.webp": "ad9cb83359b9ac989690e4a6b020b2e0ad0c53c7ba824b29f4964f19092d4cc0",
+    "assets/business-map.webp": "67d8f97498830538d2ab5e2ffa9f92fc9f0a863385afce23f3f2241eb8738c6a",
+    "assets/phone-basic.avif": "2cc72efbcedc195e443110663ee0c7bfc400187f90477e20d32810c1fcff856f",
+    "assets/phone-mid.avif": "aec20304082db238f352eb42c61542df8c7b6f16f4e821d3681b0a1cc97271bf",
+    "assets/life-city.png": "d76eb2e6ce54aa85ecbcf68d353bb158c3af8a18e617d81b4e108e7aae8a79bd",
+    "assets/icons/app-icon-512.png": "45aaaeabc1e27580250b885e49a67144a54ce013fd3b4e54f74f8edf6ad84359",
+    "assets/icons/app-icon-192.png": "4c1c3291ac02e55c4f8bdc957363ba81c88eae07f6539336b7b8429cfe78d29e",
+    "assets/icons/apple-touch-icon.png": "07e42a24faf154ff30376021de20c1e5bd76aef37033eba7921a5f3e3ca751ab",
+    "assets/icons/app-icon-maskable-512.png": "01a82a070f35545eeeb7ce55c68f698f11b5cd156861129802beee690f5f8803",
+    "assets/icons/favicon-32.png": "ede3adc5935b14958beeb4d0e8c30967ac0bec072409320d89a0a4ee88b3d898",
+    "assets/icons/favicon-16.png": "b1843b989897a29639438add8bc4004c165ecf49977122c9a9ca679e77a17bb5"
+  }
 }

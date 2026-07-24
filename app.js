@@ -14738,7 +14738,7 @@ function openDeviceInterface(item, activeApp = "home", activeUse = true) {
             <button class="${app.layoutClass || ""} ${app.id === selected.id ? "active" : ""} ${app.locked ? "locked" : ""}" data-device-app="${app.id}">
               <span>${app.icon}</span>
               <b>${app.label}</b>
-              <small>${app.levelLocked ? `Ab Level ${app.minLevel}` : app.locked ? "Gesperrt" : "&nbsp;"}</small>
+              <small>${app.locked ? "Gesperrt" : "&nbsp;"}</small>
             </button>
           `).join("")}
         </div>

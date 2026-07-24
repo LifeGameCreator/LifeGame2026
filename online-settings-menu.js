@@ -71,6 +71,8 @@
   let playerAccounts = [];
   const expandedAccounts = new Set();
   let selectedPlayer = null;
+  let selectedPlayerUid = "";
+  let selectedPlayerSlotIndex = 0;
   let playerTab = "overview";
   let playerSearch = "";
   let playerFilter = "all";
@@ -108,12 +110,9 @@
   };
   const safeArray = (value) => Array.isArray(value) ? value : [];
   const safeObject = (value) => value && typeof value === "object" && !Array.isArray(value) ? value : {};
-  const selectedPlayerSlot = (fallback = 0) => num(
-    selectedPlayer?.save?.slot
-      ?? selectedPlayer?.profile?.slot
-      ?? selectedPlayer?.slot,
-    fallback
-  );
+  const selectedPlayerSlot = (fallback = 0) => Number.isFinite(Number(selectedPlayerSlotIndex))
+    ? Math.max(0, Math.min(3, Math.floor(Number(selectedPlayerSlotIndex))))
+    : num(selectedPlayer?.save?.slot ?? selectedPlayer?.profile?.slot ?? selectedPlayer?.slot, fallback);
 
   function normalizePlayerAccounts(value) {
     return safeArray(value)
@@ -481,7 +480,7 @@
       playerAccounts = normalizePlayerAccounts(response.accounts);
       players = playerAccounts.flatMap((account) => account.characters.map((character) => ({ ...character, uid: character.uid || account.uid, email: account.email, accountName: account.accountName, online: account.online, lastSeenAtMs: account.lastSeenAtMs, key: `${character.uid || account.uid}:${character.slot}` })));
       renderPlayerList();
-      if (selectedPlayer?.uid && players.some((player) => player.uid === selectedPlayer.uid && num(player.slot) === selectedPlayerSlot())) await selectPlayer(selectedPlayer.uid, selectedPlayerSlot(), true);
+      if (selectedPlayerUid && players.some((player) => player.uid === selectedPlayerUid && num(player.slot) === selectedPlayerSlot())) await selectPlayer(selectedPlayerUid, selectedPlayerSlot(), true);
     } catch (error) {
       const list = content().querySelector("[data-player-list]");
       if (list) list.innerHTML = `<p class="online-mod-message error">${esc(error.message)}</p>`;
@@ -515,22 +514,69 @@
     list.innerHTML = accounts.length ? accounts.map((account) => {
       const chars = safeArray(account.characters).filter((character) => shownKeys.has(`${account.uid}:${character.slot}`));
       const mobile = window.matchMedia("(max-width: 760px)").matches;
-      const expanded = mobile || expandedAccounts.has(account.uid) || (selectedPlayer?.uid === account.uid);
+      const expanded = mobile || expandedAccounts.has(account.uid) || (selectedPlayerUid === account.uid);
       return `<section class="online-mod-account-group ${expanded ? "expanded" : ""}">
         <button type="button" class="online-mod-account-row" data-toggle-account="${esc(account.uid)}"><span class="online-dot ${account.online ? "online" : ""}"></span><span><b>${esc(account.email || "E-Mail unbekannt")}</b><small>${chars.length} getrennte Charakter${chars.length === 1 ? "-Akte" : "-Akten"} · ${account.online ? "LIVE" : relativeTime(account.lastSeenAtMs)}</small></span><em>${expanded ? "▾" : "▸"}</em></button>
-        <div class="online-mod-character-list">${chars.map((player) => `<button type="button" class="online-mod-player-row ${selectedPlayer && selectedPlayer.uid === player.uid && selectedPlayerSlot() === num(player.slot) ? "active" : ""}" data-select-player="${esc(player.uid)}" data-select-slot="${num(player.slot)}"><span class="online-mod-avatar mini">${esc(String(player.displayName || "C").slice(0,1).toUpperCase())}</span><span class="online-mod-player-row-main"><b>${esc(player.displayName || `Charakter ${num(player.slot)+1}`)}</b><small>Slot ${num(player.slot)+1} · Level ${num(player.level)} · ${esc(player.city || "Kein Ort")}</small><small>${esc(player.job || "Kein Job")} · eigene Mod/Hack-Akte</small></span><span class="online-mod-player-row-meta">${player.characterStatus === "hack" ? `<i class="risk">HACK</i>` : player.characterStatus === "mod" ? `<i class="mod">MOD</i>` : ""}</span></button>`).join("")}</div>
+        <div class="online-mod-character-list">${chars.map((player) => `<button type="button" class="online-mod-player-row ${selectedPlayerUid === player.uid && selectedPlayerSlot() === num(player.slot) ? "active" : ""}" data-select-player="${esc(player.uid)}" data-select-slot="${num(player.slot)}"><span class="online-mod-avatar mini">${esc(String(player.displayName || "C").slice(0,1).toUpperCase())}</span><span class="online-mod-player-row-main"><b>${esc(player.displayName || `Charakter ${num(player.slot)+1}`)}</b><small>Slot ${num(player.slot)+1} · Level ${num(player.level)} · ${esc(player.city || "Kein Ort")}</small><small>${esc(player.job || "Kein Job")} · eigene Mod/Hack-Akte</small></span><span class="online-mod-player-row-meta">${player.characterStatus === "hack" ? `<i class="risk">HACK</i>` : player.characterStatus === "mod" ? `<i class="mod">MOD</i>` : ""}</span></button>`).join("")}</div>
       </section>`;
     }).join("") : `<div class="online-mod-empty-state compact"><span>⌕</span><p>Keine passenden Accounts oder Charaktere gefunden.</p></div>`;
   }
 
+  async function readCharacterSlotDirect(uid, slot) {
+    try {
+      const fb = await runtime();
+      const ref = fb.doc(fb.db, "gameSaves", uid, "slots", `slot-${slot + 1}`);
+      const snapshot = await fb.getDoc(ref);
+      if (!snapshot.exists()) return null;
+      const raw = snapshot.data() || {};
+      const save = safeObject(raw.state || raw.save || raw.gameState || raw);
+      return Object.keys(save).length ? save : null;
+    } catch (error) {
+      console.warn("Einstellungsmenü: direkter Charakter-Slot konnte nicht gelesen werden", uid, slot, error?.message || error);
+      return null;
+    }
+  }
+
+  function clickedCharacterSummary(uid, slot) {
+    return players.find((player) => player.uid === uid && num(player.slot) === num(slot)) || null;
+  }
+
   async function selectPlayer(uid, slot = 0, silent = false) {
     const detail = content().querySelector("[data-player-detail]");
-    if (selectedPlayer?.uid !== uid || selectedPlayerSlot() !== num(slot)) playerActionReason = "";
+    const normalizedSlot = Math.max(0, Math.min(3, Math.floor(num(slot))));
+    if (selectedPlayerUid !== uid || selectedPlayerSlot() !== normalizedSlot) playerActionReason = "";
+    selectedPlayerUid = String(uid || "");
+    selectedPlayerSlotIndex = normalizedSlot;
     if (!detail) return;
-    if (!silent) detail.innerHTML = `<div class="online-mod-loading"><i></i><p>Spielerdaten werden geladen …</p></div>`;
+    if (!silent) detail.innerHTML = `<div class="online-mod-loading"><i></i><p>Charakter-Slot ${normalizedSlot + 1} wird geladen …</p></div>`;
     try {
-      const response = await callFunction("getPlayerDetails", { targetUid: uid, slot });
-      selectedPlayer = response.player || null;
+      const summary = clickedCharacterSummary(uid, normalizedSlot);
+      const payload = { targetUid: uid, slot: normalizedSlot, slotIndex: normalizedSlot, characterSlot: normalizedSlot, saveSlot: normalizedSlot };
+      const [response, directSave] = await Promise.all([
+        callFunction("getPlayerDetails", payload),
+        readCharacterSlotDirect(uid, normalizedSlot)
+      ]);
+      const received = safeObject(response.player);
+      const receivedProfile = safeObject(received.profile);
+      const receivedSave = safeObject(received.save);
+      const mergedSave = directSave ? { ...receivedSave, ...directSave, slot: normalizedSlot } : { ...receivedSave, slot: normalizedSlot };
+      const displayName = summary?.displayName || mergedSave.firstName && `${mergedSave.firstName} ${mergedSave.lastName || ""}`.trim() || receivedProfile.displayName || `Charakter ${normalizedSlot + 1}`;
+      selectedPlayer = {
+        ...received,
+        uid: String(uid),
+        slot: normalizedSlot,
+        save: mergedSave,
+        profile: {
+          ...receivedProfile,
+          slot: normalizedSlot,
+          displayName,
+          level: summary?.level ?? mergedSave.level ?? receivedProfile.level,
+          city: summary?.city ?? mergedSave.worldLocation ?? mergedSave.homeCity ?? receivedProfile.city,
+          job: summary?.job ?? mergedSave.job ?? receivedProfile.job,
+          online: summary?.online ?? receivedProfile.online,
+          lastSeenAtMs: summary?.lastSeenAtMs ?? receivedProfile.lastSeenAtMs
+        }
+      };
       if (!availablePlayerTabs().some((tab) => tab.id === playerTab)) playerTab = "overview";
       renderPlayerList();
       renderPlayerDetail();
@@ -887,7 +933,7 @@
       <section class="online-mod-event-layout">
         <form data-event-form class="online-mod-card online-mod-event-form">
           <div class="online-mod-card-title"><span>🏆</span><div><small>EVENT-DATEN</small><h3>Planung</h3></div></div>
-          <div class="online-mod-form-grid"><label>Titel<input name="title" maxlength="80" required></label><label>Gewinnerplätze<input name="maxWinners" type="number" min="1" max="100" value="1"></label><label class="wide">Beschreibung<textarea name="description" maxlength="600"></textarea></label><label class="wide">Aufgabe<textarea name="task" maxlength="600" placeholder="Was sollen die Spieler machen?"></textarea></label><label>Event-Ziel<select name="criterionType"><option value="item">Item zuerst erhalten/kaufen</option><option value="achievement">Erfolg freischalten</option><option value="level">Level erreichen</option><option value="money">Geldwert erreichen</option><option value="manual">Manuell prüfen</option></select></label><label>Zielwert / Anzahl<input name="criterionValue" type="number" min="1" value="1"></label><label class="wide">Ziel-Item oder Erfolg<input name="criterionTarget" list="event-target-catalog" placeholder="Item-ID oder Erfolgs-ID auswählen/eingeben"><datalist id="event-target-catalog">${catalogRows.slice(0,600).map((row) => `<option value="${esc(row.id)}">${esc(row.name)}</option>`).join("")}</datalist></label><label class="wide">Nachweis-Hinweis<input name="proofHint" maxlength="240"></label><label>Start<input name="startsAt" type="datetime-local"></label><label>Ende<input name="endsAt" type="datetime-local"></label><label>Geldpreis<input name="rewardMoney" type="number" min="0" value="0"></label><div></div><label class="wide">Item-Preise<textarea name="rewardItems" placeholder="ITEM-ID | Anzahl | Name – eine Zeile pro Item"></textarea></label></div>
+          <div class="online-mod-form-grid"><label>Titel<input name="title" maxlength="80" required></label><label>Gewinnerplätze<input name="maxWinners" type="number" min="1" max="100" value="1"></label><label class="wide">Beschreibung<textarea name="description" maxlength="600"></textarea></label><label class="wide">Aufgabe<textarea name="task" maxlength="600" placeholder="Was sollen die Spieler machen?"></textarea></label><label>Event-Ziel<select name="criterionType"><option value="item">Item zuerst erhalten/kaufen</option><option value="achievement">Erfolg freischalten</option><option value="level">Level erreichen</option><option value="money">Geldwert erreichen</option><option value="manual">Manuell prüfen</option></select></label><label>Zielwert / Anzahl<input name="criterionValue" type="number" min="1" value="1"></label><label class="wide">Ziel-Item oder Erfolg<input name="criterionTarget" list="event-target-catalog" placeholder="Item-ID oder Erfolgs-ID auswählen/eingeben"><datalist id="event-target-catalog">${itemRows.slice(0,600).map((row) => `<option value="${esc(row.id)}">${esc(row.name)}</option>`).join("")}</datalist></label><label class="wide">Nachweis-Hinweis<input name="proofHint" maxlength="240"></label><label>Start<input name="startsAt" type="datetime-local"></label><label>Ende<input name="endsAt" type="datetime-local"></label><label>Geldpreis<input name="rewardMoney" type="number" min="0" value="0"></label><div></div><label class="wide">Item-Preise<textarea name="rewardItems" placeholder="ITEM-ID | Anzahl | Name – eine Zeile pro Item"></textarea></label></div>
           <div class="online-mod-actions"><button type="submit" name="eventAction" value="save">Entwurf speichern</button><button class="online-mod-primary" type="submit" name="eventAction" value="start">Event starten</button><button type="submit" name="eventAction" value="end">Beenden</button><button type="submit" class="danger" name="eventAction" value="clear">Löschen</button></div><p class="online-mod-message" data-event-message></p>
         </form>
         <aside class="online-mod-card online-mod-event-items"><div class="online-mod-card-title"><span>#</span><div><small>PREIS-KATALOG</small><h3>Item hinzufügen</h3></div></div><label class="online-mod-search-box"><span>⌕</span><input data-event-item-search value="${esc(eventItemSearch)}" placeholder="Preis-Item suchen"></label><div class="online-mod-event-item-list" data-event-item-list>${renderEventItemRows()}</div></aside>
@@ -1265,7 +1311,7 @@
       const data = formDataObject(form);
       const message = form.querySelector("[data-event-message]");
       try {
-        const criterionType = data.criterionType || "manual"; const criterionTarget = String(data.criterionTarget || "").trim(); const criterionRow = catalogRows.find((row) => row.id === criterionTarget); const payload = { title: data.title, description: data.description, task: data.task, proofHint: data.proofHint, startsAtMs: data.startsAt ? new Date(data.startsAt).getTime() : 0, endsAtMs: data.endsAt ? new Date(data.endsAt).getTime() : 0, rewardMoney: num(data.rewardMoney), maxWinners: num(data.maxWinners, 1), rewardItems: parseRewardItems(data.rewardItems), criterion: { type: criterionType, itemId: criterionType === "item" ? criterionTarget : "", achievementId: criterionType === "achievement" ? criterionTarget : "", label: criterionRow?.name || criterionTarget, amount: criterionType === "item" ? Math.max(1, num(data.criterionValue, 1)) : 1, value: ["level", "money"].includes(criterionType) ? Math.max(1, num(data.criterionValue, 1)) : 0 } };
+        const criterionType = data.criterionType || "manual"; const criterionTarget = String(data.criterionTarget || "").trim(); const criterionRow = itemRows.find((row) => row.id === criterionTarget); const payload = { title: data.title, description: data.description, task: data.task, proofHint: data.proofHint, startsAtMs: data.startsAt ? new Date(data.startsAt).getTime() : 0, endsAtMs: data.endsAt ? new Date(data.endsAt).getTime() : 0, rewardMoney: num(data.rewardMoney), maxWinners: num(data.maxWinners, 1), rewardItems: parseRewardItems(data.rewardItems), criterion: { type: criterionType, itemId: criterionType === "item" ? criterionTarget : "", achievementId: criterionType === "achievement" ? criterionTarget : "", label: criterionRow?.name || criterionTarget, amount: criterionType === "item" ? Math.max(1, num(data.criterionValue, 1)) : 1, value: ["level", "money"].includes(criterionType) ? Math.max(1, num(data.criterionValue, 1)) : 0 } };
         await callFunction("eventAction", { action, event: payload });
         message.textContent = "Event aktualisiert."; message.classList.remove("error"); toast("Event aktualisiert.");
       } catch (error) { message.textContent = error.message; message.classList.add("error"); toast(error.message, "error"); }
@@ -1304,7 +1350,7 @@
   }
 
   async function listenRole(user) {
-    roleUnsubscribe?.(); roleUnsubscribe = null; roleData = null; selectedPlayer = null; sessionStorage.removeItem(SESSION_KEY); updateSettingsEntry();
+    roleUnsubscribe?.(); roleUnsubscribe = null; roleData = null; selectedPlayer = null; selectedPlayerUid = ""; selectedPlayerSlotIndex = 0; sessionStorage.removeItem(SESSION_KEY); updateSettingsEntry();
     if (!user) return;
     const fb = await runtime();
     roleUnsubscribe = fb.onSnapshot(fb.doc(fb.db, "staffRoles", user.uid), (snapshot) => {

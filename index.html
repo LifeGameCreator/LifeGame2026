@@ -15,16 +15,17 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>LifeBuilder 2026</title>
-    <link rel="manifest" href="manifest.webmanifest?v=20260724-finanz-obdachlos-v2">
-    <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/apple-touch-icon.png?v=20260724-finanz-obdachlos-v2">
-    <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png?v=20260724-finanz-obdachlos-v2">
-    <link rel="icon" type="image/png" sizes="16x16" href="assets/icons/favicon-16.png?v=20260724-finanz-obdachlos-v2">
-    <link rel="stylesheet" href="styles.css?v=20260724-finanz-obdachlos-v2">
-    <link rel="stylesheet" href="financial-crisis.css?v=20260724-finanz-obdachlos-v2">
-    <link rel="stylesheet" href="online-settings-menu.css?v=20260724-finanz-obdachlos-v2">
-    <link rel="stylesheet" href="aergermensch-kl.css?v=20260724-finanz-obdachlos-v2">
-    <link rel="stylesheet" href="battle-hub-kl.css?v=20260724-finanz-obdachlos-v2">
-    <link rel="stylesheet" href="weed-kl.css?v=20260724-finanz-obdachlos-v2">
+    <link rel="manifest" href="manifest.webmanifest?v=20260724-mrdn-fuehrerschein-tutorial-v1">
+    <link rel="apple-touch-icon" sizes="180x180" href="assets/icons/apple-touch-icon.png?v=20260724-mrdn-fuehrerschein-tutorial-v1">
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/icons/favicon-32.png?v=20260724-mrdn-fuehrerschein-tutorial-v1">
+    <link rel="icon" type="image/png" sizes="16x16" href="assets/icons/favicon-16.png?v=20260724-mrdn-fuehrerschein-tutorial-v1">
+    <link rel="stylesheet" href="styles.css?v=20260724-mrdn-fuehrerschein-tutorial-v1">
+    <link rel="stylesheet" href="financial-crisis.css?v=20260724-mrdn-fuehrerschein-tutorial-v1">
+    <link rel="stylesheet" href="online-settings-menu.css?v=20260724-mrdn-fuehrerschein-tutorial-v1">
+    <link rel="stylesheet" href="mrdn-kl.css?v=20260724-mrdn-fuehrerschein-tutorial-v1">
+    <link rel="stylesheet" href="battle-hub-kl.css?v=20260724-mrdn-fuehrerschein-tutorial-v1">
+    <link rel="stylesheet" href="weed-kl.css?v=20260724-mrdn-fuehrerschein-tutorial-v1">
+    <link rel="stylesheet" href="life-update-20260724.css?v=20260724-mrdn-fuehrerschein-tutorial-v1">
 </head>
   <body>
     <div id="app" class="app-shell">
@@ -91,6 +92,7 @@
               </select>
             </label>
             <button id="changeCharacterBtn" class="secondary-button settings-wide" type="button">Charakter wechseln</button>
+            <button id="whatsNewBtn" class="secondary-button settings-wide whats-new-settings-button" type="button">Neuheiten</button>
           </div>
         </div>
 
@@ -209,12 +211,14 @@
               <button class="dashboard-shortcut casino" type="button" data-dashboard-tab="casino">
                 <span>Casino</span>
                 <b>▥</b>
-                <small class="shortcut-lock" data-level-lock="casino">Ab Level 2</small>
               </button>
               <button class="dashboard-shortcut realestate" type="button" data-dashboard-tab="realestate">
-                <span>Immobilien</span>
+                <span><span class="desktop-label">Immobilien</span><span class="mobile-label">Immo</span></span>
                 <b>⌂⌂</b>
-                <small class="shortcut-lock" data-level-lock="realestate">Ab Level 2</small>
+              </button>
+              <button class="dashboard-shortcut upcoming" type="button" data-upcoming-area>
+                <span>Zentrale</span>
+                <b>◇</b>
               </button>
             </div>
             <button class="phone-shortcut" type="button" data-phone-shortcut disabled>
@@ -310,15 +314,16 @@
       </dialog>
     </div>
 
-  <script src="webrtc-config.js?v=20260724-finanz-obdachlos-v2"></script>
-  <script src="app.js?v=20260724-finanz-obdachlos-v2"></script>
-  <script src="financial-crisis.js?v=20260724-finanz-obdachlos-v2"></script>
-  <script src="online-events.js?v=20260724-finanz-obdachlos-v2"></script>
-  <script src="support-tickets.js?v=20260724-finanz-obdachlos-v2"></script>
-  <script src="online-settings-menu.js?v=20260724-finanz-obdachlos-v2"></script>
-  <script src="aergermensch-kl.js?v=20260724-finanz-obdachlos-v2"></script>
-  <script src="battle-hub-kl.js?v=20260724-finanz-obdachlos-v2"></script>
-  <script src="weed-kl.js?v=20260724-finanz-obdachlos-v2"></script>
+  <script src="webrtc-config.js?v=20260724-mrdn-fuehrerschein-tutorial-v1"></script>
+  <script src="app.js?v=20260724-mrdn-fuehrerschein-tutorial-v1"></script>
+  <script src="financial-crisis.js?v=20260724-mrdn-fuehrerschein-tutorial-v1"></script>
+  <script src="online-events.js?v=20260724-mrdn-fuehrerschein-tutorial-v1"></script>
+  <script src="support-tickets.js?v=20260724-mrdn-fuehrerschein-tutorial-v1"></script>
+  <script src="online-settings-menu.js?v=20260724-mrdn-fuehrerschein-tutorial-v1"></script>
+  <script src="mrdn-kl.js?v=20260724-mrdn-fuehrerschein-tutorial-v1"></script>
+  <script src="battle-hub-kl.js?v=20260724-mrdn-fuehrerschein-tutorial-v1"></script>
+  <script src="weed-kl.js?v=20260724-mrdn-fuehrerschein-tutorial-v1"></script>
+  <script src="life-update-20260724.js?v=20260724-mrdn-fuehrerschein-tutorial-v1"></script>
   <script>
     (() => {
       const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
