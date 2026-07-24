@@ -2,7 +2,7 @@
   "use strict";
 
   const AM_APP_ID = "aergermensch-kl";
-  const AM_VERSION = "2026-07-23-mobile-fullscreen-v4";
+  const AM_VERSION = "2026-07-24-mobile-score-tools-v5";
   const AM_DATABASE_ID = "gamekl";
   const AM_COLLECTION = "angerMenschGames";
   const AM_MAX_LOG = 18;
@@ -988,12 +988,19 @@
     const phaseText = game.status === "finished" ? "ENDE" : game.phase === "roll" ? "WÜRFELN" : "ZIEHEN";
     const fullscreenText = document.fullscreenElement ? "Fenster" : "Vollbild";
     const sideTab = ["players", "shop", "log"].includes(amRuntime.sideTab) ? amRuntime.sideTab : "players";
+    const scoreStrip = game.players.map((player, index) => {
+      const color = amPlayerColor(index);
+      const home = (game.pawns[player.id] || []).filter((progress) => Number(progress) >= 40).length;
+      return `<span style="--p:${color.hex}" class="${index === amOwnPlayerIndex(game) ? "own" : ""}"><i></i><b>${amEscape(player.name)}</b><strong>${Number(player.points || 0)}P</strong><small>${home}/4</small></span>`;
+    }).join("");
+    const ownPoints = Number(game.players[amOwnPlayerIndex(game)]?.points || 0);
 
     return `<section class="am-game-shell" style="--turn-color:${currentColor.hex}">
       <header class="am-game-head">
         <div class="am-head-copy"><p>ÄrgerMensch.KL · ${roomLabel}</p><h2>${statusText}</h2><small>${actionText}</small></div>
         <div class="am-head-actions"><button data-am-fullscreen>${fullscreenText}</button>${game.online ? `<button data-am-copy-code>Code kopieren</button>` : ""}<button data-am-minimize>Minimieren</button></div>
       </header>
+      <div class="am-mobile-score-strip" aria-label="Spieler, Points und Zielfiguren">${scoreStrip}</div>
       <div class="am-game-layout">
         <main class="am-board-panel">
           <div class="am-board-stage">
@@ -1014,6 +1021,7 @@
             </div>
           </div>
         </main>
+        <nav class="am-mobile-tools" aria-label="Spielinformationen"><button data-am-side-tab="players">Spieler</button><button class="boosts" data-am-side-tab="shop">Boosts <strong>${ownPoints}</strong></button><button data-am-side-tab="log">Verlauf</button></nav>
         <aside class="am-side-panel ${amRuntime.mobileSheetOpen ? "sheet-open" : "sheet-closed"}" data-am-side-panel>
           <nav class="am-side-tabs" aria-label="Spielinformationen"><button class="am-sheet-close" data-am-sheet-close aria-label="Informationen schließen">×</button>
             <button class="${sideTab === "players" ? "active" : ""}" data-am-side-tab="players">Spieler</button>

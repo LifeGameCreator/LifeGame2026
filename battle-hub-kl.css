@@ -949,3 +949,365 @@ body.bh-open { overflow: hidden !important; }
   .bh-territory-board-wrap { grid-template-rows: auto minmax(0,1fr) !important; }
   .bh-move-pad-v2 { display: none !important; }
 }
+
+
+/* ========================================================================== */
+/* Responsive Arena V5 · 2026-07-24                                           */
+/* Spielfeld mittig, Spielstand oben, Boosts unten/als Mobile-Sheet, kein      */
+/* Scrollen während einer laufenden Partie.                                    */
+/* ========================================================================== */
+.bh-game-shell {
+  width: min(1420px, calc(100vw - 20px));
+  height: min(980px, calc(100dvh - 20px));
+  min-height: 560px;
+  overflow: hidden !important;
+}
+.bh-mobile-score-strip {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  gap: 7px;
+  padding: 7px 12px;
+  overflow: hidden;
+}
+.bh-mobile-score-strip > span { min-width: 0; }
+.bh-game-layout {
+  display: block !important;
+  flex: 1 1 auto;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+.bh-game-layout > main {
+  width: 100%;
+  max-width: 1180px;
+  height: 100%;
+  margin: 0 auto;
+  padding: 10px 14px 12px !important;
+  overflow: hidden !important;
+}
+.bh-game-layout > aside { display: none !important; }
+.bh-game-main {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+.bh-game-main > section { min-width: 0; }
+.bh-board-status { min-width: 0; }
+.bh-board-status > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bh-mobile-boost-trigger { display: none; }
+.bh-power-head-actions { display: flex; align-items: center; gap: 8px; }
+.bh-power-head-actions button,
+.bh-power-dock > header button {
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent), transparent 55%);
+  border-radius: 10px;
+  color: #06121d;
+  background: var(--accent);
+  font-weight: 950;
+}
+.bh-boost-grid { display: grid !important; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px !important; }
+.bh-card-drawer .bh-boost-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+/* Grundstück-Kampf: das 18×24-Raster besitzt immer genau das passende Seitenverhältnis. */
+.bh-territory-main.bh-arena-v3 { grid-template-rows: minmax(0, 1fr) auto; }
+.bh-territory-board-wrap {
+  width: 100%;
+  max-width: 900px;
+  height: 100%;
+  margin: 0 auto;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  padding: 8px !important;
+}
+.bh-territory-canvas-wrap {
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+  aspect-ratio: 3 / 4;
+  justify-self: center;
+  align-self: center;
+}
+.bh-territory-canvas { width: 100% !important; height: 100% !important; }
+.bh-move-pad-v2 { width: min(330px, 100%); }
+.bh-power-dock,
+.bh-card-drawer {
+  width: 100%;
+  max-width: 1100px;
+  max-height: 190px;
+  margin: 0 auto;
+  padding: 10px !important;
+  overflow: auto;
+}
+.bh-power-dock > header,
+.bh-card-drawer > header { margin-bottom: 8px; }
+.bh-power-dock > .bh-boost-grid > button,
+.bh-card-drawer > .bh-boost-grid > button { min-height: 66px; }
+
+/* Paket-Chaos V3: zentrale Scannerstation, Ziele darunter, Boosts darunter. */
+.bh-package-main.bh-package-v3 { grid-template-rows: minmax(0, 1fr) auto; }
+.bh-sort-station {
+  width: 100%;
+  max-width: 1000px;
+  height: 100%;
+  margin: 0 auto;
+  grid-template-rows: auto auto minmax(180px, 1fr) auto auto !important;
+  gap: 8px;
+  padding: 10px !important;
+}
+.bh-package-status > span strong { color: var(--accent); }
+.bh-package-stage {
+  width: 100%;
+  max-width: 880px;
+  min-height: 0;
+  margin: 0 auto;
+  padding: 58px 118px 12px 12px;
+  border-radius: 22px;
+}
+.bh-conveyor-label {
+  position: absolute;
+  z-index: 4;
+  left: 14px;
+  top: 12px;
+  display: grid;
+  gap: 1px;
+}
+.bh-conveyor-label span { color: var(--accent); font-size: .62rem; font-weight: 950; letter-spacing: .11em; }
+.bh-conveyor-label small { color: #92a5b8; font-size: .62rem; }
+.bh-package-scanner {
+  position: relative;
+  width: min(480px, 92%);
+  display: grid;
+  place-items: center;
+}
+.bh-scan-line {
+  position: absolute;
+  z-index: 5;
+  left: 5%;
+  right: 5%;
+  top: 18%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #fff, transparent);
+  box-shadow: 0 0 16px var(--pack, #fff);
+  animation: bhScanPackage 2.1s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+@keyframes bhScanPackage { to { top: 82%; } }
+.bh-package.hero { width: 100%; min-height: min(270px, 34dvh); }
+.bh-package-kicker { position: relative; z-index: 1; color: rgba(30,20,5,.64); font-size: .58rem; font-weight: 950; letter-spacing: .12em; }
+.bh-up-next { width: 96px; }
+.bh-sort-bins { width: 100%; max-width: 880px; margin: 0 auto; }
+.bh-fragile-hold,
+.bh-standard-ready { width: 100%; max-width: 880px; margin: 0 auto; }
+
+/* Reaktions-Battle bleibt groß und nutzt den zentralen Bereich. */
+.bh-reaction-main { max-width: 1050px; margin: 0 auto; }
+.bh-reaction-arena { width: 100%; }
+
+/* Startseiten unterhalb der iPhone-Statusleiste. */
+@media (max-width: 850px) {
+  .bh-launcher .bh-header { min-height: 82px !important; padding-top: max(36px, env(safe-area-inset-top)) !important; }
+  .bh-launcher .bh-header > button { align-self: end; }
+
+  .bh-shell.bh-game-shell {
+    width: 100%;
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden !important;
+  }
+  .bh-game-shell .bh-header {
+    min-height: 62px;
+    padding: max(16px, env(safe-area-inset-top)) 8px 7px !important;
+  }
+  .bh-mobile-score-strip {
+    flex: 0 0 auto;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+    padding: 5px 7px;
+  }
+  .bh-mobile-score-strip > span {
+    grid-template-columns: 7px minmax(0, 1fr) auto;
+    gap: 4px;
+    padding: 6px 6px;
+    border-radius: 10px;
+  }
+  .bh-mobile-score-strip b { font-size: clamp(.53rem, 2.5vw, .66rem); }
+  .bh-mobile-score-strip strong { font-size: clamp(.62rem, 2.8vw, .76rem); }
+  .bh-game-layout > main { padding: 5px !important; }
+  .bh-game-main { grid-template-rows: minmax(0, 1fr); gap: 0; position: relative; }
+  .bh-game-main > section:first-child { height: 100%; }
+  .bh-mobile-boost-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 34px;
+    padding: 6px 9px;
+    border: 1px solid color-mix(in srgb, var(--accent), transparent 46%);
+    border-radius: 10px;
+    color: #06121d;
+    background: var(--accent);
+    font-size: .62rem;
+    font-weight: 950;
+    white-space: nowrap;
+  }
+  .bh-mobile-boost-trigger strong {
+    display: grid;
+    place-items: center;
+    min-width: 19px;
+    height: 19px;
+    border-radius: 999px;
+    background: rgba(0,0,0,.17);
+  }
+
+  .bh-territory-board-wrap {
+    max-width: none;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    padding: 5px !important;
+  }
+  .bh-arena-status { min-height: 42px; grid-template-columns: auto minmax(0, 1fr) auto; }
+  .bh-arena-status b { font-size: 1.55rem; }
+  .bh-arena-status span { font-size: .62rem; }
+  .bh-territory-canvas-wrap {
+    width: auto;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    aspect-ratio: 3 / 4;
+    border-radius: 14px;
+  }
+  .bh-move-pad-v2 { display: none !important; }
+  .bh-power-dock,
+  .bh-card-drawer {
+    display: block !important;
+    position: fixed !important;
+    z-index: 90;
+    left: 7px;
+    right: 7px;
+    bottom: max(7px, env(safe-area-inset-bottom));
+    width: auto;
+    max-width: none;
+    height: auto;
+    max-height: 70dvh;
+    margin: 0;
+    padding: 11px !important;
+    overflow-y: auto;
+    border-radius: 22px !important;
+    background: rgba(5, 14, 25, .985) !important;
+    box-shadow: 0 -24px 70px rgba(0,0,0,.68);
+    backdrop-filter: blur(20px);
+    transform: translateY(calc(100% + 24px));
+    opacity: 0;
+    pointer-events: none;
+    transition: transform .22s ease, opacity .18s ease;
+  }
+  .bh-power-dock.open,
+  .bh-card-drawer.open {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .bh-power-dock > header,
+  .bh-card-drawer > header { display: flex !important; }
+  .bh-boost-grid,
+  .bh-card-drawer .bh-boost-grid { grid-template-columns: 1fr 1fr !important; }
+  .bh-power-dock > .bh-boost-grid > button,
+  .bh-card-drawer > .bh-boost-grid > button {
+    min-height: 74px !important;
+    grid-template-columns: 44px minmax(0,1fr) 27px !important;
+    place-items: center stretch !important;
+    padding: 8px !important;
+  }
+  .bh-power-dock > .bh-boost-grid > button > div,
+  .bh-card-drawer > .bh-boost-grid > button > div { display: block !important; }
+  .bh-power-dock > .bh-boost-grid > button > strong,
+  .bh-card-drawer > .bh-boost-grid > button > strong { position: static !important; width: 27px !important; height: 27px !important; }
+
+  .bh-sort-station {
+    max-width: none;
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto !important;
+    gap: 5px;
+    padding: 5px !important;
+  }
+  .bh-package-status { min-height: 40px; grid-template-columns: auto minmax(0,1fr) auto; gap: 5px; }
+  .bh-package-status b { font-size: 1.38rem; }
+  .bh-package-status > span { font-size: .57rem; line-height: 1.15; text-align: center; white-space: normal; }
+  .bh-route-ribbon { gap: 3px; }
+  .bh-route-ribbon > span { padding: 4px; border-radius: 9px; }
+  .bh-route-ribbon b { font-size: .53rem; }
+  .bh-route-ribbon small { font-size: .46rem; }
+  .bh-package-stage {
+    max-width: none;
+    padding: 46px 5px 5px;
+    border-radius: 15px;
+  }
+  .bh-conveyor-label { left: 8px; top: 6px; }
+  .bh-conveyor-label small { display: none; }
+  .bh-package-scanner { width: min(315px, 92%); }
+  .bh-package.hero { min-height: min(205px, 27dvh); padding: 13px 7px; border-radius: 18px; }
+  .bh-package.hero b { font-size: clamp(2rem, 12vw, 3.2rem); }
+  .bh-package.hero div:not(.bh-package-mark) { font-size: .78rem; }
+  .bh-package.hero small { font-size: .62rem; }
+  .bh-up-next {
+    right: 5px;
+    top: 5px;
+    bottom: auto;
+    width: auto;
+    max-width: 43%;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .bh-up-next > small { display: none; }
+  .bh-package.compact { width: 48px; min-height: 37px; padding: 3px; border-width: 1px; border-radius: 8px; }
+  .bh-package.compact .tape,
+  .bh-package.compact .bh-package-kicker,
+  .bh-package.compact div,
+  .bh-package.compact small { display: none; }
+  .bh-package.compact b { font-size: .5rem; }
+  .bh-package-feedback { bottom: 5px; max-width: 94%; overflow: hidden; text-overflow: ellipsis; font-size: .58rem; }
+  .bh-fragile-hold,
+  .bh-standard-ready { min-height: 47px; padding: 5px 7px; border-radius: 12px; }
+  .bh-fragile-hold::before,
+  .bh-standard-ready > span { width: 34px; height: 34px; }
+  .bh-fragile-hold b,
+  .bh-standard-ready b { font-size: .69rem; }
+  .bh-fragile-hold small,
+  .bh-standard-ready small { font-size: .54rem; }
+  .bh-sort-bins { grid-template-columns: 1fr 1fr !important; gap: 4px; }
+  .bh-sort-bins button { min-height: 58px !important; border-radius: 12px !important; }
+  .bh-sort-bins b { font-size: .92rem; }
+  .bh-sort-bins small { font-size: .45rem; }
+  .bh-sort-bins em { font-size: .55rem; }
+
+  .bh-game-reaction .bh-game-layout > main { padding: 0 !important; }
+  .bh-reaction-arena { grid-template-rows: auto minmax(110px,.72fr) minmax(190px,1.28fr) !important; }
+  .bh-life-row { display: none !important; }
+  .bh-prompt { padding: 8px 6px; }
+  .bh-prompt h2 { font-size: clamp(1.8rem, 9vw, 3.4rem); }
+}
+
+@media (max-width: 390px) {
+  .bh-game-shell .bh-header { min-height: 58px; }
+  .bh-mobile-score-strip { padding-inline: 4px; gap: 3px; }
+  .bh-mobile-score-strip > span { padding-inline: 4px; }
+  .bh-territory-canvas-wrap { max-height: calc(100dvh - 170px); }
+  .bh-package.hero { min-height: min(185px, 24dvh); }
+  .bh-sort-bins button { min-height: 54px !important; }
+}
+
+/* Finale Canvas-Skalierung: Breite bestimmt die Höhe, dadurch keine leere
+   Hochformatfläche ober- oder unterhalb des Grundstück-Rasters. */
+.bh-territory-canvas-wrap {
+  width: min(100%, 680px, calc((100dvh - 230px) * .75)) !important;
+  height: auto !important;
+  aspect-ratio: 3 / 4 !important;
+}
+@media (max-width: 850px) {
+  .bh-territory-canvas-wrap {
+    width: min(100%, calc((100dvh - 175px) * .75)) !important;
+    height: auto !important;
+    max-height: 100% !important;
+  }
+}

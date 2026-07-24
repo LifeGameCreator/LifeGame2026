@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const BH_VERSION = "2026-07-23-mobile-arena-v3";
+  const BH_VERSION = "2026-07-24-responsive-arena-v5";
   const BH_DATABASE_ID = "gamekl";
   const BH_COLLECTION = "lifeBuilderBattleGames";
   const BH_TICK_MS = 320;
@@ -68,6 +68,7 @@
     rewardKeys: new Set(),
     uiTicker: null,
     packageCardsOpen: false,
+    territoryPowerOpen: false,
     territoryPointer: null,
     territoryHoldTimer: null,
     territoryHoldDelay: null
@@ -993,26 +994,27 @@
     const ownPlayer = game.players[ownIndex];
     const inventory = ownPlayer ? game.inventory[ownPlayer.id] : {};
     const effects = ownPlayer ? game.effects[ownPlayer.id] : {};
+    const powerCount = Object.values(inventory || {}).reduce((sum, value) => sum + Number(value || 0), 0);
     const status = Number(effects?.frozenUntilMs || 0) > nowMs()
       ? "❄ Eingefroren"
       : Number(effects?.doubleUntilMs || 0) > nowMs()
         ? "×2 Doppelte Eroberung"
         : Number(effects?.shieldUntilMs || 0) > nowMs()
           ? "⬡ Gebiet geschützt"
-          : "Wischen, tippen oder Steuerkreuz";
-    return `<div class="bh-game-main bh-territory-main bh-arena-v2">
+          : "Wischen oder Feld antippen";
+    return `<div class="bh-game-main bh-territory-main bh-arena-v3">
       <section class="bh-territory-board-wrap">
-        <div class="bh-board-status bh-arena-status"><b data-bh-timer="${Number(game.endsAtMs || 0)}">${formatTime(Number(game.endsAtMs || 0) - nowMs())}</b><span>${status}</span></div>
-        <div class="bh-territory-canvas-wrap"><canvas class="bh-territory-canvas" data-bh-territory-canvas aria-label="Grundstück-Kampf Arena"></canvas><div class="bh-canvas-tip">WISCHEN = 2 FELDER</div></div>
+        <div class="bh-board-status bh-arena-status"><b data-bh-timer="${Number(game.endsAtMs || 0)}">${formatTime(Number(game.endsAtMs || 0) - nowMs())}</b><span>${status}</span><button class="bh-mobile-boost-trigger" data-bh-toggle-powers>Boosts <strong>${powerCount}</strong></button></div>
+        <div class="bh-territory-canvas-wrap"><canvas class="bh-territory-canvas" data-bh-territory-canvas aria-label="Grundstück-Kampf Arena"></canvas><div class="bh-canvas-tip">WISCHEN = 2 FELDER · TIPPEN = 1 FELD</div></div>
         <div class="bh-move-pad bh-move-pad-v2"><button data-bh-move="up" aria-label="Nach oben">▲</button><button data-bh-move="left" aria-label="Nach links">◀</button><button class="center" disabled>●</button><button data-bh-move="right" aria-label="Nach rechts">▶</button><button data-bh-move="down" aria-label="Nach unten">▼</button></div>
       </section>
-      <section class="bh-power-panel bh-power-dock"><header><div><h3>Power-Ups</h3><p>Auf der Arena einsammeln und hier aktivieren.</p></div><small>${game.owners.filter((owner) => owner === ownIndex).length} Felder</small></header><div>${Object.entries(TERRITORY_POWER_META).map(([id, meta]) => `<button data-bh-territory-power="${id}" ${Number(inventory?.[id] || 0) > 0 ? "" : "disabled"} class="${rt.pendingPower === id ? "selected" : ""}" title="${meta.text}"><span>${meta.icon}</span><div><b>${meta.label}</b><small>${meta.text}</small></div><strong>${Number(inventory?.[id] || 0)}</strong></button>`).join("")}</div>${rt.pendingPower === "bomb" ? `<div class="bh-inline-hint">Tippe ein gegnerisches Feld auf der Arena. <button data-bh-cancel-power>Abbrechen</button></div>` : ""}</section>
+      <section class="bh-power-panel bh-power-dock ${rt.territoryPowerOpen ? "open" : ""}"><header><div><h3>Power-Ups</h3><p>Auf der Arena einsammeln und mit einem Klick aktivieren.</p></div><div class="bh-power-head-actions"><small>${game.owners.filter((owner) => owner === ownIndex).length} Felder</small><button data-bh-toggle-powers>${rt.territoryPowerOpen ? "Schließen" : "Boosts öffnen"}</button></div></header><div class="bh-boost-grid">${Object.entries(TERRITORY_POWER_META).map(([id, meta]) => `<button data-bh-territory-power="${id}" ${Number(inventory?.[id] || 0) > 0 ? "" : "disabled"} class="${rt.pendingPower === id ? "selected" : ""}" title="${meta.text}"><span>${meta.icon}</span><div><b>${meta.label}</b><small>${meta.text}</small></div><strong>${Number(inventory?.[id] || 0)}</strong></button>`).join("")}</div>${rt.pendingPower === "bomb" ? `<div class="bh-inline-hint">Tippe jetzt ein gegnerisches Feld auf der Arena. <button data-bh-cancel-power>Abbrechen</button></div>` : ""}</section>
     </div>`;
   }
 
   function packageCardVisual(pack, compact = false) {
     const color = BH_COLORS[pack.colorIndex];
-    return `<div class="bh-package ${compact ? "compact" : "hero"}" style="--pack:${color}"><span class="tape"></span><div class="bh-package-mark">${pack.express ? "EXPRESS" : "PAKET"}</div><b>${BH_COLOR_NAMES[pack.colorIndex]}</b><div>${pack.fragile ? "⚠ ZERBRECHLICH" : "▰ STANDARD"}</div><small>${pack.express ? `<span data-bh-timer="${pack.expressUntilMs}">${formatTime(pack.expressUntilMs - nowMs())}</span> verbleibend` : "Normalversand"}</small></div>`;
+    return `<div class="bh-package ${compact ? "compact" : "hero"}" style="--pack:${color}"><span class="tape"></span><div class="bh-package-mark">${pack.express ? "EXPRESS" : "SCANNER"}</div><small class="bh-package-kicker">FARBCODE</small><b>${BH_COLOR_NAMES[pack.colorIndex]}</b><div>${pack.fragile ? "⚠ ZERBRECHLICH" : "▰ STANDARDPAKET"}</div><small>${pack.express ? `<span data-bh-timer="${pack.expressUntilMs}">${formatTime(pack.expressUntilMs - nowMs())}</span> bis Ablauf` : "Route über die Farbe bestimmen"}</small></div>`;
   }
 
   function packageHtml(game) {
@@ -1028,20 +1030,21 @@
     const cardCount = Object.values(cards).reduce((sum, value) => sum + Number(value || 0), 0);
     const feedback = game.lastFeedback?.[player.id];
     const freshFeedback = feedback && nowMs() - Number(feedback.atMs || 0) < 1600;
-    return `<div class="bh-game-main bh-package-main bh-package-v2 ${blind ? "is-blind" : ""}">
+    return `<div class="bh-game-main bh-package-main bh-package-v3 ${blind ? "is-blind" : ""}">
       <section class="bh-logistics-floor bh-sort-station">
-        <div class="bh-board-status bh-package-status"><b data-bh-timer="${Number(game.endsAtMs || 0)}">${formatTime(Number(game.endsAtMs || 0) - nowMs())}</b><span>Combo <strong>${game.combo[player.id] || 0}</strong> · Fehler ${game.errors[player.id] || 0}</span><button data-bh-toggle-cards>Karten ${cardCount}</button></div>
+        <div class="bh-board-status bh-package-status"><b data-bh-timer="${Number(game.endsAtMs || 0)}">${formatTime(Number(game.endsAtMs || 0) - nowMs())}</b><span><strong>${Number(player.score || 0)}</strong> Punkte · Combo ${game.combo[player.id] || 0} · Fehler ${game.errors[player.id] || 0}</span><button class="bh-mobile-boost-trigger" data-bh-toggle-cards>Boosts <strong>${cardCount}</strong></button></div>
         <div class="bh-route-ribbon">${mapping.map((city, index) => `<span style="--route:${BH_COLORS[index]}"><i></i><b>${BH_COLOR_NAMES[index]}</b><small>${city}</small></span>`).join("")}</div>
         <div class="bh-package-stage ${freshFeedback ? feedback.kind : ""}">
-          <div class="bh-up-next"><small>ALS NÄCHSTES</small>${queue.slice(1, 3).map((pack) => packageCardVisual(pack, true)).join("")}</div>
-          ${current ? packageCardVisual(current, false) : `<div class="bh-package-loading">Förderband wird beladen …</div>`}
+          <div class="bh-conveyor-label"><span>AKTUELLES PAKET</span><small>Farbe lesen → richtige Stadt wählen</small></div>
+          <div class="bh-up-next"><small>Danach</small>${queue.slice(1, 3).map((pack) => packageCardVisual(pack, true)).join("")}</div>
+          <div class="bh-package-scanner"><span class="bh-scan-line"></span>${current ? packageCardVisual(current, false) : `<div class="bh-package-loading">Förderband wird beladen …</div>`}</div>
           ${freshFeedback ? `<div class="bh-package-feedback ${feedback.kind}">${escapeHtml(feedback.text)}</div>` : ""}
         </div>
-        ${current?.fragile ? `<button class="bh-fragile-hold ${rt.careful ? "armed" : ""}" data-bh-fragile-hold><span></span><b>${rt.careful ? "✓ Paket gesichert" : "Gedrückt halten: vorsichtig sichern"}</b><small>${rt.careful ? "Jetzt das richtige Ziel wählen" : "0,45 Sekunden halten"}</small></button>` : `<div class="bh-standard-ready"><span>✓</span><div><b>Standardpaket</b><small>Direkt auf das richtige Ziel tippen</small></div></div>`}
-        <div class="bh-city-buttons bh-sort-bins">${BH_CITIES.map((city) => { const route = mapping.indexOf(city); return `<button data-bh-sort-city="${city}" style="--bin:${BH_COLORS[Math.max(0, route)]}"><span></span><small>ZIEL</small><b>${city}</b><em>${route >= 0 ? BH_COLOR_NAMES[route] : "?"}</em></button>`; }).join("")}</div>
+        ${current?.fragile ? `<button class="bh-fragile-hold ${rt.careful ? "armed" : ""}" data-bh-fragile-hold><span></span><b>${rt.careful ? "✓ Paket gesichert" : "Zerbrechlich: kurz gedrückt halten"}</b><small>${rt.careful ? "Jetzt die richtige Stadt wählen" : "0,45 Sekunden halten"}</small></button>` : `<div class="bh-standard-ready"><span>✓</span><div><b>Standardpaket bereit</b><small>Direkt die richtige Stadt antippen</small></div></div>`}
+        <div class="bh-city-buttons bh-sort-bins">${BH_CITIES.map((city) => { const route = mapping.indexOf(city); return `<button data-bh-sort-city="${city}" style="--bin:${BH_COLORS[Math.max(0, route)]}"><span></span><small>ROUTE</small><b>${city}</b><em>${route >= 0 ? BH_COLOR_NAMES[route] : "?"}</em></button>`; }).join("")}</div>
         ${blind ? `<div class="bh-blind-cover"><span>◉</span><b>Sicht blockiert</b><small>Die Sortierstation wird gleich wieder sichtbar.</small></div>` : ""}
       </section>
-      <section class="bh-power-panel bh-card-drawer ${rt.packageCardsOpen ? "open" : ""}"><header><div><h3>Sonderkarten</h3><p>Alle vier richtigen Pakete gibt es eine Störkarte.</p></div><button data-bh-toggle-cards>${rt.packageCardsOpen ? "Schließen" : `Öffnen (${cardCount})`}</button></header><div>${Object.entries(PACKAGE_CARD_META).map(([id, meta]) => `<button data-bh-package-card="${id}" ${Number(cards[id] || 0) > 0 ? "" : "disabled"} class="${rt.pendingCard === id ? "selected" : ""}"><span>${meta.icon}</span><div><b>${meta.label}</b><small>${meta.text}</small></div><strong>${Number(cards[id] || 0)}</strong></button>`).join("")}</div>${rt.pendingCard ? `<div class="bh-target-list"><b>Gegner auswählen</b>${game.players.map((target, index) => index === ownIndex ? "" : `<button data-bh-card-target="${index}">${escapeHtml(target.name)}</button>`).join("")}<button data-bh-cancel-card>Abbrechen</button></div>` : ""}</section>
+      <section class="bh-power-panel bh-card-drawer ${rt.packageCardsOpen ? "open" : ""}"><header><div><h3>Sonderkarten</h3><p>Nach vier richtigen Paketen erhältst du eine Störkarte.</p></div><button data-bh-toggle-cards>${rt.packageCardsOpen ? "Schließen" : `Boosts öffnen (${cardCount})`}</button></header><div class="bh-boost-grid">${Object.entries(PACKAGE_CARD_META).map(([id, meta]) => `<button data-bh-package-card="${id}" ${Number(cards[id] || 0) > 0 ? "" : "disabled"} class="${rt.pendingCard === id ? "selected" : ""}"><span>${meta.icon}</span><div><b>${meta.label}</b><small>${meta.text}</small></div><strong>${Number(cards[id] || 0)}</strong></button>`).join("")}</div>${rt.pendingCard ? `<div class="bh-target-list"><b>Gegner auswählen</b>${game.players.map((target, index) => index === ownIndex ? "" : `<button data-bh-card-target="${index}">${escapeHtml(target.name)}</button>`).join("")}<button data-bh-cancel-card>Abbrechen</button></div>` : ""}</section>
     </div>`;
   }
 
@@ -1089,7 +1092,7 @@
     }).join("");
     return `<section class="bh-shell bh-game-shell bh-game-${game.type}" style="--accent:${meta.accent}" data-bh-game-type="${game.type}">
       <header class="bh-header"><button data-bh-back-game>‹</button><div><p>${mode} · Best-of-${game.bestOf}</p><h2>${meta.title}</h2></div><div class="bh-round-badge">Runde ${game.round}</div></header>
-      <div class="bh-mobile-score-strip">${compactScores}</div>
+      <div class="bh-mobile-score-strip" aria-label="Aktueller Spielstand">${compactScores}</div>
       <div class="bh-game-layout"><main>${game.type === "territory" ? territoryHtml(game) : game.type === "packages" ? packageHtml(game) : reactionHtml(game)}</main><aside><h3>Spielstand</h3><div class="bh-player-list">${playersHtml(game)}</div><section class="bh-log"><h4>Live-Verlauf</h4>${(game.log || []).slice(0, 8).map((line) => `<p>${escapeHtml(line)}</p>`).join("")}</section></aside></div>
       ${game.status !== "playing" ? roundEndHtml(game) : ""}<div class="bh-toast" data-bh-toast></div>
     </section>`;
@@ -1484,7 +1487,7 @@
     shell.querySelector("[data-bh-start-online]")?.addEventListener("click", () => startOnline(shell).catch((error) => toast(error.message || error)));
     shell.querySelectorAll("[data-bh-leave-room]").forEach((button) => button.addEventListener("click", leaveRoom));
     shell.querySelector("[data-bh-copy-code]")?.addEventListener("click", async () => { try { await navigator.clipboard.writeText(rt.roomId); toast("Raumcode kopiert."); } catch { toast(`Raumcode: ${rt.roomId}`); } });
-    shell.querySelector("[data-bh-back-game]")?.addEventListener("click", () => { rt.view = rt.roomId ? "lobby" : defaultHomeView(); if (!rt.roomId) stopTicker(); render(); });
+    shell.querySelector("[data-bh-back-game]")?.addEventListener("click", () => { rt.territoryPowerOpen = false; rt.packageCardsOpen = false; rt.pendingPower = ""; rt.pendingCard = ""; rt.view = rt.roomId ? "lobby" : defaultHomeView(); if (!rt.roomId) stopTicker(); render(); });
     shell.querySelector("[data-bh-close-game]")?.addEventListener("click", () => { if (rt.roomId) disconnectRoom(false); rt.local = null; rt.view = defaultHomeView(); stopTicker(); render(); });
     shell.querySelector("[data-bh-next-round]")?.addEventListener("click", () => nextRound().catch((error) => toast(error.message || error)));
     shell.querySelector("[data-bh-rematch]")?.addEventListener("click", () => rematch().catch((error) => toast(error.message || error)));
@@ -1536,13 +1539,14 @@
         }
       });
     }
+    shell.querySelectorAll("[data-bh-toggle-powers]").forEach((button) => button.addEventListener("click", () => { rt.territoryPowerOpen = !rt.territoryPowerOpen; render(); }));
     shell.querySelectorAll("[data-bh-territory-power]").forEach((button) => button.addEventListener("click", () => {
       const type = button.dataset.bhTerritoryPower;
-      if (type === "bomb") { rt.pendingPower = rt.pendingPower === "bomb" ? "" : "bomb"; render(); return; }
+      if (type === "bomb") { rt.pendingPower = rt.pendingPower === "bomb" ? "" : "bomb"; rt.territoryPowerOpen = false; render(); return; }
       const game = currentGame();
-      mutate((next) => useTerritoryPower(next, ownPlayerIndex(game), type)).catch((error) => toast(error.message || error));
+      mutate((next) => useTerritoryPower(next, ownPlayerIndex(game), type)).then(() => { rt.territoryPowerOpen = false; render(); }).catch((error) => toast(error.message || error));
     }));
-    shell.querySelector("[data-bh-cancel-power]")?.addEventListener("click", () => { rt.pendingPower = ""; render(); });
+    shell.querySelector("[data-bh-cancel-power]")?.addEventListener("click", () => { rt.pendingPower = ""; rt.territoryPowerOpen = false; render(); });
 
     shell.querySelectorAll("[data-bh-toggle-cards]").forEach((button) => button.addEventListener("click", () => { rt.packageCardsOpen = !rt.packageCardsOpen; render(); }));
     const fragileHold = shell.querySelector("[data-bh-fragile-hold]");
