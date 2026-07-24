@@ -1,10 +1,10 @@
 (() => {
   "use strict";
 
-  const BH_VERSION = "2026-07-23-separate-apps-persistence-2";
+  const BH_VERSION = "2026-07-23-mobile-arena-v3";
   const BH_DATABASE_ID = "gamekl";
   const BH_COLLECTION = "lifeBuilderBattleGames";
-  const BH_TICK_MS = 750;
+  const BH_TICK_MS = 320;
   const BH_COLORS = ["#ff4f6d", "#4aa8ff", "#ffd84c", "#49dc91"];
   const BH_COLOR_NAMES = ["Rot", "Blau", "Gelb", "Grün"];
   const BH_CITIES = ["Berlin", "Hamburg", "München", "Köln"];
@@ -65,7 +65,12 @@
     careful: false,
     holdTimer: null,
     pointerStart: null,
-    rewardKeys: new Set()
+    rewardKeys: new Set(),
+    uiTicker: null,
+    packageCardsOpen: false,
+    territoryPointer: null,
+    territoryHoldTimer: null,
+    territoryHoldDelay: null
   };
 
   const clone = (value) => typeof structuredClone === "function"
@@ -220,9 +225,16 @@
 
   function initialTerritory(type, players, settings, online, round) {
     const game = commonGame(type, players, settings, online, round);
-    const cols = 14;
-    const rows = 10;
-    const positions = [0, cols - 1, cols * (rows - 1), cols * rows - 1];
+    // Das neue Hochformat-Raster nutzt auf Handys fast die komplette Bildschirmfläche.
+    // Canvas statt hunderter DOM-Buttons hält die Darstellung auch auf schwächeren Geräten flüssig.
+    const cols = 18;
+    const rows = 24;
+    const positions = [
+      cols + 1,
+      cols + (cols - 2),
+      (rows - 2) * cols + 1,
+      (rows - 2) * cols + (cols - 2)
+    ];
     const owners = Array(cols * rows).fill(-1);
     game.cols = cols;
     game.rows = rows;
@@ -234,6 +246,7 @@
     game.lastPowerSpawnAtMs = nowMs();
     game.powerups = [];
     game.owners = owners;
+    game.botCursor = 0;
     game.players.forEach((player, index) => {
       game.positions[player.id] = positions[index];
       game.inventory[player.id] = { shield: 0, freeze: 0, double: 0, bomb: 0, random: 0 };
@@ -249,8 +262,8 @@
         }
       }
     });
-    spawnTerritoryPowerups(game, 9);
-    game.log = ["Erobere so viele Felder wie möglich."];
+    spawnTerritoryPowerups(game, 12);
+    game.log = ["Arena gestartet: Wischen, Steuerkreuz oder WASD benutzen."];
     return game;
   }
 
@@ -281,15 +294,18 @@
     game.correctCount = {};
     game.errors = {};
     game.combo = {};
+    game.lastFeedback = {};
+    game.botCursor = 0;
     game.players.forEach((player) => {
-      game.queues[player.id] = Array.from({ length: 4 }, () => randomPackage(game, player.id));
+      game.queues[player.id] = Array.from({ length: 3 }, () => randomPackage(game, player.id));
       game.cards[player.id] = { speed: 0, swap: 0, blind: 0, stack: 0 };
       game.effects[player.id] = { speedUntilMs: 0, blindUntilMs: 0, swapUntilMs: 0, swapA: -1, swapB: -1, lastSpeedStackAtMs: 0 };
       game.correctCount[player.id] = 0;
       game.errors[player.id] = 0;
       game.combo[player.id] = 0;
+      game.lastFeedback[player.id] = null;
     });
-    game.log = ["Die Förderbänder laufen. Sortiere schnell und fehlerfrei."];
+    game.log = ["Sortierstation bereit: Paket prüfen und auf das richtige Ziel tippen."];
     return game;
   }
 
@@ -443,14 +459,15 @@
     game.log = [`${player.name} sammelt ${TERRITORY_POWER_META[pickup.type].label}.`, ...(game.log || [])].slice(0, 14);
   }
 
-  function territoryMove(game, playerIndex, targetCell) {
+  function territoryMove(game, playerIndex, targetCell, ignoreCooldown = false) {
     if (game.status !== "playing") return false;
     const player = game.players[playerIndex];
     if (!player) return false;
     const now = nowMs();
     const effect = game.effects[player.id] || {};
     if (Number(effect.frozenUntilMs || 0) > now) return false;
-    if (now - Number(player.lastActionAtMs || 0) < 260) return false;
+    const cooldown = game.online ? 380 : 95;
+    if (!ignoreCooldown && now - Number(player.lastActionAtMs || 0) < cooldown) return false;
     const current = Number(game.positions[player.id]);
     if (!adjacentCells(game, current).includes(Number(targetCell))) return false;
     if (!claimTerritoryCell(game, playerIndex, Number(targetCell))) return false;
@@ -459,10 +476,34 @@
     collectPower(game, playerIndex, Number(targetCell));
     if (Number(effect.doubleUntilMs || 0) > now) {
       const extras = shuffle(adjacentCells(game, Number(targetCell))).filter((cell) => game.owners[cell] !== playerIndex);
-      if (extras.length) claimTerritoryCell(game, playerIndex, extras[0]);
+      extras.slice(0, 2).forEach((cell) => claimTerritoryCell(game, playerIndex, cell));
     }
     game.updatedAtMs = now;
     return true;
+  }
+
+  function territoryTargetForDirection(game, current, direction) {
+    const x = current % game.cols;
+    const y = Math.floor(current / game.cols);
+    if (direction === "left" && x > 0) return current - 1;
+    if (direction === "right" && x < game.cols - 1) return current + 1;
+    if (direction === "up" && y > 0) return current - game.cols;
+    if (direction === "down" && y < game.rows - 1) return current + game.cols;
+    return current;
+  }
+
+  function territoryMoveDirection(game, playerIndex, direction, steps = 1) {
+    let changed = false;
+    const amount = Math.max(1, Math.min(3, Number(steps || 1)));
+    for (let step = 0; step < amount; step += 1) {
+      const player = game.players[playerIndex];
+      if (!player) break;
+      const current = Number(game.positions[player.id]);
+      const target = territoryTargetForDirection(game, current, direction);
+      if (target === current || !territoryMove(game, playerIndex, target, step > 0)) break;
+      changed = true;
+    }
+    return changed;
   }
 
   function strongestOpponentIndex(game, playerIndex) {
@@ -509,15 +550,16 @@
   function territoryBotAction(game, playerIndex) {
     const player = game.players[playerIndex];
     const now = nowMs();
-    if (Number(game.effects[player.id]?.frozenUntilMs || 0) > now || now - Number(player.lastActionAtMs || 0) < 650) return false;
+    if (Number(game.effects[player.id]?.frozenUntilMs || 0) > now || now - Number(player.lastActionAtMs || 0) < 360) return false;
     const inventory = game.inventory[player.id];
-    const ownScore = scoreTerritory(game)[playerIndex].score;
-    const leader = Math.max(...scoreTerritory(game).map((entry) => entry.score));
-    if (inventory.shield && Math.random() < 0.07) return useTerritoryPower(game, playerIndex, "shield");
-    if (inventory.freeze && leader > ownScore + 5 && Math.random() < 0.12) return useTerritoryPower(game, playerIndex, "freeze");
-    if (inventory.double && Math.random() < 0.1) return useTerritoryPower(game, playerIndex, "double");
-    if (inventory.random && Math.random() < 0.08) return useTerritoryPower(game, playerIndex, "random");
-    if (inventory.bomb && Math.random() < 0.08) {
+    const territoryScores = scoreTerritory(game);
+    const ownScore = territoryScores[playerIndex].score;
+    const leader = Math.max(...territoryScores.map((entry) => entry.score));
+    if (inventory.shield && Math.random() < 0.055) return useTerritoryPower(game, playerIndex, "shield");
+    if (inventory.freeze && leader > ownScore + 10 && Math.random() < 0.1) return useTerritoryPower(game, playerIndex, "freeze");
+    if (inventory.double && Math.random() < 0.085) return useTerritoryPower(game, playerIndex, "double");
+    if (inventory.random && Math.random() < 0.065) return useTerritoryPower(game, playerIndex, "random");
+    if (inventory.bomb && Math.random() < 0.065) {
       const enemyCells = game.owners.map((owner, cell) => ({ owner, cell })).filter((entry) => entry.owner >= 0 && entry.owner !== playerIndex);
       if (enemyCells.length) return useTerritoryPower(game, playerIndex, "bomb", { cell: randomItem(enemyCells).cell });
     }
@@ -525,15 +567,21 @@
     const options = adjacentCells(game, current).map((cell) => {
       const owner = Number(game.owners[cell]);
       const pickup = game.powerups.some((entry) => entry.cell === cell);
-      let value = owner === -1 ? 8 : owner === playerIndex ? 1 : 12;
-      if (pickup) value += 18;
-      const nextOpen = adjacentCells(game, cell).filter((next) => game.owners[next] !== playerIndex).length;
-      value += nextOpen * 1.5 + Math.random() * 4;
+      let value = owner === -1 ? 9 : owner === playerIndex ? 1 : 15;
+      if (pickup) value += 26;
+      value += adjacentCells(game, cell).filter((next) => game.owners[next] !== playerIndex).length * 2 + Math.random() * 5;
       return { cell, value };
     }).sort((a, b) => b.value - a.value);
-    for (const option of options) if (territoryMove(game, playerIndex, option.cell)) return true;
-    player.lastActionAtMs = now;
-    return false;
+    const best = options.find((option) => {
+      const owner = Number(game.owners[option.cell]);
+      if (owner < 0 || owner === playerIndex) return true;
+      const ownerPlayer = game.players[owner];
+      return Number(game.effects?.[ownerPlayer.id]?.shieldUntilMs || 0) <= now;
+    });
+    if (!best) { player.lastActionAtMs = now; return false; }
+    const delta = best.cell - current;
+    const direction = delta === -1 ? "left" : delta === 1 ? "right" : delta === -game.cols ? "up" : "down";
+    return territoryMoveDirection(game, playerIndex, direction, 2);
   }
 
   function effectivePackageMapping(game, playerId) {
@@ -555,22 +603,25 @@
     const expected = mapping[pack.colorIndex];
     const correct = forceCorrect == null ? (city === expected && (!pack.fragile || careful)) : !!forceCorrect;
     if (correct) {
-      let gain = 10;
-      if (pack.fragile) gain += 3;
-      if (pack.express && nowMs() <= pack.expressUntilMs) gain += 5;
+      let gain = 12;
+      if (pack.fragile) gain += 5;
+      if (pack.express && nowMs() <= pack.expressUntilMs) gain += 8;
       game.combo[player.id] = Number(game.combo[player.id] || 0) + 1;
-      gain += Math.min(5, Math.floor(game.combo[player.id] / 3));
+      gain += Math.min(10, Math.floor(game.combo[player.id] / 3) * 2);
       player.score = Number(player.score || 0) + gain;
       game.correctCount[player.id] = Number(game.correctCount[player.id] || 0) + 1;
+      game.lastFeedback[player.id] = { kind: "correct", text: `+${gain} Punkte`, atMs: nowMs() };
       if (game.correctCount[player.id] % 4 === 0) {
         const card = randomItem(Object.keys(PACKAGE_CARD_META));
         game.cards[player.id][card] = Number(game.cards[player.id][card] || 0) + 1;
-        game.log = [`${player.name} erhält die Sonderkarte ${PACKAGE_CARD_META[card].label}.`, ...(game.log || [])].slice(0, 14);
+        game.log = [`${player.name} erhält ${PACKAGE_CARD_META[card].label}.`, ...(game.log || [])].slice(0, 14);
       }
     } else {
-      player.score = Math.max(-50, Number(player.score || 0) - 5);
+      player.score = Math.max(-75, Number(player.score || 0) - 7);
       game.combo[player.id] = 0;
       game.errors[player.id] = Number(game.errors[player.id] || 0) + 1;
+      const cause = pack.fragile && !careful ? "Zerbrechlich nicht gesichert" : `Falsches Ziel – richtig wäre ${expected}`;
+      game.lastFeedback[player.id] = { kind: "wrong", text: `−7 · ${cause}`, atMs: nowMs() };
     }
     queue.shift();
     queue.push(randomPackage(game, player.id));
@@ -691,23 +742,33 @@
     let changed = false;
     if (game.type === "territory") {
       if (now >= Number(game.endsAtMs || 0)) return finalizeTimedGame(game);
-      if (now - Number(game.lastPowerSpawnAtMs || 0) >= 7500 && game.powerups.length < 10) {
+      if (now - Number(game.lastPowerSpawnAtMs || 0) >= 9000 && game.powerups.length < 12) {
         spawnTerritoryPowerups(game, 2);
         game.lastPowerSpawnAtMs = now;
         changed = true;
       }
-      game.players.forEach((player, index) => { if (player.isBot && territoryBotAction(game, index)) changed = true; });
+      const bots = game.players.map((player, index) => ({ player, index })).filter((entry) => entry.player.isBot);
+      if (bots.length) {
+        const cursor = Number(game.botCursor || 0) % bots.length;
+        if (territoryBotAction(game, bots[cursor].index)) changed = true;
+        game.botCursor = (cursor + 1) % bots.length;
+      }
     } else if (game.type === "packages") {
       if (now >= Number(game.endsAtMs || 0)) return finalizeTimedGame(game);
-      game.players.forEach((player, index) => {
+      game.players.forEach((player) => {
         const effect = game.effects[player.id];
-        if (Number(effect.speedUntilMs || 0) > now && now - Number(effect.lastSpeedStackAtMs || 0) >= 1900) {
-          if ((game.queues[player.id] || []).length < 12) game.queues[player.id].push(randomPackage(game, player.id));
+        if (Number(effect.speedUntilMs || 0) > now && now - Number(effect.lastSpeedStackAtMs || 0) >= 2300) {
+          if ((game.queues[player.id] || []).length < 8) game.queues[player.id].push(randomPackage(game, player.id));
           effect.lastSpeedStackAtMs = now;
           changed = true;
         }
-        if (player.isBot && packageBotAction(game, index)) changed = true;
       });
+      const bots = game.players.map((player, index) => ({ player, index })).filter((entry) => entry.player.isBot);
+      if (bots.length) {
+        const cursor = Number(game.botCursor || 0) % bots.length;
+        if (packageBotAction(game, bots[cursor].index)) changed = true;
+        game.botCursor = (cursor + 1) % bots.length;
+      }
     } else if (game.type === "reaction") {
       if (game.challenge) {
         game.players.forEach((player, index) => { if (player.isBot && reactionBotTick(game, index)) changed = true; });
@@ -762,19 +823,27 @@
   }
 
   function startTicker() {
-    clearInterval(rt.ticker);
+    stopTicker();
+    rt.uiTicker = setInterval(updateVisibleTimers, 180);
+    const game = currentGame();
+    const interval = game?.online ? 760 : BH_TICK_MS;
     rt.ticker = setInterval(() => {
-      updateVisibleTimers();
-      const game = currentGame();
-      if (!game || game.status !== "playing") return;
-      if (game.online && !isHost()) return;
+      const active = currentGame();
+      if (!active || active.status !== "playing") return;
+      if (active.online && !isHost()) return;
       mutate((next) => tickGame(next)).catch((error) => toast(error.message || error));
-    }, BH_TICK_MS);
+    }, interval);
   }
 
   function stopTicker() {
     clearInterval(rt.ticker);
+    clearInterval(rt.uiTicker);
     rt.ticker = null;
+    rt.uiTicker = null;
+    clearInterval(rt.territoryHoldTimer);
+    clearTimeout(rt.territoryHoldDelay);
+    rt.territoryHoldTimer = null;
+    rt.territoryHoldDelay = null;
   }
 
   function formatTime(ms) {
@@ -793,15 +862,130 @@
     }).join("");
   }
 
-  function territoryCellHtml(game, cell, ownIndex) {
-    const owner = Number(game.owners[cell]);
-    const occupant = game.players.findIndex((player) => Number(game.positions[player.id]) === cell);
-    const pickup = game.powerups.find((entry) => entry.cell === cell);
-    const ownerColor = owner >= 0 ? game.players[owner].color : "transparent";
-    const canMove = ownIndex >= 0 && adjacentCells(game, Number(game.positions[game.players[ownIndex].id])).includes(cell);
-    const protectedCell = owner >= 0 && Number(game.effects[game.players[owner].id]?.shieldUntilMs || 0) > nowMs();
-    const powerIcon = pickup ? TERRITORY_POWER_META[pickup.type].icon : "";
-    return `<button class="bh-territory-cell ${canMove ? "reachable" : ""} ${rt.pendingPower === "bomb" && owner >= 0 && owner !== ownIndex ? "bomb-target" : ""}" style="--owner:${ownerColor}" data-bh-cell="${cell}">${protectedCell ? `<i>⬡</i>` : ""}${pickup ? `<em>${powerIcon}</em>` : ""}${occupant >= 0 ? `<span style="--token:${game.players[occupant].color}">${occupant + 1}</span>` : ""}</button>`;
+  function territoryCellHtml() {
+    return "";
+  }
+
+  function rgbaFromHex(hex, alpha = 1) {
+    const clean = String(hex || "#ffffff").replace("#", "");
+    const value = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean;
+    const num = Number.parseInt(value, 16);
+    const r = (num >> 16) & 255;
+    const g = (num >> 8) & 255;
+    const b = num & 255;
+    return `rgba(${r},${g},${b},${alpha})`;
+  }
+
+  function drawTerritoryCanvas(canvas, game) {
+    if (!canvas || !game) return;
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const width = Math.max(1, Math.round(rect.width * dpr));
+    const height = Math.max(1, Math.round(rect.height * dpr));
+    if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+    const ctx = canvas.getContext("2d", { alpha: false });
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const w = rect.width;
+    const h = rect.height;
+    ctx.clearRect(0, 0, w, h);
+    const gradient = ctx.createLinearGradient(0, 0, w, h);
+    gradient.addColorStop(0, "#071522");
+    gradient.addColorStop(1, "#030914");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, w, h);
+    const pad = Math.max(7, Math.min(w, h) * 0.018);
+    const cell = Math.min((w - pad * 2) / game.cols, (h - pad * 2) / game.rows);
+    const boardW = cell * game.cols;
+    const boardH = cell * game.rows;
+    const ox = (w - boardW) / 2;
+    const oy = (h - boardH) / 2;
+    canvas.dataset.cellSize = String(cell);
+    canvas.dataset.offsetX = String(ox);
+    canvas.dataset.offsetY = String(oy);
+
+    ctx.fillStyle = "rgba(255,255,255,.025)";
+    ctx.fillRect(ox, oy, boardW, boardH);
+    for (let index = 0; index < game.owners.length; index += 1) {
+      const x = index % game.cols;
+      const y = Math.floor(index / game.cols);
+      const px = ox + x * cell;
+      const py = oy + y * cell;
+      const owner = Number(game.owners[index]);
+      if (owner >= 0 && game.players[owner]) {
+        ctx.fillStyle = rgbaFromHex(game.players[owner].color, .58);
+        ctx.fillRect(px + .6, py + .6, cell - 1.2, cell - 1.2);
+      }
+    }
+    ctx.strokeStyle = "rgba(170,218,255,.10)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = 0; x <= game.cols; x += 1) { ctx.moveTo(ox + x * cell, oy); ctx.lineTo(ox + x * cell, oy + boardH); }
+    for (let y = 0; y <= game.rows; y += 1) { ctx.moveTo(ox, oy + y * cell); ctx.lineTo(ox + boardW, oy + y * cell); }
+    ctx.stroke();
+
+    const now = nowMs();
+    game.powerups.forEach((pickup) => {
+      const x = pickup.cell % game.cols;
+      const y = Math.floor(pickup.cell / game.cols);
+      const cx = ox + (x + .5) * cell;
+      const cy = oy + (y + .5) * cell;
+      ctx.save();
+      ctx.shadowColor = "rgba(255,255,255,.8)";
+      ctx.shadowBlur = cell * .7;
+      ctx.fillStyle = "rgba(245,252,255,.96)";
+      ctx.font = `900 ${Math.max(9, cell * .72)}px system-ui`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(TERRITORY_POWER_META[pickup.type]?.icon || "✦", cx, cy);
+      ctx.restore();
+    });
+
+    game.players.forEach((player, index) => {
+      const pos = Number(game.positions[player.id]);
+      const x = pos % game.cols;
+      const y = Math.floor(pos / game.cols);
+      const cx = ox + (x + .5) * cell;
+      const cy = oy + (y + .5) * cell;
+      const frozen = Number(game.effects[player.id]?.frozenUntilMs || 0) > now;
+      ctx.save();
+      ctx.shadowColor = player.color;
+      ctx.shadowBlur = cell * 1.15;
+      ctx.fillStyle = player.color;
+      ctx.beginPath();
+      ctx.arc(cx, cy, Math.max(5, cell * .43), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = Math.max(1.4, cell * .09);
+      ctx.strokeStyle = index === ownPlayerIndex(game) ? "#ffffff" : "rgba(255,255,255,.78)";
+      ctx.stroke();
+      ctx.fillStyle = "#07111d";
+      ctx.font = `1000 ${Math.max(8, cell * .58)}px system-ui`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(frozen ? "❄" : String(index + 1), cx, cy + .3);
+      ctx.restore();
+    });
+
+    if (rt.pendingPower === "bomb") {
+      ctx.fillStyle = "rgba(255,79,109,.12)";
+      ctx.fillRect(ox, oy, boardW, boardH);
+      ctx.strokeStyle = "rgba(255,105,125,.7)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(ox + 1, oy + 1, boardW - 2, boardH - 2);
+    }
+  }
+
+  function territoryCanvasCell(canvas, event, game) {
+    const rect = canvas.getBoundingClientRect();
+    const cell = Number(canvas.dataset.cellSize || 0);
+    const ox = Number(canvas.dataset.offsetX || 0);
+    const oy = Number(canvas.dataset.offsetY || 0);
+    if (!cell) return -1;
+    const x = Math.floor((event.clientX - rect.left - ox) / cell);
+    const y = Math.floor((event.clientY - rect.top - oy) / cell);
+    if (x < 0 || y < 0 || x >= game.cols || y >= game.rows) return -1;
+    return y * game.cols + x;
   }
 
   function territoryHtml(game) {
@@ -809,19 +993,26 @@
     const ownPlayer = game.players[ownIndex];
     const inventory = ownPlayer ? game.inventory[ownPlayer.id] : {};
     const effects = ownPlayer ? game.effects[ownPlayer.id] : {};
-    return `<div class="bh-game-main bh-territory-main">
+    const status = Number(effects?.frozenUntilMs || 0) > nowMs()
+      ? "❄ Eingefroren"
+      : Number(effects?.doubleUntilMs || 0) > nowMs()
+        ? "×2 Doppelte Eroberung"
+        : Number(effects?.shieldUntilMs || 0) > nowMs()
+          ? "⬡ Gebiet geschützt"
+          : "Wischen, tippen oder Steuerkreuz";
+    return `<div class="bh-game-main bh-territory-main bh-arena-v2">
       <section class="bh-territory-board-wrap">
-        <div class="bh-board-status"><b data-bh-timer="${Number(game.endsAtMs || 0)}">${formatTime(Number(game.endsAtMs || 0) - nowMs())}</b><span>${Number(effects?.frozenUntilMs || 0) > nowMs() ? "❄ Eingefroren" : Number(effects?.doubleUntilMs || 0) > nowMs() ? "×2 Doppelte Eroberung" : Number(effects?.shieldUntilMs || 0) > nowMs() ? "⬡ Gebiet geschützt" : "Tippe ein benachbartes Feld"}</span></div>
-        <div class="bh-territory-grid" style="--cols:${game.cols}">${game.owners.map((_, cell) => territoryCellHtml(game, cell, ownIndex)).join("")}</div>
-        <div class="bh-move-pad"><button data-bh-move="up">▲</button><button data-bh-move="left">◀</button><button data-bh-move="down">▼</button><button data-bh-move="right">▶</button></div>
+        <div class="bh-board-status bh-arena-status"><b data-bh-timer="${Number(game.endsAtMs || 0)}">${formatTime(Number(game.endsAtMs || 0) - nowMs())}</b><span>${status}</span></div>
+        <div class="bh-territory-canvas-wrap"><canvas class="bh-territory-canvas" data-bh-territory-canvas aria-label="Grundstück-Kampf Arena"></canvas><div class="bh-canvas-tip">WISCHEN = 2 FELDER</div></div>
+        <div class="bh-move-pad bh-move-pad-v2"><button data-bh-move="up" aria-label="Nach oben">▲</button><button data-bh-move="left" aria-label="Nach links">◀</button><button class="center" disabled>●</button><button data-bh-move="right" aria-label="Nach rechts">▶</button><button data-bh-move="down" aria-label="Nach unten">▼</button></div>
       </section>
-      <section class="bh-power-panel"><h3>Gegenstände</h3><p>Sammle die Symbole direkt auf dem Spielfeld.</p><div>${Object.entries(TERRITORY_POWER_META).map(([id, meta]) => `<button data-bh-territory-power="${id}" ${Number(inventory?.[id] || 0) > 0 ? "" : "disabled"} class="${rt.pendingPower === id ? "selected" : ""}"><span>${meta.icon}</span><div><b>${meta.label}</b><small>${meta.text}</small></div><strong>${Number(inventory?.[id] || 0)}</strong></button>`).join("")}</div>${rt.pendingPower === "bomb" ? `<div class="bh-inline-hint">Wähle jetzt ein gegnerisches Feld auf dem Raster. <button data-bh-cancel-power>Abbrechen</button></div>` : ""}</section>
+      <section class="bh-power-panel bh-power-dock"><header><div><h3>Power-Ups</h3><p>Auf der Arena einsammeln und hier aktivieren.</p></div><small>${game.owners.filter((owner) => owner === ownIndex).length} Felder</small></header><div>${Object.entries(TERRITORY_POWER_META).map(([id, meta]) => `<button data-bh-territory-power="${id}" ${Number(inventory?.[id] || 0) > 0 ? "" : "disabled"} class="${rt.pendingPower === id ? "selected" : ""}" title="${meta.text}"><span>${meta.icon}</span><div><b>${meta.label}</b><small>${meta.text}</small></div><strong>${Number(inventory?.[id] || 0)}</strong></button>`).join("")}</div>${rt.pendingPower === "bomb" ? `<div class="bh-inline-hint">Tippe ein gegnerisches Feld auf der Arena. <button data-bh-cancel-power>Abbrechen</button></div>` : ""}</section>
     </div>`;
   }
 
-  function packageCardVisual(pack) {
+  function packageCardVisual(pack, compact = false) {
     const color = BH_COLORS[pack.colorIndex];
-    return `<div class="bh-package" style="--pack:${color}"><span class="tape"></span><b>${BH_COLOR_NAMES[pack.colorIndex]}</b><div>${pack.fragile ? "⚠ Zerbrechlich" : "▰ Standard"}</div><small>${pack.express ? `EXPRESS · ${formatTime(pack.expressUntilMs - nowMs())}` : "Normalversand"}</small></div>`;
+    return `<div class="bh-package ${compact ? "compact" : "hero"}" style="--pack:${color}"><span class="tape"></span><div class="bh-package-mark">${pack.express ? "EXPRESS" : "PAKET"}</div><b>${BH_COLOR_NAMES[pack.colorIndex]}</b><div>${pack.fragile ? "⚠ ZERBRECHLICH" : "▰ STANDARD"}</div><small>${pack.express ? `<span data-bh-timer="${pack.expressUntilMs}">${formatTime(pack.expressUntilMs - nowMs())}</span> verbleibend` : "Normalversand"}</small></div>`;
   }
 
   function packageHtml(game) {
@@ -834,15 +1025,23 @@
     const effect = game.effects[player.id] || {};
     const blind = Number(effect.blindUntilMs || 0) > nowMs();
     const cards = game.cards[player.id] || {};
-    return `<div class="bh-game-main bh-package-main ${blind ? "is-blind" : ""}">
-      <section class="bh-logistics-floor">
-        <div class="bh-board-status"><b data-bh-timer="${Number(game.endsAtMs || 0)}">${formatTime(Number(game.endsAtMs || 0) - nowMs())}</b><span>Combo ${game.combo[player.id] || 0} · Fehler ${game.errors[player.id] || 0}</span></div>
-        <div class="bh-routing-map">${mapping.map((city, index) => `<span style="--route:${BH_COLORS[index]}"><i></i><b>${BH_COLOR_NAMES[index]}</b><small>${city}</small></span>`).join("")}</div>
-        <div class="bh-conveyor">${queue.slice(0, 5).map((pack, index) => `<div class="${index === 0 ? "current" : "queued"}">${packageCardVisual(pack)}</div>`).join("")}</div>
-        ${current ? `<label class="bh-careful-toggle"><input type="checkbox" data-bh-careful ${rt.careful ? "checked" : ""}><span>Vorsichtig behandeln</span><small>Für zerbrechliche Pakete zwingend</small></label><div class="bh-city-buttons">${BH_CITIES.map((city) => `<button data-bh-sort-city="${city}">${city}</button>`).join("")}</div>` : `<p>Förderband wird beladen …</p>`}
-        ${blind ? `<div class="bh-blind-cover"><span>◉</span><b>Sicht blockiert</b><small>Bleib ruhig – gleich ist es vorbei.</small></div>` : ""}
+    const cardCount = Object.values(cards).reduce((sum, value) => sum + Number(value || 0), 0);
+    const feedback = game.lastFeedback?.[player.id];
+    const freshFeedback = feedback && nowMs() - Number(feedback.atMs || 0) < 1600;
+    return `<div class="bh-game-main bh-package-main bh-package-v2 ${blind ? "is-blind" : ""}">
+      <section class="bh-logistics-floor bh-sort-station">
+        <div class="bh-board-status bh-package-status"><b data-bh-timer="${Number(game.endsAtMs || 0)}">${formatTime(Number(game.endsAtMs || 0) - nowMs())}</b><span>Combo <strong>${game.combo[player.id] || 0}</strong> · Fehler ${game.errors[player.id] || 0}</span><button data-bh-toggle-cards>Karten ${cardCount}</button></div>
+        <div class="bh-route-ribbon">${mapping.map((city, index) => `<span style="--route:${BH_COLORS[index]}"><i></i><b>${BH_COLOR_NAMES[index]}</b><small>${city}</small></span>`).join("")}</div>
+        <div class="bh-package-stage ${freshFeedback ? feedback.kind : ""}">
+          <div class="bh-up-next"><small>ALS NÄCHSTES</small>${queue.slice(1, 3).map((pack) => packageCardVisual(pack, true)).join("")}</div>
+          ${current ? packageCardVisual(current, false) : `<div class="bh-package-loading">Förderband wird beladen …</div>`}
+          ${freshFeedback ? `<div class="bh-package-feedback ${feedback.kind}">${escapeHtml(feedback.text)}</div>` : ""}
+        </div>
+        ${current?.fragile ? `<button class="bh-fragile-hold ${rt.careful ? "armed" : ""}" data-bh-fragile-hold><span></span><b>${rt.careful ? "✓ Paket gesichert" : "Gedrückt halten: vorsichtig sichern"}</b><small>${rt.careful ? "Jetzt das richtige Ziel wählen" : "0,45 Sekunden halten"}</small></button>` : `<div class="bh-standard-ready"><span>✓</span><div><b>Standardpaket</b><small>Direkt auf das richtige Ziel tippen</small></div></div>`}
+        <div class="bh-city-buttons bh-sort-bins">${BH_CITIES.map((city) => { const route = mapping.indexOf(city); return `<button data-bh-sort-city="${city}" style="--bin:${BH_COLORS[Math.max(0, route)]}"><span></span><small>ZIEL</small><b>${city}</b><em>${route >= 0 ? BH_COLOR_NAMES[route] : "?"}</em></button>`; }).join("")}</div>
+        ${blind ? `<div class="bh-blind-cover"><span>◉</span><b>Sicht blockiert</b><small>Die Sortierstation wird gleich wieder sichtbar.</small></div>` : ""}
       </section>
-      <section class="bh-power-panel"><h3>Sonderkarten</h3><p>Alle vier richtigen Pakete erhältst du eine Störkarte.</p><div>${Object.entries(PACKAGE_CARD_META).map(([id, meta]) => `<button data-bh-package-card="${id}" ${Number(cards[id] || 0) > 0 ? "" : "disabled"} class="${rt.pendingCard === id ? "selected" : ""}"><span>${meta.icon}</span><div><b>${meta.label}</b><small>${meta.text}</small></div><strong>${Number(cards[id] || 0)}</strong></button>`).join("")}</div>${rt.pendingCard ? `<div class="bh-target-list"><b>Gegner auswählen</b>${game.players.map((target, index) => index === ownIndex ? "" : `<button data-bh-card-target="${index}">${escapeHtml(target.name)}</button>`).join("")}<button data-bh-cancel-card>Abbrechen</button></div>` : ""}</section>
+      <section class="bh-power-panel bh-card-drawer ${rt.packageCardsOpen ? "open" : ""}"><header><div><h3>Sonderkarten</h3><p>Alle vier richtigen Pakete gibt es eine Störkarte.</p></div><button data-bh-toggle-cards>${rt.packageCardsOpen ? "Schließen" : `Öffnen (${cardCount})`}</button></header><div>${Object.entries(PACKAGE_CARD_META).map(([id, meta]) => `<button data-bh-package-card="${id}" ${Number(cards[id] || 0) > 0 ? "" : "disabled"} class="${rt.pendingCard === id ? "selected" : ""}"><span>${meta.icon}</span><div><b>${meta.label}</b><small>${meta.text}</small></div><strong>${Number(cards[id] || 0)}</strong></button>`).join("")}</div>${rt.pendingCard ? `<div class="bh-target-list"><b>Gegner auswählen</b>${game.players.map((target, index) => index === ownIndex ? "" : `<button data-bh-card-target="${index}">${escapeHtml(target.name)}</button>`).join("")}<button data-bh-cancel-card>Abbrechen</button></div>` : ""}</section>
     </div>`;
   }
 
@@ -883,8 +1082,14 @@
   function gameScreenHtml(game) {
     const meta = gameMeta(game.type);
     const mode = game.online ? `Online · Raum ${escapeHtml(rt.roomId)}` : "Bot-Partie";
-    return `<section class="bh-shell bh-game-shell" style="--accent:${meta.accent}">
+    const compactScores = game.players.map((player, index) => {
+      const score = game.type === "territory" ? game.owners.filter((owner) => owner === index).length : game.type === "reaction" ? Number(game.lives[player.id] || 0) : Number(player.score || 0);
+      const suffix = game.type === "reaction" ? "♥" : "";
+      return `<span style="--p:${player.color}" class="${index === ownPlayerIndex(game) ? "own" : ""}"><i></i><b>${escapeHtml(player.name)}</b><strong>${score}${suffix}</strong></span>`;
+    }).join("");
+    return `<section class="bh-shell bh-game-shell bh-game-${game.type}" style="--accent:${meta.accent}" data-bh-game-type="${game.type}">
       <header class="bh-header"><button data-bh-back-game>‹</button><div><p>${mode} · Best-of-${game.bestOf}</p><h2>${meta.title}</h2></div><div class="bh-round-badge">Runde ${game.round}</div></header>
+      <div class="bh-mobile-score-strip">${compactScores}</div>
       <div class="bh-game-layout"><main>${game.type === "territory" ? territoryHtml(game) : game.type === "packages" ? packageHtml(game) : reactionHtml(game)}</main><aside><h3>Spielstand</h3><div class="bh-player-list">${playersHtml(game)}</div><section class="bh-log"><h4>Live-Verlauf</h4>${(game.log || []).slice(0, 8).map((line) => `<p>${escapeHtml(line)}</p>`).join("")}</section></aside></div>
       ${game.status !== "playing" ? roundEndHtml(game) : ""}<div class="bh-toast" data-bh-toast></div>
     </section>`;
@@ -951,7 +1156,12 @@
     else if (rt.view === "single") overlay.innerHTML = singleLauncherHtml();
     else overlay.innerHTML = launcherHtml();
     bindOverlay(overlay);
+    if (game && rt.view === "game") requestAnimationFrame(() => afterGameRender(game));
     if (game?.status === "seriesOver") maybeAwardReward(game);
+  }
+
+  function afterGameRender(game) {
+    if (game.type === "territory") drawTerritoryCanvas(rt.overlay?.querySelector("[data-bh-territory-canvas]"), game);
   }
 
   function ensureOverlay() {
@@ -1209,16 +1419,25 @@
     const game = currentGame();
     if (!game || game.type !== "territory") return;
     const ownIndex = ownPlayerIndex(game);
-    const player = game.players[ownIndex];
-    const cell = Number(game.positions[player.id]);
-    const x = cell % game.cols;
-    const y = Math.floor(cell / game.cols);
-    let target = cell;
-    if (direction === "left" && x > 0) target -= 1;
-    if (direction === "right" && x < game.cols - 1) target += 1;
-    if (direction === "up" && y > 0) target -= game.cols;
-    if (direction === "down" && y < game.rows - 1) target += game.cols;
-    if (target !== cell) mutate((next) => territoryMove(next, ownIndex, target));
+    if (ownIndex < 0) return;
+    const steps = game.online ? 2 : 2;
+    mutate((next) => territoryMoveDirection(next, ownIndex, direction, steps));
+  }
+
+  function startTerritoryHold(direction) {
+    moveByDirection(direction);
+    clearInterval(rt.territoryHoldTimer);
+    clearTimeout(rt.territoryHoldDelay);
+    rt.territoryHoldDelay = setTimeout(() => {
+      rt.territoryHoldTimer = setInterval(() => moveByDirection(direction), currentGame()?.online ? 520 : 190);
+    }, 320);
+  }
+
+  function stopTerritoryHold() {
+    clearInterval(rt.territoryHoldTimer);
+    clearTimeout(rt.territoryHoldDelay);
+    rt.territoryHoldTimer = null;
+    rt.territoryHoldDelay = null;
   }
 
   function maybeAwardReward(game) {
@@ -1278,7 +1497,45 @@
         mutate((next) => useTerritoryPower(next, ownIndex, "bomb", { cell })).then((ok) => { if (ok !== false) { rt.pendingPower = ""; render(); } }).catch((error) => toast(error.message || error));
       } else mutate((next) => territoryMove(next, ownIndex, cell)).catch((error) => toast(error.message || error));
     }));
-    shell.querySelectorAll("[data-bh-move]").forEach((button) => button.addEventListener("click", () => moveByDirection(button.dataset.bhMove)));
+    shell.querySelectorAll("[data-bh-move]").forEach((button) => {
+      const begin = (event) => { event.preventDefault(); startTerritoryHold(button.dataset.bhMove); };
+      button.addEventListener("pointerdown", begin);
+      button.addEventListener("pointerup", stopTerritoryHold);
+      button.addEventListener("pointercancel", stopTerritoryHold);
+      button.addEventListener("pointerleave", stopTerritoryHold);
+    });
+    const territoryCanvas = shell.querySelector("[data-bh-territory-canvas]");
+    if (territoryCanvas) {
+      territoryCanvas.addEventListener("pointerdown", (event) => {
+        rt.territoryPointer = { x: event.clientX, y: event.clientY, at: nowMs() };
+        territoryCanvas.setPointerCapture?.(event.pointerId);
+      });
+      territoryCanvas.addEventListener("pointerup", (event) => {
+        const game = currentGame();
+        const start = rt.territoryPointer;
+        rt.territoryPointer = null;
+        if (!game || !start) return;
+        if (rt.pendingPower === "bomb") {
+          const cell = territoryCanvasCell(territoryCanvas, event, game);
+          if (cell >= 0) mutate((next) => useTerritoryPower(next, ownPlayerIndex(game), "bomb", { cell })).then((ok) => { if (ok !== false) { rt.pendingPower = ""; render(); } });
+          return;
+        }
+        const dx = event.clientX - start.x;
+        const dy = event.clientY - start.y;
+        if (Math.max(Math.abs(dx), Math.abs(dy)) > 24) moveByDirection(Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? "left" : "right") : (dy < 0 ? "up" : "down"));
+        else {
+          const ownIndex = ownPlayerIndex(game);
+          const player = game.players[ownIndex];
+          const tapped = territoryCanvasCell(territoryCanvas, event, game);
+          const current = Number(game.positions[player?.id]);
+          if (tapped >= 0 && player) {
+            const tx = tapped % game.cols, ty = Math.floor(tapped / game.cols), cx = current % game.cols, cy = Math.floor(current / game.cols);
+            const direction = Math.abs(tx - cx) > Math.abs(ty - cy) ? (tx < cx ? "left" : "right") : (ty < cy ? "up" : "down");
+            moveByDirection(direction);
+          }
+        }
+      });
+    }
     shell.querySelectorAll("[data-bh-territory-power]").forEach((button) => button.addEventListener("click", () => {
       const type = button.dataset.bhTerritoryPower;
       if (type === "bomb") { rt.pendingPower = rt.pendingPower === "bomb" ? "" : "bomb"; render(); return; }
@@ -1287,7 +1544,22 @@
     }));
     shell.querySelector("[data-bh-cancel-power]")?.addEventListener("click", () => { rt.pendingPower = ""; render(); });
 
-    shell.querySelector("[data-bh-careful]")?.addEventListener("change", (event) => { rt.careful = !!event.target.checked; });
+    shell.querySelectorAll("[data-bh-toggle-cards]").forEach((button) => button.addEventListener("click", () => { rt.packageCardsOpen = !rt.packageCardsOpen; render(); }));
+    const fragileHold = shell.querySelector("[data-bh-fragile-hold]");
+    if (fragileHold) {
+      let armedTimer = null;
+      const begin = (event) => {
+        event.preventDefault();
+        fragileHold.classList.add("holding");
+        clearTimeout(armedTimer);
+        armedTimer = setTimeout(() => { rt.careful = true; fragileHold.classList.remove("holding"); fragileHold.classList.add("armed"); fragileHold.querySelector("b").textContent = "✓ Paket gesichert"; fragileHold.querySelector("small").textContent = "Jetzt das richtige Ziel wählen"; }, 450);
+      };
+      const cancel = () => { clearTimeout(armedTimer); fragileHold.classList.remove("holding"); };
+      fragileHold.addEventListener("pointerdown", begin);
+      fragileHold.addEventListener("pointerup", cancel);
+      fragileHold.addEventListener("pointercancel", cancel);
+      fragileHold.addEventListener("pointerleave", cancel);
+    }
     shell.querySelectorAll("[data-bh-sort-city]").forEach((button) => button.addEventListener("click", () => {
       const game = currentGame();
       const ownIndex = ownPlayerIndex(game);
@@ -1295,11 +1567,11 @@
       rt.careful = false;
       mutate((next) => packageProcess(next, ownIndex, button.dataset.bhSortCity, careful)).catch((error) => toast(error.message || error));
     }));
-    shell.querySelectorAll("[data-bh-package-card]").forEach((button) => button.addEventListener("click", () => { rt.pendingCard = button.dataset.bhPackageCard; render(); }));
+    shell.querySelectorAll("[data-bh-package-card]").forEach((button) => button.addEventListener("click", () => { rt.pendingCard = button.dataset.bhPackageCard; rt.packageCardsOpen = true; render(); }));
     shell.querySelectorAll("[data-bh-card-target]").forEach((button) => button.addEventListener("click", () => {
       const game = currentGame();
       const ownIndex = ownPlayerIndex(game);
-      mutate((next) => usePackageCard(next, ownIndex, rt.pendingCard, Number(button.dataset.bhCardTarget))).then(() => { rt.pendingCard = ""; render(); }).catch((error) => toast(error.message || error));
+      mutate((next) => usePackageCard(next, ownIndex, rt.pendingCard, Number(button.dataset.bhCardTarget))).then(() => { rt.pendingCard = ""; rt.packageCardsOpen = false; render(); }).catch((error) => toast(error.message || error));
     }));
     shell.querySelector("[data-bh-cancel-card]")?.addEventListener("click", () => { rt.pendingCard = ""; render(); });
 
@@ -1358,6 +1630,7 @@
   });
 
   window.LifeBuilderBattleHub = { open, openSingle, close, version: BH_VERSION };
+  window.addEventListener("resize", () => { const game = currentGame(); if (game?.type === "territory") requestAnimationFrame(() => drawTerritoryCanvas(rt.overlay?.querySelector("[data-bh-territory-canvas]"), game)); });
   window.addEventListener("beforeunload", () => {
     rt.roomUnsub?.();
     rt.publicUnsub?.();

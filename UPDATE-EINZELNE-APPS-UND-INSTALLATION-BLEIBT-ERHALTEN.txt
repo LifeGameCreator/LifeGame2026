@@ -1,0 +1,23 @@
+LifeBuilder 2026 – Einzelne Battle-Apps & dauerhafte Installation
+Stand: 23.07.2026
+
+Behoben:
+- ÄrgerMensch.KL ist eine eigene App.
+- Grundstück-Kampf ist eine eigene App.
+- Paket-Chaos ist eine eigene App.
+- Reaktions-Battle ist eine eigene App.
+- Jede App kann im Life App Store einzeln geladen und deinstalliert werden.
+- Installierte Apps bleiben nach einem Neuladen der Webseite erhalten.
+- Die Installation wird im Spielstand und zusätzlich pro Spielstand als lokales Backup gespeichert.
+- Alte Cloud-Spielstände löschen die neu installierten Apps beim Laden nicht mehr.
+- App-Store-Whitelist/Migration enthält alle vier Multiplayer-Apps.
+- Eigenständige Startansichten für Bot- und Online-Modus.
+- Cache-Version für GitHub Pages aktualisiert.
+
+Installation auf GitHub Pages:
+1. Gesamten Inhalt dieses Ordners in das Repository LifeGame2026 hochladen.
+2. Vorhandene Dateien ersetzen.
+3. Auf das grüne GitHub-Pages-Deployment warten.
+4. Webseite einmal mit Strg + F5 neu laden.
+
+Für diese Änderung müssen keine neuen Firebase-Regeln veröffentlicht werden.

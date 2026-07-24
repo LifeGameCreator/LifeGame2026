@@ -2,17 +2,17 @@
   "use strict";
 
   const AM_APP_ID = "aergermensch-kl";
-  const AM_VERSION = "2026-07-23-separate-apps-persistence-2";
+  const AM_VERSION = "2026-07-23-mobile-fullscreen-v4";
   const AM_DATABASE_ID = "gamekl";
   const AM_COLLECTION = "angerMenschGames";
   const AM_MAX_LOG = 18;
   const AM_BOT_DELAY = 760;
 
   const AM_COLORS = [
-    { id: "rot", label: "Rot", hex: "#ff4d5f", dark: "#7d1724", start: 0, base: [20, 20] },
-    { id: "blau", label: "Blau", hex: "#4da3ff", dark: "#164c83", start: 10, base: [80, 20] },
-    { id: "gelb", label: "Gelb", hex: "#ffd84d", dark: "#826b13", start: 20, base: [80, 80] },
-    { id: "gruen", label: "Grün", hex: "#45d58a", dark: "#17643f", start: 30, base: [20, 80] }
+    { id: "rot", label: "Rot", hex: "#ff4d5f", dark: "#7d1724", start: 0, base: [15.5, 15.5] },
+    { id: "blau", label: "Blau", hex: "#4da3ff", dark: "#164c83", start: 10, base: [84.5, 15.5] },
+    { id: "gelb", label: "Gelb", hex: "#ffd84d", dark: "#826b13", start: 20, base: [84.5, 84.5] },
+    { id: "gruen", label: "Grün", hex: "#45d58a", dark: "#17643f", start: 30, base: [15.5, 84.5] }
   ];
 
   const AM_EXTRAS = [
@@ -42,7 +42,10 @@
     swapOwn: null,
     botTimer: null,
     busy: false,
-    toastTimer: null
+    toastTimer: null,
+    sideTab: "players",
+    fullscreen: false,
+    mobileSheetOpen: false
   };
 
   const amClone = (value) => typeof structuredClone === "function"
@@ -799,13 +802,13 @@
 
   function amHomePoint(playerIndex, homeIndex) {
     const start = amRingPoint(amPlayerColor(playerIndex).start);
-    const t = (homeIndex + 1) / 5;
+    const t = (homeIndex + 1) / 5.5;
     return { x: start.x + (50 - start.x) * t, y: start.y + (50 - start.y) * t };
   }
 
   function amBasePoint(playerIndex, pawnIndex) {
     const [cx, cy] = amPlayerColor(playerIndex).base;
-    const offsets = [[-4.3, -4.3], [4.3, -4.3], [-4.3, 4.3], [4.3, 4.3]];
+    const offsets = [[-3.65, -3.65], [3.65, -3.65], [-3.65, 3.65], [3.65, 3.65]];
     return { x: cx + offsets[pawnIndex][0], y: cy + offsets[pawnIndex][1] };
   }
 
@@ -818,29 +821,45 @@
   }
 
   function amBoardSvg(game) {
+    const activeIndex = Math.max(0, Math.min(game.players.length - 1, Number(game.turnIndex || 0)));
     const ring = Array.from({ length: 40 }, (_, index) => {
       const point = amRingPoint(index);
-      const startPlayer = AM_COLORS.findIndex((color) => color.start === index);
-      const fill = startPlayer >= 0 ? amPlayerColor(startPlayer).hex : "rgba(244,248,255,.14)";
-      return `<circle class="am-path-cell ${startPlayer >= 0 ? "start" : ""}" cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="2.28" fill="${fill}" data-cell="${index}"/>`;
+      const startPlayerRaw = AM_COLORS.findIndex((color) => color.start === index);
+      const startPlayer = startPlayerRaw >= 0 && startPlayerRaw < game.players.length ? startPlayerRaw : -1;
+      const color = startPlayer >= 0 ? amPlayerColor(startPlayer) : null;
+      const fill = color ? color.hex : "rgba(226,239,255,.16)";
+      return `<g class="am-path-slot ${startPlayer >= 0 ? "start" : ""}">
+        ${startPlayer >= 0 ? `<circle cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="3.15" fill="${color.hex}22" stroke="${color.hex}66" stroke-width=".42"/>` : ""}
+        <circle class="am-path-cell ${startPlayer >= 0 ? "start" : ""}" cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="2.05" fill="${fill}" data-cell="${index}"/>
+      </g>`;
     }).join("");
 
     const bases = game.players.map((player, playerIndex) => {
       const color = amPlayerColor(playerIndex);
       const [cx, cy] = color.base;
+      const isTurn = game.status === "playing" && activeIndex === playerIndex;
       const slots = Array.from({ length: 4 }, (_, pawnIndex) => {
         const point = amBasePoint(playerIndex, pawnIndex);
-        return `<circle cx="${point.x}" cy="${point.y}" r="3.25" fill="rgba(5,9,18,.68)" stroke="${color.hex}" stroke-width=".55"/>`;
+        return `<circle class="am-base-slot" cx="${point.x}" cy="${point.y}" r="2.72" fill="rgba(3,8,16,.78)" stroke="${color.hex}" stroke-width=".48"/>`;
       }).join("");
-      return `<g class="am-base"><rect x="${cx - 10}" y="${cy - 10}" width="20" height="20" rx="6" fill="${color.hex}1f" stroke="${color.hex}" stroke-width=".8"/>${slots}<text x="${cx}" y="${cy + 0.9}" text-anchor="middle" class="am-base-label" fill="${color.hex}">${playerIndex + 1}</text></g>`;
+      return `<g class="am-base ${isTurn ? "active" : ""}" style="--base-color:${color.hex}">
+        ${isTurn ? `<rect x="${cx - 9.3}" y="${cy - 9.3}" width="18.6" height="18.6" rx="5.6" fill="none" stroke="${color.hex}" stroke-width=".55" class="am-active-base-ring"/>` : ""}
+        <rect x="${cx - 8.1}" y="${cy - 8.1}" width="16.2" height="16.2" rx="4.8" fill="${color.hex}18" stroke="${color.hex}" stroke-width=".7"/>
+        ${slots}
+        <text x="${cx}" y="${cy + 11.1}" text-anchor="middle" class="am-base-title" fill="${color.hex}">${amEscape(player.name).slice(0, 12)}</text>
+      </g>`;
     }).join("");
 
     const homes = game.players.map((_, playerIndex) => {
       const color = amPlayerColor(playerIndex);
-      return Array.from({ length: 4 }, (_, homeIndex) => {
+      const first = amHomePoint(playerIndex, 0);
+      const last = amHomePoint(playerIndex, 3);
+      const lane = `<line class="am-home-lane" x1="${first.x.toFixed(2)}" y1="${first.y.toFixed(2)}" x2="${last.x.toFixed(2)}" y2="${last.y.toFixed(2)}" stroke="${color.hex}"/>`;
+      const cells = Array.from({ length: 4 }, (_, homeIndex) => {
         const point = amHomePoint(playerIndex, homeIndex);
-        return `<circle class="am-home-cell" cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="2.45" fill="${color.hex}55" stroke="${color.hex}" stroke-width=".6"/>`;
+        return `<circle class="am-home-cell" cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="2.25" fill="${color.hex}42" stroke="${color.hex}" stroke-width=".55"/>`;
       }).join("");
+      return `<g>${lane}${cells}</g>`;
     }).join("");
 
     const legal = new Set(amCurrentCanAct(game) && game.phase === "move" ? amLegalMoves(game).map((index) => `${game.turnIndex}:${index}`) : []);
@@ -851,24 +870,32 @@
       const shield = amShieldActive(game, playerIndex, pawnIndex);
       const targetable = amPawnTargetable(game, playerIndex, pawnIndex);
       return `<g class="am-pawn ${legal.has(key) ? "legal" : ""} ${targetable ? "targetable" : ""} ${shield ? "shielded" : ""}" data-am-pawn="${key}" transform="translate(${point.x.toFixed(2)} ${point.y.toFixed(2)})">
-        ${shield ? `<circle r="4.15" class="am-shield-ring" fill="none" stroke="${color.hex}"/>` : ""}
-        <circle r="3.05" fill="${color.hex}" stroke="rgba(255,255,255,.92)" stroke-width=".65"/>
-        <circle r="1.45" fill="${color.dark}" opacity=".9"/>
-        <text y=".75" text-anchor="middle" fill="#fff" font-size="2.2" font-weight="900">${pawnIndex + 1}</text>
+        ${legal.has(key) || targetable ? `<circle r="3.85" class="am-pawn-action-ring" fill="none" stroke="${targetable ? "#fff0a8" : "#ffffff"}"/>` : ""}
+        ${shield ? `<circle r="4.25" class="am-shield-ring" fill="none" stroke="${color.hex}"/>` : ""}
+        <circle class="am-pawn-body" r="2.78" fill="${color.hex}" stroke="rgba(255,255,255,.96)" stroke-width=".58"/>
+        <circle r="1.22" fill="${color.dark}" opacity=".92"/>
+        <text y=".7" text-anchor="middle" fill="#fff" font-size="2" font-weight="950">${pawnIndex + 1}</text>
       </g>`;
     }).join("")).join("");
 
-    return `<svg class="am-board-svg" viewBox="0 0 100 100" role="img" aria-label="ÄrgerMensch.KL Spielfeld">
+    return `<svg class="am-board-svg" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" role="img" aria-label="ÄrgerMensch.KL Spielfeld">
       <defs>
-        <radialGradient id="amBg" cx="50%" cy="42%" r="65%"><stop offset="0" stop-color="#223954"/><stop offset=".58" stop-color="#101c2d"/><stop offset="1" stop-color="#07101c"/></radialGradient>
-        <filter id="amGlow"><feGaussianBlur stdDeviation=".45" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <radialGradient id="amBg" cx="50%" cy="44%" r="68%"><stop offset="0" stop-color="#27435f"/><stop offset=".55" stop-color="#12233a"/><stop offset="1" stop-color="#060d18"/></radialGradient>
+        <linearGradient id="amBoardEdge" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#68ddff" stop-opacity=".34"/><stop offset=".5" stop-color="#776cff" stop-opacity=".13"/><stop offset="1" stop-color="#ff5ba8" stop-opacity=".25"/></linearGradient>
+        <filter id="amGlow"><feGaussianBlur stdDeviation=".38" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        <filter id="amSoftShadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="1" stdDeviation="1.1" flood-color="#000" flood-opacity=".55"/></filter>
       </defs>
-      <rect x="1" y="1" width="98" height="98" rx="14" fill="url(#amBg)" stroke="rgba(255,255,255,.16)"/>
-      <circle cx="50" cy="50" r="41.5" fill="none" stroke="rgba(102,211,255,.12)" stroke-width="1.1"/>
+      <rect x="1.2" y="1.2" width="97.6" height="97.6" rx="12.5" fill="url(#amBg)" stroke="url(#amBoardEdge)" stroke-width=".7"/>
+      <path d="M8 50a42 42 0 1 0 84 0a42 42 0 1 0-84 0" fill="none" stroke="rgba(111,221,255,.09)" stroke-width="1.4"/>
+      <circle cx="50" cy="50" r="39.5" fill="none" stroke="rgba(255,255,255,.035)" stroke-dasharray="1 2.1" stroke-width=".45"/>
       ${bases}
       ${ring}
       ${homes}
-      <g class="am-center"><circle cx="50" cy="50" r="8.2" fill="#07111f" stroke="#8ee8ff" stroke-width=".7"/><text x="50" y="48.5" text-anchor="middle">ÄM</text><text x="50" y="53" text-anchor="middle" class="small">.KL</text></g>
+      <g class="am-center" filter="url(#amSoftShadow)">
+        <circle cx="50" cy="50" r="6.25" fill="#06101d" stroke="#83eaff" stroke-width=".65"/>
+        <circle cx="50" cy="50" r="5.1" fill="none" stroke="rgba(190,137,255,.34)" stroke-width=".35"/>
+        <text x="50" y="49.1" text-anchor="middle">ÄM</text><text x="50" y="52.5" text-anchor="middle" class="small">.KL</text>
+      </g>
       <g filter="url(#amGlow)">${pawns}</g>
     </svg>`;
   }
@@ -942,6 +969,7 @@
 
   function amGameOverlayHtml(game) {
     const current = game.players[game.turnIndex];
+    const currentColor = amPlayerColor(game.turnIndex);
     const canAct = amCurrentCanAct(game);
     const legal = game.phase === "move" ? amLegalMoves(game) : [];
     const roomLabel = game.online ? `Online-Raum ${amEscape(amRuntime.onlineId)}` : "Bot-Spiel";
@@ -951,34 +979,50 @@
     const actionText = game.status === "finished"
       ? "Partie beendet"
       : !canAct
-        ? current?.isBot ? "Bot denkt nach …" : "Warte auf den anderen Spieler …"
+        ? current?.isBot ? "Bot berechnet den besten Zug …" : "Warte auf den anderen Spieler …"
         : game.phase === "roll"
-          ? "Würfeln"
+          ? "Würfle jetzt"
           : legal.length
-            ? "Eine leuchtende Figur wählen"
-            : "Kein Zug möglich";
+            ? `${legal.length} Figur${legal.length === 1 ? "" : "en"} kann${legal.length === 1 ? "" : " können"} ziehen`
+            : "Kein gültiger Zug – Zug beenden";
+    const phaseText = game.status === "finished" ? "ENDE" : game.phase === "roll" ? "WÜRFELN" : "ZIEHEN";
+    const fullscreenText = document.fullscreenElement ? "Fenster" : "Vollbild";
+    const sideTab = ["players", "shop", "log"].includes(amRuntime.sideTab) ? amRuntime.sideTab : "players";
 
-    return `<section class="am-game-shell">
+    return `<section class="am-game-shell" style="--turn-color:${currentColor.hex}">
       <header class="am-game-head">
-        <div><p>ÄrgerMensch.KL · ${roomLabel}</p><h2>${statusText}</h2><small>${actionText}</small></div>
-        <div class="am-head-actions"><button data-am-minimize>Minimieren</button>${game.online ? `<button data-am-copy-code>Code kopieren</button>` : ""}</div>
+        <div class="am-head-copy"><p>ÄrgerMensch.KL · ${roomLabel}</p><h2>${statusText}</h2><small>${actionText}</small></div>
+        <div class="am-head-actions"><button data-am-fullscreen>${fullscreenText}</button>${game.online ? `<button data-am-copy-code>Code kopieren</button>` : ""}<button data-am-minimize>Minimieren</button></div>
       </header>
       <div class="am-game-layout">
         <main class="am-board-panel">
-          ${amBoardSvg(game)}
-          ${amTargetControls(game)}
-          <div class="am-main-controls">
-            <div class="am-dice ${game.die ? "rolled" : ""}"><span>${amDiceFace(game.die)}</span><b>${game.die || "–"}</b></div>
-            <div>
-              <button class="am-roll-button" data-am-roll ${canAct && game.phase === "roll" && game.status === "playing" ? "" : "disabled"}>Würfeln</button>
-              <button class="am-pass-button" data-am-pass ${canAct && game.phase === "move" && !legal.length ? "" : "disabled"}>Zug beenden</button>
+          <div class="am-board-stage">
+            ${amBoardSvg(game)}
+            ${amTargetControls(game)}
+          </div>
+          <div class="am-control-deck">
+            <div class="am-turn-strip">
+              <span class="am-turn-dot"></span><div><small>Aktueller Zug</small><b>${amEscape(current?.name || "Spieler")}</b></div><em>${phaseText}</em>
+            </div>
+            <div class="am-main-controls">
+              <div class="am-dice ${game.die ? "rolled" : ""}"><span>${amDiceFace(game.die)}</span><b>${game.die || "–"}</b></div>
+              <div class="am-action-buttons">
+                <button class="am-roll-button" data-am-roll ${canAct && game.phase === "roll" && game.status === "playing" ? "" : "disabled"}>Würfeln</button>
+                <button class="am-pass-button" data-am-pass ${canAct && game.phase === "move" && !legal.length ? "" : "disabled"}>Zug beenden</button>
+              </div>
+              <small class="am-control-hint">PC: Leertaste zum Würfeln · Leuchtende Figur anklicken</small>
             </div>
           </div>
         </main>
-        <aside class="am-side-panel">
-          <div class="am-player-list">${amPlayerCards(game)}</div>
-          <section class="am-shop-panel"><h3>Point-Shop</h3><p>Jede natürlich gewürfelte 6 bringt genau 1 Point.</p>${amExtraShop(game)}</section>
-          <section class="am-log-panel"><h3>Spielverlauf</h3>${(game.log || []).map((entry) => `<p>${amEscape(entry)}</p>`).join("")}</section>
+        <aside class="am-side-panel ${amRuntime.mobileSheetOpen ? "sheet-open" : "sheet-closed"}" data-am-side-panel>
+          <nav class="am-side-tabs" aria-label="Spielinformationen"><button class="am-sheet-close" data-am-sheet-close aria-label="Informationen schließen">×</button>
+            <button class="${sideTab === "players" ? "active" : ""}" data-am-side-tab="players">Spieler</button>
+            <button class="${sideTab === "shop" ? "active" : ""}" data-am-side-tab="shop">Extras</button>
+            <button class="${sideTab === "log" ? "active" : ""}" data-am-side-tab="log">Verlauf</button>
+          </nav>
+          <section class="am-side-section ${sideTab === "players" ? "active" : ""}" data-am-side-section="players"><div class="am-player-list">${amPlayerCards(game)}</div></section>
+          <section class="am-shop-panel am-side-section ${sideTab === "shop" ? "active" : ""}" data-am-side-section="shop"><h3>Point-Shop</h3><p>Jede natürlich gewürfelte 6 bringt genau 1 Point.</p>${amExtraShop(game)}</section>
+          <section class="am-log-panel am-side-section ${sideTab === "log" ? "active" : ""}" data-am-side-section="log"><h3>Spielverlauf</h3>${(game.log || []).map((entry, index) => `<p class="${index === 0 ? "latest" : ""}">${amEscape(entry)}</p>`).join("")}</section>
         </aside>
       </div>
       ${game.status === "finished" ? `<div class="am-winner-panel"><span>🏆</span><h2>${amEscape(game.winnerName)} gewinnt ÄrgerMensch.KL</h2><p>Alle vier Figuren sind im Ziel.</p><div>${game.online && amIsHost() ? `<button data-am-rematch>Revanche starten</button>` : !game.online ? `<button data-am-local-rematch>Noch eine Runde</button>` : ""}<button data-am-minimize>Zur App</button></div></div>` : ""}
@@ -1012,13 +1056,19 @@
     document.body.classList.remove("am-game-open");
     amRuntime.pendingExtra = "";
     amRuntime.swapOwn = null;
+    amRuntime.mobileSheetOpen = false;
     amRefreshApp();
   }
 
   function amRenderOverlay() {
     const game = amCurrentGame();
     if (!amRuntime.overlay?.classList.contains("show") || !game) return;
+    const previousScroll = amRuntime.overlay.querySelector("[data-am-side-panel]")?.scrollTop || 0;
     amRuntime.overlay.innerHTML = amGameOverlayHtml(game);
+    requestAnimationFrame(() => {
+      const panel = amRuntime.overlay?.querySelector("[data-am-side-panel]");
+      if (panel) panel.scrollTop = previousScroll;
+    });
   }
 
   function amRenderAll() {
@@ -1041,6 +1091,16 @@
     }
   }
 
+  async function amToggleFullscreen() {
+    const shell = amRuntime.overlay?.querySelector(".am-game-shell");
+    try {
+      if (!document.fullscreenElement) await (shell?.requestFullscreen?.() || amRuntime.overlay?.requestFullscreen?.());
+      else await document.exitFullscreen?.();
+    } catch (error) {
+      amToast("Vollbild konnte auf diesem Gerät nicht geöffnet werden.");
+    }
+  }
+
   async function amOverlayClick(event) {
     const button = event.target.closest("button, [data-am-pawn]");
     if (!button) return;
@@ -1048,6 +1108,15 @@
     if (!game) return;
 
     if (button.matches("[data-am-minimize]")) return amCloseBoard();
+    if (button.matches("[data-am-fullscreen]")) { await amToggleFullscreen(); return; }
+    if (button.matches("[data-am-side-tab]")) {
+      const nextTab = button.dataset.amSideTab || "players";
+      if (window.matchMedia("(max-width: 850px)").matches && amRuntime.mobileSheetOpen && amRuntime.sideTab === nextTab) amRuntime.mobileSheetOpen = false;
+      else { amRuntime.sideTab = nextTab; amRuntime.mobileSheetOpen = true; }
+      amRenderOverlay();
+      return;
+    }
+    if (button.matches("[data-am-sheet-close]")) { amRuntime.mobileSheetOpen = false; amRenderOverlay(); return; }
     if (button.matches("[data-am-copy-code]")) {
       try { await navigator.clipboard.writeText(amRuntime.onlineId); amToast("Raumcode kopiert."); }
       catch { amToast(`Raumcode: ${amRuntime.onlineId}`); }
@@ -1327,7 +1396,9 @@
       const fillBots = !!shell.querySelector("[data-am-lobby-fill-bots]")?.checked;
       const humans = (room.players || []).filter((entry) => !entry.isBot);
       if (humans.length < 2 && !fillBots) throw new Error("Mindestens zwei Online-Spieler werden benötigt.");
-      const players = amCreatePlayers(Number(room.maxPlayers || 4), true, humans);
+      const requestedTotal = Math.max(2, Math.min(4, Number(room.maxPlayers || 4)));
+      const actualTotal = fillBots ? requestedTotal : Math.max(2, humans.length);
+      const players = amCreatePlayers(actualTotal, true, humans);
       const gameState = amCreateGame(players, true);
       transaction.update(ref, {
         fillBots,
@@ -1589,6 +1660,34 @@
     if (standaloneBattleDefinition(activeApp)) bindStandaloneBattleApp(shell);
     return result;
   };
+
+  document.addEventListener("keydown", (event) => {
+    if (!amRuntime.overlay?.classList.contains("show")) return;
+    if (event.target?.matches?.("input, textarea, select")) return;
+    const game = amCurrentGame();
+    if (!game) return;
+    if (event.key === "Escape") {
+      if (amRuntime.pendingExtra) {
+        amRuntime.pendingExtra = "";
+        amRuntime.swapOwn = null;
+        amRenderOverlay();
+      } else {
+        amCloseBoard();
+      }
+      return;
+    }
+    if (event.code === "Space") {
+      event.preventDefault();
+      if (!amCurrentCanAct(game) || amRuntime.busy) return;
+      if (game.phase === "roll") amMutate((next) => amRollMutation(next, Math.floor(Math.random() * 6) + 1));
+      else if (game.phase === "move" && !amLegalMoves(game).length) amMutate((next) => amEndTurnMutation(next));
+    }
+  });
+
+  document.addEventListener("fullscreenchange", () => {
+    amRuntime.fullscreen = !!document.fullscreenElement;
+    amRenderOverlay();
+  });
 
   window.addEventListener("beforeunload", () => {
     amRuntime.onlineUnsub?.();

@@ -1,0 +1,16 @@
+LifeBuilder 2026 – Mobile Games V4
+
+Neu programmiert:
+- Grundstück-Kampf als Canvas-Arena mit großer Hochformat-Spielfläche, Wischsteuerung, Halte-Steuerkreuz und gebündelten Bewegungen.
+- Paket-Chaos als große Sortierstation mit einem zentralen Paket, großen Zielboxen, Haltefunktion für zerbrechliche Pakete und ausziehbaren Sonderkarten.
+
+Optimiert:
+- Reaktions-Battle nutzt auf Handy und PC die gesamte verfügbare Fläche.
+- ÄrgerMensch.KL zeigt das Brett auf dem Handy groß und öffnet Spieler, Extras und Verlauf als ausziehbare Infobox.
+- Weniger DOM-Elemente, rotierende Bot-Berechnung und getrennte Anzeige-/Simulations-Timer reduzieren Ruckler.
+- Bot- und Online-Modi sowie öffentliche/private Räume bleiben erhalten.
+
+Installation:
+Den gesamten Inhalt in das GitHub-Repository LifeGame2026 hochladen und vorhandene Dateien ersetzen.
+Danach das GitHub-Pages-Deployment abwarten und die Seite mit Strg+F5 neu laden.
+Für diesen Frontend-Fix sind keine neuen Firebase-Regeln erforderlich.
