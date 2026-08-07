@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#08110d">
+  <meta name="color-scheme" content="dark">
+  <title>JK.Games – Wichtiger Hinweis</title>
+  <style>
+    :root {
+      --bg: #07100d;
+      --panel: rgba(8, 18, 14, 0.95);
+      --panel-2: rgba(15, 29, 23, 0.92);
+      --line: rgba(255,255,255,0.10);
+      --text: #f4f7f5;
+      --muted: #bfd0c7;
+      --accent: #d4b25d;
+      --accent-strong: #f0d585;
+      --danger: #ff8f8f;
+      --ok: #95e0a7;
+      --shadow: 0 18px 60px rgba(0,0,0,.42);
+      --radius: 24px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top, rgba(53,95,78,.18), transparent 36%),
+        linear-gradient(180deg, #08110d 0%, #040706 100%);
+    }
+
+    .wrap {
+      width: min(1120px, calc(100% - 28px));
+      margin: 0 auto;
+      padding: 22px 0 42px;
+    }
+
+    .card {
+      background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 24px;
+      padding: 24px;
+      align-items: center;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(255, 143, 143, 0.12);
+      color: #ffd8d8;
+      border: 1px solid rgba(255, 143, 143, 0.22);
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: .02em;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: clamp(30px, 5vw, 52px);
+      line-height: 1.03;
+    }
+
+    .lead {
+      margin: 0;
+      color: var(--muted);
+      font-size: clamp(17px, 2.2vw, 20px);
+      line-height: 1.6;
+    }
+
+    .stack {
+      display: grid;
+      gap: 16px;
+      margin-top: 20px;
+    }
+
+    .highlight {
+      padding: 16px 18px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(255,255,255,0.03);
+    }
+
+    .highlight strong {
+      display: block;
+      font-size: 16px;
+      margin-bottom: 6px;
+      color: var(--text);
+    }
+
+    .highlight p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.58;
+      font-size: 15px;
+    }
+
+    .cta {
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      min-height: 62px;
+      margin-top: 6px;
+      padding: 16px 20px;
+      border-radius: 18px;
+      background: linear-gradient(180deg, var(--accent-strong) 0%, var(--accent) 100%);
+      color: #16150f;
+      text-decoration: none;
+      font-weight: 800;
+      font-size: 18px;
+      letter-spacing: .01em;
+      box-shadow: 0 14px 34px rgba(212,178,93,.28);
+    }
+
+    .cta:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 22px;
+      margin-top: 22px;
+    }
+
+    .section { padding: 24px; }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 25px;
+      line-height: 1.2;
+    }
+
+    p {
+      margin: 0 0 14px;
+      color: var(--muted);
+      line-height: 1.7;
+      font-size: 16px;
+    }
+
+    .notice {
+      border-left: 4px solid var(--accent);
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.03);
+      margin-top: 10px;
+    }
+
+    ol {
+      margin: 0;
+      padding-left: 22px;
+      color: var(--muted);
+    }
+
+    li {
+      margin: 0 0 12px;
+      line-height: 1.65;
+      font-size: 16px;
+    }
+
+    li strong { color: var(--text); }
+
+    .footer-note {
+      margin-top: 22px;
+      padding: 18px 20px;
+      border-radius: 18px;
+      border: 1px solid rgba(149,224,167,0.18);
+      background: rgba(149,224,167,0.06);
+      color: #ddf8e3;
+      line-height: 1.7;
+      font-size: 15px;
+    }
+
+    .mini { font-size: 14px; color: #d7e1db; }
+
+    @media (max-width: 930px) {
+      .hero { grid-template-columns: 1fr; }
+      .grid { grid-template-columns: 1fr; }
+      .wrap { width: min(100% - 18px, 1120px); padding-top: 12px; }
+      .hero, .section { padding: 18px; }
+      .cta { font-size: 17px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card hero" aria-labelledby="haupttitel">
+      <div>
+        <div class="badge">Wichtiger Hinweis für alle Spieler</div>
+        <h1 id="haupttitel">JK.Games nutzt jetzt den neuen Link</h1>
+        <p class="lead">Diese bisherige Webseite wird <strong>nicht mehr weiter geupdatet</strong>. Bitte wechsle ab jetzt auf die aktuelle Version von JK.Games über den neuen offiziellen Link.</p>
+
+        <div class="stack">
+          <div class="highlight">
+            <strong>Neue Version &amp; neuer Start</strong>
+            <p>Die Accounts wurden resetet, damit jetzt jeder wieder sauber und vernünftig neu anfangen kann.</p>
+          </div>
+
+          <div class="highlight">
+            <strong>Viele neue Inhalte</strong>
+            <p>Es gibt richtig viel Neues. Bitte schaut euch alles genau an, testet alle Bereiche und prüft die Funktionen in Ruhe durch.</p>
+          </div>
+
+          <div class="highlight">
+            <strong>Fehler bitte melden</strong>
+            <p>Wenn euch Fehler, Bugs oder irgendetwas Auffälliges auffällt, meldet es bitte an die Developer, damit es weiter verbessert werden kann.</p>
+          </div>
+        </div>
+
+        <a class="cta" href="https://jk-games.pages.dev/">Zum neuen JK.Games-Link wechseln</a>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="card section" aria-labelledby="iphone-anleitung">
+        <h2 id="iphone-anleitung">iPhone / iPad – als App auf den Home-Bildschirm</h2>
+        <p>Bitte nutzt auf dem iPhone oder iPad <strong>Safari</strong>. So funktioniert JK.Games am besten als App-ähnliche Version.</p>
+        <ol>
+          <li><strong>Safari öffnen</strong> und den neuen JK.Games-Link öffnen.</li>
+          <li>Unten auf das <strong>Teilen-Symbol</strong> tippen.</li>
+          <li><strong>„Zum Home-Bildschirm“</strong> auswählen.</li>
+          <li>Bei Bedarf den Namen prüfen, zum Beispiel <strong>JK.Games</strong>.</li>
+          <li>Oben rechts auf <strong>„Hinzufügen“</strong> tippen.</li>
+          <li>Danach JK.Games bitte <strong>über das Symbol auf dem Home-Bildschirm</strong> starten.</li>
+        </ol>
+        <div class="notice mini">
+          Wichtig: Bitte nicht nur normal im Browser benutzen. Wenn JK.Games direkt als Web-App über den Home-Bildschirm gestartet wird, funktioniert es auf dem iPhone in der Regel deutlich sauberer und es entstehen weniger Bugs, die die Developer sonst nicht richtig sehen können.
+        </div>
+      </section>
+
+      <section class="card section" aria-labelledby="android-anleitung">
+        <h2 id="android-anleitung">Android / Samsung – als App auf den Startbildschirm</h2>
+        <p>Auch auf Android sollte JK.Games möglichst als installierte Web-App beziehungsweise als Startbildschirm-App genutzt werden.</p>
+        <ol>
+          <li><strong>Chrome oder Samsung Internet öffnen</strong> und den neuen JK.Games-Link öffnen.</li>
+          <li>Oben rechts auf das <strong>Menü</strong> tippen.</li>
+          <li>Je nach Gerät <strong>„Zum Startbildschirm hinzufügen“</strong>, <strong>„Installieren“</strong> oder <strong>„App installieren“</strong> auswählen.</li>
+          <li>Den Namen auf <strong>JK.Games</strong> lassen oder prüfen.</li>
+          <li>Mit <strong>„Hinzufügen“</strong> oder <strong>„Installieren“</strong> bestätigen.</li>
+          <li>Danach JK.Games bitte möglichst <strong>über das neue Symbol auf dem Startbildschirm</strong> öffnen.</li>
+        </ol>
+        <div class="notice mini">
+          Wichtig: Auch auf Android bitte möglichst die App-Variante nutzen. Dadurch läuft JK.Games oft stabiler und Fehler lassen sich sauberer nachvollziehen.
+        </div>
+      </section>
+    </div>
+
+    <section class="card section" aria-labelledby="weiterer-hinweis" style="margin-top:22px;">
+      <h2 id="weiterer-hinweis">Bitte alles anschauen und prüfen</h2>
+      <p>In der aktuellen Version gibt es sehr viele neue Inhalte, Funktionen und Änderungen. Bitte schaut euch alles an, testet die Bereiche und prüft, ob irgendwo Fehler auftreten.</p>
+      <p>Nach dem Reset können jetzt alle wieder vernünftig von vorne anfangen. Eigentlich funktioniert alles bereits sehr gut – falls euch trotzdem Bugs oder Probleme auffallen, gebt den Developern bitte Bescheid.</p>
+      <div class="footer-note">
+        <strong>Neuer offizieller Link:</strong><br>
+        <a href="https://jk-games.pages.dev/" style="color:#fff; font-weight:700; word-break:break-word;">https://jk-games.pages.dev/</a><br><br>
+        Wenn ihr noch den alten Link gespeichert habt, nutzt ab jetzt bitte nur noch diesen neuen Link.
+      </div>
+    </section>
+  </div>
+</body>
+</html>
